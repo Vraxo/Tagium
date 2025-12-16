@@ -1,0 +1,144 @@
+﻿@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
+@inject LibraryService Library
+@inject SettingsManager Settings
+@inject FileDialogService FileDialog
+@inject ModalService ModalService
+
+<div class="toolbar">
+    <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
+    <button class="btn" @onclick="OpenDataTools">Data Tools</button>
+
+    <div class="spacer"></div>
+
+    <div class="control-group">
+        <label>Sort:</label>
+        <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
+            <option value="@SortBy.DateAdded">Date Added</option>
+            <option value="@SortBy.Name">Name</option>
+            <option value="@SortBy.Path">Path</option>
+        </select>
+        <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
+            <option value="@SortDirection.Asc">Asc</option>
+            <option value="@SortDirection.Desc">Desc</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label>Size:</label>
+        <input type="range" min="64" max="256" step="16"
+               value="@Settings.Current.ThumbnailSize"
+               @onchange="OnThumbSizeChange" />
+    </div>
+
+    <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
+</div>
+
+<style>
+    .toolbar {
+        height: 50px;
+        border-bottom: 1px solid #444;
+        display: flex;
+        align-items: center;
+        padding: 0 15px;
+        background: #2a2a2a;
+        gap: 15px;
+    }
+
+    .spacer {
+        flex: 1;
+    }
+
+    .control-group {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.9em;
+        color: #bbb;
+    }
+
+        .control-group select {
+            background: #444;
+            border: 1px solid #555;
+            color: white;
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+    .btn {
+        background: #444;
+        border: none;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+    .btn-primary {
+        background: #42a5f5;
+        color: white;
+        font-weight: 500;
+    }
+
+        .btn-primary:hover {
+            background: #1e88e5;
+        }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Re-render if settings change externally
+        Settings.SettingsChanged += StateHasChanged;
+    }
+
+    private void ImportFiles()
+    {
+        var paths = FileDialog.OpenFiles();
+        if (paths != null && paths.Length > 0)
+        {
+            Library.ImportBatch(paths);
+        }
+    }
+
+    private void OpenDataTools()
+    {
+        ModalService.Show("Data Management", @<DataManagementModal />);
+    }
+
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortBy = result);
+        }
+    }
+
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortDirection = result);
+        }
+    }
+
+    private void OnThumbSizeChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            Settings.Update(s => s.ThumbnailSize = val);
+        }
+    }
+
+    public void Dispose()
+    {
+        Settings.SettingsChanged -= StateHasChanged;
+    }
+}

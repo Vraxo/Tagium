@@ -33,5 +33,6 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<FileDialogService>();
         _ = services.AddSingleton<SystemLauncherService>();
         _ = services.AddSingleton<ToastService>();
+        _ = services.AddSingleton<FileImportService>();
     }
 }
