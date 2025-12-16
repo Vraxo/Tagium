@@ -1,4 +1,4 @@
-@namespace Tagium.Photino.Blazor.Components.Modals
+﻿@namespace Tagium.Photino.Blazor.Components.Modals
 @using Tagium.Core.Services
 @using Tagium.Core.Models
 @inject LibraryService Library
@@ -15,9 +15,40 @@
         @foreach (var tag in Tags)
         {
             <div class="tag-row">
-                <span class="color-circle" style="background-color: @tag.ColorHex"></span>
-                <span class="name">@tag.Name</span>
+                <!-- Color Picker Dropdown Trigger -->
+                <div class="color-picker-wrapper">
+                    <button class="color-circle"
+                            style="background-color: @tag.ColorHex"
+                            @onclick="() => ToggleColorPicker(tag.Id)"></button>
+
+                    @if (ActiveColorPickerId == tag.Id)
+                    {
+                        <div class="color-popup" @onclick:stopPropagation="true">
+                            <div class="color-grid">
+                                @foreach (var color in Palette)
+                                {
+                                    <div class="swatch"
+                                         style="background-color: @color"
+                                         @onclick="() => UpdateTagColor(tag, color)"></div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Emoji Input -->
+                <input type="text" class="emoji-input"
+                       value="@tag.Emoji"
+                       @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
+                       maxlength="2" placeholder="😀" />
+
+                <!-- Name Input -->
+                <input type="text" class="name-input"
+                       value="@tag.Name"
+                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
+
                 <span class="count">(@tag.FileCount)</span>
+
                 <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
             </div>
         }
@@ -56,35 +87,92 @@
     .tag-list {
         max-height: 400px;
         overflow-y: auto;
+        padding-bottom: 50px;
     }
-
+    /* Padding for popup space */
     .tag-row {
         display: flex;
         align-items: center;
-        padding: 8px;
+        padding: 5px 8px;
         border-bottom: 1px solid #444;
+        gap: 8px;
     }
 
         .tag-row:hover {
             background: #3a3a3a;
         }
 
-    .color-circle {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        margin-right: 10px;
+    .color-picker-wrapper {
+        position: relative;
     }
 
-    .name {
-        flex: 1;
-        font-weight: 500;
+    .color-circle {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 1px solid #555;
+        cursor: pointer;
+        display: block;
     }
+
+    .color-popup {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        background: #252525;
+        border: 1px solid #555;
+        padding: 5px;
+        z-index: 100;
+        border-radius: 4px;
+        width: 140px;
+    }
+
+    .color-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+    }
+
+    .swatch {
+        width: 15px;
+        height: 15px;
+        border-radius: 2px;
+        cursor: pointer;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+
+        .swatch:hover {
+            border-color: white;
+            transform: scale(1.1);
+        }
+
+    .emoji-input {
+        width: 30px;
+        text-align: center;
+        background: #444;
+        border: 1px solid #555;
+        color: white;
+        border-radius: 4px;
+        padding: 4px;
+    }
+
+    .name-input {
+        flex: 1;
+        background: transparent;
+        border: 1px solid transparent;
+        color: white;
+        padding: 4px;
+        border-radius: 4px;
+    }
+
+        .name-input:focus {
+            background: #444;
+            border-color: #555;
+        }
 
     .count {
         color: #888;
         font-size: 0.9em;
-        margin-right: 10px;
     }
 
     .btn-icon.delete {
@@ -109,10 +197,21 @@
 @code {
     private List<Tag> Tags = [];
     private string NewTagName = "";
+    private long? ActiveColorPickerId = null;
+
+    private static readonly List<string> Palette = new()
+    {
+        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
+        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
+        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
+        "#546e7a", "#FFFFFF", "#000000"
+    };
 
     protected override void OnInitialized()
     {
         RefreshTags();
+        // Close color picker if clicking elsewhere (handled by ModalHost click propagation ideally,
+        // but for now we rely on explicit toggles or clicking another picker)
     }
 
     private void RefreshTags()
@@ -137,9 +236,37 @@
 
     private void DeleteTag(long id)
     {
-        // In a real app, we'd confirm this first.
-        // Direct deletion for now to match simplicity principle.
         Library.DeleteTag(id);
         RefreshTags();
+    }
+
+    private void UpdateTagName(Tag tag, string? newName)
+    {
+        if (!string.IsNullOrWhiteSpace(newName) && newName != tag.Name)
+        {
+            tag.Name = newName;
+            Library.UpdateTag(tag);
+        }
+    }
+
+    private void UpdateTagEmoji(Tag tag, string? newEmoji)
+    {
+        tag.Emoji = newEmoji;
+        Library.UpdateTag(tag);
+    }
+
+    private void ToggleColorPicker(long id)
+    {
+        if (ActiveColorPickerId == id)
+            ActiveColorPickerId = null;
+        else
+            ActiveColorPickerId = id;
+    }
+
+    private void UpdateTagColor(Tag tag, string color)
+    {
+        tag.ColorHex = color;
+        Library.UpdateTag(tag);
+        ActiveColorPickerId = null; // Close picker
     }
 }

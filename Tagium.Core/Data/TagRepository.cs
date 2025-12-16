@@ -53,6 +53,24 @@ public class TagRepository
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore duplicates */ }
     }
 
+    public void Update(Tag tag)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE Tags 
+            SET Name = @Name, ColorHex = @Color, Emoji = @Emoji 
+            WHERE Id = @Id";
+
+        _ = cmd.Parameters.AddWithValue("@Id", tag.Id);
+        _ = cmd.Parameters.AddWithValue("@Name", tag.Name);
+        _ = cmd.Parameters.AddWithValue("@Color", tag.ColorHex);
+        _ = cmd.Parameters.AddWithValue("@Emoji", (object?)tag.Emoji ?? DBNull.Value);
+
+        try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore name collision */ }
+    }
+
     public void Delete(long id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
@@ -62,6 +80,4 @@ public class TagRepository
         _ = cmd.Parameters.AddWithValue("@Id", id);
         _ = cmd.ExecuteNonQuery();
     }
-
-    // Future: Update methods
 }

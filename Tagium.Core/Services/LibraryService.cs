@@ -1,4 +1,5 @@
 ﻿using Tagium.Core.Data;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
@@ -31,9 +32,6 @@ public class LibraryService
         _settingsManager = settingsManager;
     }
 
-    /// <summary>
-    /// Manually triggers the LibraryChanged event to refresh the UI.
-    /// </summary>
     public void Refresh()
     {
         LibraryChanged?.Invoke();
@@ -55,11 +53,23 @@ public class LibraryService
         return string.IsNullOrWhiteSpace(searchText) ? _fileRepo.GetAll(sort, dir) : _searchRepo.Search(searchText, sort, dir);
     }
 
-    public void AddFile(string path)
+    public bool AddFile(string path)
     {
-        string hash = Guid.NewGuid().ToString();
-        _fileRepo.Add(path, hash);
-        LibraryChanged?.Invoke();
+        string? hash = FileHasher.ComputeSha256(path);
+        if (hash == null)
+        {
+            return false; // File read error
+        }
+
+        AddFileResult result = _fileRepo.Add(path, hash);
+
+        if (result == AddFileResult.Success)
+        {
+            LibraryChanged?.Invoke();
+            return true;
+        }
+
+        return false; // Duplicate or Error
     }
 
     public void RemoveFile(long fileId)
@@ -97,6 +107,12 @@ public class LibraryService
     public void AddTag(string name)
     {
         _tagRepo.Add(name, "#757575", null);
+        LibraryChanged?.Invoke();
+    }
+
+    public void UpdateTag(Tag tag)
+    {
+        _tagRepo.Update(tag);
         LibraryChanged?.Invoke();
     }
 
