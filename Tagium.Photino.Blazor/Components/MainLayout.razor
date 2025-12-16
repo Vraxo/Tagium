@@ -21,11 +21,10 @@
             <div style="font-size: 3em; color: #42a5f5; margin-bottom: 20px;">
                 📂
             </div>
-            <h2>@(_isProcessing ? "Processing..." : "Drop files to import")</h2>
+            <h2>Drop files to import</h2>
         </div>
-        @if (_isDragging || _isProcessing)
+        @if (_isDragging)
         {
-            <!-- InputFile must stay alive while processing streams -->
             <InputFile OnChange="HandleFileDrop" multiple class="drag-input" />
         }
     </div>
@@ -63,6 +62,7 @@
             
             <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
         </div>
+        <!-- Removed padding here; moved to FileGrid for better hit-testing -->
         <div class="content-area">
             <FileGrid />
         </div>
@@ -100,7 +100,6 @@
         position: relative;
     }
 
-    /* Drag Overlay Styles */
     .drag-overlay {
         position: absolute;
         top: 0;
@@ -190,7 +189,7 @@
     .content-area {
         flex: 1;
         overflow: hidden;
-        padding: 10px;
+        /* Padding removed intentionally to allow FileGrid to handle edge clicks */
     }
     
     .btn {
@@ -204,7 +203,6 @@
 
 @code {
     private bool _isDragging = false;
-    private bool _isProcessing = false;
     private int _dragCounter = 0;
 
     protected override void OnInitialized()
@@ -213,12 +211,12 @@
         Library.ImportCompleted += ShowImportStatus;
     }
 
-    private async Task ImportFiles()
+    private void ImportFiles()
     {
         var paths = FileDialog.OpenFiles();
         if (paths != null && paths.Length > 0)
         {
-            await Library.ImportBatchAsync(paths);
+            Library.ImportBatch(paths);
         }
     }
 
@@ -240,11 +238,11 @@
 
     private async Task HandleFileDrop(InputFileChangeEventArgs e)
     {
-        // Don't hide overlay immediately, switch to processing mode
-        _isProcessing = true;
-        StateHasChanged(); // Force render so "Processing..." appears
+        _dragCounter = 0;
+        _isDragging = false;
 
-        var files = e.GetMultipleFiles(500); // Increased limit
+        var files = e.GetMultipleFiles(100);
+        int count = 0;
         
         string importDir = Path.Combine(Tagium.Core.Helpers.AppDataHelper.GetBaseDirectory(), "Imports");
         if (!Directory.Exists(importDir)) Directory.CreateDirectory(importDir);
@@ -266,6 +264,7 @@
                 await stream.CopyToAsync(fs);
                 
                 importedPaths.Add(localPath);
+                count++;
             }
             catch (Exception ex)
             {
@@ -273,15 +272,9 @@
             }
         }
 
-        // Processing done, reset state
-        _dragCounter = 0;
-        _isDragging = false;
-        _isProcessing = false;
-        StateHasChanged();
-
         if (importedPaths.Count > 0)
         {
-            await Library.ImportBatchAsync(importedPaths.ToArray());
+            Library.ImportBatch(importedPaths.ToArray());
         }
     }
     
@@ -292,7 +285,6 @@
 
         List<string> parts = [];
         
-        // Explicitly list all non-zero outcomes
         if (added > 0) parts.Add($"{added} added");
         if (duplicates > 0) parts.Add($"{duplicates} duplicate{(duplicates == 1 ? "" : "s")}");
         if (errors > 0) parts.Add($"{errors} failed");
@@ -300,7 +292,6 @@
         string details = string.Join(", ", parts);
         string message = $"Import: {details}";
 
-        // Color logic
         ToastType type;
         if (errors > 0) type = ToastType.Error;
         else if (added > 0) type = ToastType.Success;

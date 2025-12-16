@@ -42,7 +42,8 @@
         align-content: flex-start;
         height: 100%;
         overflow-y: auto;
-        padding-right: 5px;
+        /* Padding moved here to ensure click-events on edges are captured by the grid container */
+        padding: 10px;
         position: relative;
     }
 
@@ -141,8 +142,6 @@
         InvokeAsync(StateHasChanged);
     }
 
-    // --- Interaction Handlers ---
-
     private void OnCardClick(MouseEventArgs e, long id)
     {
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
@@ -156,8 +155,6 @@
         }
     }
 
-    // --- JS Invokable Methods ---
-
     [JSInvokable]
     public void SelectFile(long id)
     {
@@ -167,7 +164,6 @@
     [JSInvokable]
     public void SelectFiles(long[] ids)
     {
-        // Use the new bulk update method to trigger only ONE state change
         AppState.SetSelection(ids);
     }
 
