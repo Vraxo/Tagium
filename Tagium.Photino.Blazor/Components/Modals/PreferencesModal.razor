@@ -1,0 +1,111 @@
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject SettingsManager Settings
+@inject ModalService ModalService
+
+<div class="modal-header">Preferences</div>
+<div class="modal-body">
+
+    <h4>Tag Display Style</h4>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="tagDisplay"
+                   checked="@(Settings.Current.TagDisplay == TagDisplayMode.ColorCircle)"
+                   @onchange="@(() => UpdateTagDisplay(TagDisplayMode.ColorCircle))" />
+            Color Circle
+        </label>
+        <label>
+            <input type="radio"
+                   name="tagDisplay"
+                   checked="@(Settings.Current.TagDisplay == TagDisplayMode.Emoji)"
+                   @onchange="@(() => UpdateTagDisplay(TagDisplayMode.Emoji))" />
+            Emoji
+        </label>
+    </div>
+
+    <hr />
+
+    <h4>Emoji Set</h4>
+    <p class="hint">Requires restart to fully apply font changes.</p>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.SystemDefault)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.SystemDefault))" />
+            System Default (Windows)
+        </label>
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.Apple)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.Apple))" />
+            Apple Color Emoji
+        </label>
+    </div>
+
+</div>
+<div class="modal-footer">
+    <button class="btn" @onclick="Close">Close</button>
+</div>
+
+<style>
+    .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+    .hint {
+        font-size: 0.85em;
+        color: #888;
+        margin: -5px 0 10px 0;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 20px 0;
+    }
+
+    .btn {
+        background: #444;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+</style>
+
+@code {
+    private void UpdateTagDisplay(TagDisplayMode mode)
+    {
+        Settings.Update(s => s.TagDisplay = mode);
+    }
+
+    private void UpdateEmojiSet(EmojiSet set)
+    {
+        Settings.Update(s => s.EmojiPreference = set);
+    }
+
+    private void Close()
+    {
+        ModalService.Close();
+    }
+}

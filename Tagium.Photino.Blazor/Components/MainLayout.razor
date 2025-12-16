@@ -2,15 +2,21 @@
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
+@using Tagium.Core.Data
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
+@using System.IO
+@inject FileDialogService FileDialog
 @inject LibraryService Library
 @inject SettingsManager Settings
+@inject ModalService ModalService
 @inject ToastService Toast
 @inject FileImportService FileImportService
 
-<div class="app-layout" @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
+<!-- Apply emoji preference class dynamically -->
+<div class="app-layout @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
+     @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
     
-    <!-- Drag Overlay -->
     <div class="drag-overlay @(_isDragging ? "active" : "")">
         <div class="drag-message">
             <div style="font-size: 3em; color: #42a5f5; margin-bottom: 20px;">
@@ -143,7 +149,6 @@
         _isProcessing = true;
         StateHasChanged(); 
 
-        // Limit capture to 500 files per drop to prevent memory exhaustion
         var files = e.GetMultipleFiles(500);
         string[] importedPaths = await FileImportService.SaveDroppedFilesAsync(files);
 

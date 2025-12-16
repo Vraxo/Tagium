@@ -10,6 +10,7 @@
 
 <div class="toolbar">
     <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
+    <button class="btn" @onclick="OpenTags">Tags</button>
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
     <div class="spacer"></div>
@@ -34,6 +35,7 @@
                @onchange="OnThumbSizeChange" />
     </div>
 
+    <button class="btn" @onclick="OpenPreferences" title="Settings">⚙</button>
     <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
 </div>
 
@@ -45,7 +47,7 @@
         align-items: center;
         padding: 0 15px;
         background: #2a2a2a;
-        gap: 15px;
+        gap: 10px; /* Reduced slightly to fit new button */
     }
 
     .spacer {
@@ -95,7 +97,6 @@
 @code {
     protected override void OnInitialized()
     {
-        // Re-render if settings change externally
         Settings.SettingsChanged += StateHasChanged;
     }
 
@@ -108,9 +109,19 @@
         }
     }
 
+    private void OpenTags()
+    {
+        ModalService.Show("Manage Tags", @<TagManagerModal />);
+    }
+
     private void OpenDataTools()
     {
         ModalService.Show("Data Management", @<DataManagementModal />);
+    }
+
+    private void OpenPreferences()
+    {
+        ModalService.Show("Preferences", @<PreferencesModal />);
     }
 
     private void OnSortByChange(ChangeEventArgs e)

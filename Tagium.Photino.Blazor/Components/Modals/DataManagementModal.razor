@@ -9,6 +9,7 @@
 @inject DatabaseManager DbManager
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
+@inject ToastService Toast
 
 <div class="data-tools">
     <div class="section">
@@ -23,7 +24,7 @@
                 Found: @ScanResult.NewlyFound
             </div>
         }
-        <button class="btn btn-danger" @onclick="PurgeMissing">Purge Missing Files</button>
+        <button class="btn btn-danger" @onclick="PurgeMissing" disabled="@(Library.GetFiles(null, true).Count == 0)">Purge Missing Files</button>
     </div>
 
     <hr />
@@ -40,9 +41,12 @@
     <hr />
 
     <div class="section">
-        <h4>Merge Library</h4>
-        <p class="desc">Import data from another Tagium/Tagra DB.</p>
-        <button class="btn" @onclick="MergeDb">Select Database...</button>
+        <h4>Merge & Restore</h4>
+        <p class="desc">Import data from another Tagium DB, or restore a backup.</p>
+        <div class="btn-row">
+            <button class="btn" @onclick="MergeDb">Merge...</button>
+            <button class="btn btn-danger" @onclick="RestoreDb">Restore...</button>
+        </div>
         @if (MergeResult != null)
         {
             <div class="result-box">
@@ -87,6 +91,11 @@
             background: #555;
         }
 
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
     .btn-danger {
         background: #c62828;
         border-color: #b71c1c;
@@ -124,8 +133,7 @@
 
     private async Task ScanIntegrity()
     {
-        ScanResult = null; // reset
-        StateHasChanged(); // show loading if we had a spinner
+        ScanResult = null;
         ScanResult = await IntegrityService.ScanAsync();
         Library.Refresh();
     }
@@ -135,23 +143,21 @@
         IntegrityService.PurgeMissing();
         Library.Refresh();
         ScanResult = null;
+        Toast.Show("Missing files purged.", ToastType.Success);
     }
 
     private async Task ExportJson()
     {
-        // Simple file save dialog simulation: We just save to Downloads or fixed name for now
-        // since we don't have a "Save File Dialog" wrapper yet (NFD only does Open by default in some wrappers).
-        // Actually NFD supports Save. Let's assume a fixed export for simplicity or add Save to FileDialogService later.
-        // For MVP: Save to Desktop.
         string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
         await ExportService.ExportJsonAsync(path);
-        // Alert?
+        Toast.Show($"Exported to {path}", ToastType.Success);
     }
 
     private async Task ExportCsv()
     {
         string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
         await ExportService.ExportCsvAsync(path);
+        Toast.Show($"Exported to {path}", ToastType.Success);
     }
 
     private void BackupDb()
@@ -159,6 +165,7 @@
         string source = DbManager.ConnectionString.Replace("Data Source=", "");
         string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
         File.Copy(source, dest, true);
+        Toast.Show($"Backup saved to {dest}", ToastType.Success);
     }
 
     private void MergeDb()
@@ -168,6 +175,29 @@
         {
             MergeResult = MergeService.Merge(files[0]);
             Library.Refresh();
+            Toast.Show("Merge complete.", ToastType.Success);
+        }
+    }
+
+    private void RestoreDb()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files != null && files.Length > 0)
+        {
+            string source = files[0];
+            string dest = DbManager.ConnectionString.Replace("Data Source=", "");
+
+            try
+            {
+                // This is a risky operation while the app is running, but standard for this simple app type.
+                // SQLite usually allows it if no write transaction is active.
+                File.Copy(source, dest, true);
+                Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
+            }
+            catch (Exception ex)
+            {
+                Toast.Show($"Restore failed: {ex.Message}", ToastType.Error);
+            }
         }
     }
 }

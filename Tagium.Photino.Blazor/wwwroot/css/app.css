@@ -1,0 +1,15 @@
+@font-face {
+    font-family: 'Apple Emoji';
+    src: url('../fonts/AppleColorEmoji.ttf');
+}
+
+/* Base body style uses default font */
+body {
+    font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
+}
+
+/* When this class is applied to the root layout, override font family */
+.use-apple-emojis,
+.use-apple-emojis * {
+    font-family: 'Apple Emoji', 'Segoe UI', sans-serif !important;
+}
