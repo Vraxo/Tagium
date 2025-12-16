@@ -7,12 +7,15 @@
 @inject AppState AppState
 @inject SettingsManager Settings
 @inject SystemLauncherService Launcher
+@inject IJSRuntime JS
 
-<div class="grid-container" @onclick="ClearSelection">
+<!-- Removed @onclick="ClearSelection" to prevent conflict with marquee JS -->
+<div id="file-grid-container" class="grid-container">
     @foreach (var file in Files)
     {
         bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
         <div class="file-card @(isSelected ? "selected" : "")"
+             data-id="@file.Id"
              style="width: @(Settings.Current.ThumbnailSize)px; height: @(Settings.Current.ThumbnailSize + 30)px"
              @onclick="e => OnCardClick(e, file.Id)"
              @ondblclick="e => OnCardDoubleClick(e, file)"
@@ -40,6 +43,7 @@
         height: 100%;
         overflow-y: auto;
         padding-right: 5px;
+        position: relative;
     }
 
     .file-card {
@@ -80,7 +84,6 @@
             z-index: 2; /* Sit above placeholder */
         }
 
-    /* Fallback Icon behind the image */
     .placeholder-icon {
         position: absolute;
         font-size: 2em;
@@ -89,7 +92,7 @@
     }
 
     .thumbnail.broken .placeholder-icon {
-        color: #666; /* Make it visible if image breaks */
+        color: #666;
     }
 
     .filename {
@@ -106,13 +109,23 @@
 
 @code {
     private List<FileEntry> Files = [];
+    private DotNetObjectReference<FileGrid>? _objRef;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         LoadFiles();
         AppState.OnChange += RefreshView;
         Library.LibraryChanged += LoadFiles;
         Settings.SettingsChanged += RefreshView;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _objRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
+        }
     }
 
     private void RefreshView()
@@ -128,6 +141,8 @@
         InvokeAsync(StateHasChanged);
     }
 
+    // --- Interaction Handlers ---
+
     private void OnCardClick(MouseEventArgs e, long id)
     {
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
@@ -141,9 +156,55 @@
         }
     }
 
-    private void ClearSelection()
+    // --- JS Invokable Methods ---
+
+    [JSInvokable]
+    public void SelectFile(long id)
+    {
+        AppState.SelectFile(id, false, false);
+    }
+
+    [JSInvokable]
+    public void SelectFiles(long[] ids)
+    {
+        // Use the new bulk update method to trigger only ONE state change
+        AppState.SetSelection(ids);
+    }
+
+    [JSInvokable]
+    public void SelectAll()
+    {
+        AppState.SetSelection(Files.Select(f => f.Id));
+    }
+
+    [JSInvokable]
+    public void ClearSelection()
     {
         AppState.ClearSelection();
+    }
+
+    [JSInvokable]
+    public void OnEnterKey()
+    {
+        if (AppState.SelectedFileIds.Count == 1)
+        {
+            long id = AppState.SelectedFileIds.First();
+            var file = Files.FirstOrDefault(f => f.Id == id);
+            if (file != null && !file.IsMissing)
+            {
+                Launcher.OpenFile(file.Path);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnDeleteKey()
+    {
+        if (AppState.SelectedFileIds.Any())
+        {
+            Library.RemoveFiles(AppState.SelectedFileIds);
+            AppState.ClearSelection();
+        }
     }
 
     public void Dispose()
@@ -151,5 +212,6 @@
         AppState.OnChange -= RefreshView;
         Library.LibraryChanged -= LoadFiles;
         Settings.SettingsChanged -= RefreshView;
+        _objRef?.Dispose();
     }
 }

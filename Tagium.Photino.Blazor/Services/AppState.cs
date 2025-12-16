@@ -46,10 +46,27 @@ public class AppState
         NotifySelectionChanged();
     }
 
-    public void ClearSelection()
+    /// <summary>
+    /// Replaces the current selection with a specific set of IDs.
+    /// Used for marquee selection to avoid N re-renders.
+    /// </summary>
+    public void SetSelection(IEnumerable<long> ids)
     {
         SelectedFileIds.Clear();
+        foreach (long id in ids)
+        {
+            _ = SelectedFileIds.Add(id);
+        }
         NotifySelectionChanged();
+    }
+
+    public void ClearSelection()
+    {
+        if (SelectedFileIds.Count > 0)
+        {
+            SelectedFileIds.Clear();
+            NotifySelectionChanged();
+        }
     }
 
     private void NotifyStateChanged()
