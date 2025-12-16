@@ -1,0 +1,173 @@
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Data
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject LibraryIntegrityService IntegrityService
+@inject DataExportService ExportService
+@inject DatabaseMergeService MergeService
+@inject DatabaseManager DbManager
+@inject FileDialogService FileDialog
+@inject ModalService ModalService
+
+<div class="data-tools">
+    <div class="section">
+        <h4>Integrity</h4>
+        <p class="desc">Scan for files missing from disk.</p>
+        <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
+        @if (ScanResult != null)
+        {
+            <div class="result-box">
+                Scanned: @ScanResult.FilesScanned <br />
+                Missing: @ScanResult.NewlyMissing <br />
+                Found: @ScanResult.NewlyFound
+            </div>
+        }
+        <button class="btn btn-danger" @onclick="PurgeMissing">Purge Missing Files</button>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Export</h4>
+        <div class="btn-row">
+            <button class="btn" @onclick="ExportJson">Export JSON</button>
+            <button class="btn" @onclick="ExportCsv">Export CSV</button>
+            <button class="btn" @onclick="BackupDb">Backup DB</button>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Merge Library</h4>
+        <p class="desc">Import data from another Tagium/Tagra DB.</p>
+        <button class="btn" @onclick="MergeDb">Select Database...</button>
+        @if (MergeResult != null)
+        {
+            <div class="result-box">
+                New Files: @MergeResult.NewFiles <br />
+                New Tags: @MergeResult.NewTags <br />
+                Associations: @MergeResult.NewAssociations
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .data-tools {
+        padding: 5px;
+    }
+
+    .section {
+        margin-bottom: 15px;
+    }
+
+    h4 {
+        margin: 0 0 5px 0;
+        color: #eee;
+    }
+
+    .desc {
+        font-size: 0.9em;
+        color: #aaa;
+        margin: 0 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        border: 1px solid #555;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+    .btn-danger {
+        background: #c62828;
+        border-color: #b71c1c;
+    }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+    .btn-row {
+        display: flex;
+        gap: 10px;
+    }
+
+    .result-box {
+        margin-top: 10px;
+        padding: 8px;
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 4px;
+        font-size: 0.9em;
+        color: #ccc;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 15px 0;
+    }
+</style>
+
+@code {
+    private IntegrityScanResult? ScanResult;
+    private MergeResult? MergeResult;
+
+    private async Task ScanIntegrity()
+    {
+        ScanResult = null; // reset
+        StateHasChanged(); // show loading if we had a spinner
+        ScanResult = await IntegrityService.ScanAsync();
+        Library.Refresh();
+    }
+
+    private void PurgeMissing()
+    {
+        IntegrityService.PurgeMissing();
+        Library.Refresh();
+        ScanResult = null;
+    }
+
+    private async Task ExportJson()
+    {
+        // Simple file save dialog simulation: We just save to Downloads or fixed name for now
+        // since we don't have a "Save File Dialog" wrapper yet (NFD only does Open by default in some wrappers).
+        // Actually NFD supports Save. Let's assume a fixed export for simplicity or add Save to FileDialogService later.
+        // For MVP: Save to Desktop.
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
+        await ExportService.ExportJsonAsync(path);
+        // Alert?
+    }
+
+    private async Task ExportCsv()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
+        await ExportService.ExportCsvAsync(path);
+    }
+
+    private void BackupDb()
+    {
+        string source = DbManager.ConnectionString.Replace("Data Source=", "");
+        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
+        File.Copy(source, dest, true);
+    }
+
+    private void MergeDb()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files != null && files.Length > 0)
+        {
+            MergeResult = MergeService.Merge(files[0]);
+            Library.Refresh();
+        }
+    }
+}

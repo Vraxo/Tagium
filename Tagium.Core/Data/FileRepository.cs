@@ -67,14 +67,12 @@ public class FileRepository
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
-        // Check if path exists (edge case where hash wasn't caught but path is same)
         using (SqliteCommand checkCmd = conn.CreateCommand())
         {
             checkCmd.CommandText = "SELECT COUNT(1) FROM Files WHERE Path = @Path";
             _ = checkCmd.Parameters.AddWithValue("@Path", path);
             if (Convert.ToInt64(checkCmd.ExecuteScalar()) > 0)
             {
-                // Update hash if it changed? For now, treat as duplicate/exists.
                 return AddFileResult.Duplicate;
             }
         }
@@ -106,6 +104,38 @@ public class FileRepository
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Files WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    public void SetMissingStatus(IEnumerable<long> fileIds, bool isMissing)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteTransaction trans = conn.BeginTransaction();
+
+        foreach (long id in fileIds)
+        {
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.Transaction = trans;
+            cmd.CommandText = "UPDATE Files SET IsMissing = @IsMissing WHERE Id = @Id";
+            _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
+            _ = cmd.Parameters.AddWithValue("@Id", id);
+            _ = cmd.ExecuteNonQuery();
+        }
+        trans.Commit();
+    }
+
+    public void RemoveMissingFiles()
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Files WHERE IsMissing = 1";
         _ = cmd.ExecuteNonQuery();
     }
 

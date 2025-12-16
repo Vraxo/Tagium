@@ -3,9 +3,11 @@
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
 @inject FileDialogService FileDialog
 @inject LibraryService Library
 @inject SettingsManager Settings
+@inject ModalService ModalService
 
 <div class="app-layout">
     <aside class="left-panel">
@@ -15,6 +17,7 @@
     <main class="center-panel">
         <div class="toolbar">
             <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
+            <button class="btn" @onclick="OpenDataTools">Data Tools</button>
             
             <div class="spacer"></div>
             
@@ -158,12 +161,16 @@
         }
     }
     
+    private void OpenDataTools()
+    {
+        ModalService.Show("Data Management", @<DataManagementModal />);
+    }
+    
     private void OnSortByChange(ChangeEventArgs e)
     {
         if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
         {
             Settings.Update(s => s.FileSortBy = result);
-            // No need to manually invoke refresh; Grid subscribes to SettingsChanged
         }
     }
     
