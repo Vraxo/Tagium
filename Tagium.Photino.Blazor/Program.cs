@@ -14,7 +14,8 @@ public class Program
         ServiceRegistrar.ConfigureServices(appBuilder.Services);
 
         // Register Root Component
-        // Selector must be "#app" to match <div id="app"> in index.html
+        // "App" is now explicitly in the Tagium.Photino.Blazor namespace (via @namespace in razor file)
+        // This guarantees it is found regardless of file folder structure.
         appBuilder.RootComponents.Add<App>("#app");
 
         var app = appBuilder.Build();
