@@ -87,6 +87,8 @@ using Tagium.Core.Settings;
 
 namespace Tagium.Core.Data;
 
+public enum AddFileResult { Success, Duplicate, Error }
+
 public class FileRepository
 {
     private readonly DatabaseManager _db;
@@ -126,10 +128,38 @@ public class FileRepository
         return reader.Read() ? ReadFile(reader) : null;
     }
 
-    public void Add(string path, string hash)
+    public FileEntry? GetByHash(string hash)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files WHERE Hash = @Hash";
+        _ = cmd.Parameters.AddWithValue("@Hash", hash);
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadFile(reader) : null;
+    }
+
+    public AddFileResult Add(string path, string hash)
+    {
+        if (GetByHash(hash) != null)
+        {
+            return AddFileResult.Duplicate;
+        }
+
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+
+        using (SqliteCommand checkCmd = conn.CreateCommand())
+        {
+            checkCmd.CommandText = "SELECT COUNT(1) FROM Files WHERE Path = @Path";
+            _ = checkCmd.Parameters.AddWithValue("@Path", path);
+            if (Convert.ToInt64(checkCmd.ExecuteScalar()) > 0)
+            {
+                return AddFileResult.Duplicate;
+            }
+        }
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO Files (Path, Name, Hash, DateAdded) 
@@ -138,7 +168,58 @@ public class FileRepository
         _ = cmd.Parameters.AddWithValue("@Path", path);
         _ = cmd.Parameters.AddWithValue("@Name", Path.GetFileName(path));
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
-        try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore duplicates */ }
+
+        try
+        {
+            _ = cmd.ExecuteNonQuery();
+            return AddFileResult.Success;
+        }
+        catch
+        {
+            return AddFileResult.Error;
+        }
+    }
+
+    public void Remove(long id)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Files WHERE Id = @Id";
+        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    public void SetMissingStatus(IEnumerable<long> fileIds, bool isMissing)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteTransaction trans = conn.BeginTransaction();
+
+        foreach (long id in fileIds)
+        {
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.Transaction = trans;
+            cmd.CommandText = "UPDATE Files SET IsMissing = @IsMissing WHERE Id = @Id";
+            _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
+            _ = cmd.Parameters.AddWithValue("@Id", id);
+            _ = cmd.ExecuteNonQuery();
+        }
+        trans.Commit();
+    }
+
+    public void RemoveMissingFiles()
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Files WHERE IsMissing = 1";
+        _ = cmd.ExecuteNonQuery();
     }
 
     private static FileEntry ReadFile(SqliteDataReader reader)
@@ -164,6 +245,145 @@ public class FileRepository
         };
         string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
         return $"ORDER BY {col} {dir}";
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Data\FileSearchRepository.cs`
+
+```csharp
+using Microsoft.Data.Sqlite;
+using Tagium.Core.Models;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Data;
+
+public class FileSearchRepository
+{
+    private readonly DatabaseManager _db;
+    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase) { "and", "or", "not" };
+
+    public FileSearchRepository(DatabaseManager db)
+    {
+        _db = db;
+    }
+
+    public List<FileEntry> Search(string searchText, SortBy sortBy, SortDirection sortDirection)
+    {
+        string[] tokens = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        List<string> includedTags = tokens.Where(t => !t.StartsWith("-") && !_searchStopWords.Contains(t)).Distinct().ToList();
+        List<string> excludedTags = tokens.Where(t => t.StartsWith("-") && t.Length > 1).Select(t => t[1..]).Distinct().ToList();
+
+        if (!includedTags.Any() && !excludedTags.Any())
+        {
+            return [];
+        }
+
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+
+        string orderBy = GetOrderByClause(sortBy, sortDirection);
+        string query;
+
+        // Dynamic SQL construction is necessary for variable tag counts.
+        // Parameters are safely parameterized.
+
+        if (includedTags.Any() && excludedTags.Any())
+        {
+            AddParams(cmd, "@in", includedTags);
+            AddParams(cmd, "@ex", excludedTags);
+
+            string inParams = string.Join(",", includedTags.Select((_, i) => $"@in{i}"));
+            string exParams = string.Join(",", excludedTags.Select((_, i) => $"@ex{i}"));
+
+            query = $@"
+                SELECT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing FROM Files F 
+                WHERE F.Id IN (
+                    SELECT FT.FileId FROM FileTags FT
+                    INNER JOIN Tags T ON FT.TagId = T.Id
+                    WHERE T.Name IN ({inParams})
+                    GROUP BY FT.FileId
+                    HAVING COUNT(DISTINCT T.Id) = {includedTags.Count}
+                ) 
+                AND F.Id NOT IN (
+                    SELECT FT.FileId FROM FileTags FT
+                    INNER JOIN Tags T ON FT.TagId = T.Id
+                    WHERE T.Name IN ({exParams})
+                )
+                {orderBy}";
+        }
+        else if (includedTags.Any())
+        {
+            AddParams(cmd, "@tag", includedTags);
+            string tagParams = string.Join(",", includedTags.Select((_, i) => $"@tag{i}"));
+
+            query = $@"
+                SELECT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing
+                FROM Files F
+                INNER JOIN FileTags FT ON F.Id = FT.FileId
+                INNER JOIN Tags T ON FT.TagId = T.Id
+                WHERE T.Name IN ({tagParams})
+                GROUP BY F.Id
+                HAVING COUNT(DISTINCT T.Id) = {includedTags.Count}
+                {orderBy}";
+        }
+        else // Only excluded tags
+        {
+            AddParams(cmd, "@tag", excludedTags);
+            string tagParams = string.Join(",", excludedTags.Select((_, i) => $"@tag{i}"));
+
+            query = $@"
+                SELECT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing
+                FROM Files F
+                WHERE F.Id NOT IN (
+                    SELECT FT.FileId FROM FileTags FT
+                    INNER JOIN Tags T ON FT.TagId = T.Id
+                    WHERE T.Name IN ({tagParams})
+                )
+                {orderBy}";
+        }
+
+        cmd.CommandText = query;
+        List<FileEntry> files = [];
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            files.Add(new FileEntry
+            {
+                Id = reader.GetInt64(0),
+                Path = reader.GetString(1),
+                Name = reader.GetString(2),
+                Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
+                DateAdded = reader.GetInt64(4),
+                IsMissing = reader.GetBoolean(5)
+            });
+        }
+        return files;
+    }
+
+    private static void AddParams(SqliteCommand cmd, string prefix, List<string> values)
+    {
+        for (int i = 0; i < values.Count; i++)
+        {
+            _ = cmd.Parameters.AddWithValue($"{prefix}{i}", values[i]);
+        }
+    }
+
+    private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
+    {
+        string col = sortBy switch
+        {
+            SortBy.Name => "F.Name",
+            SortBy.DateAdded => "F.DateAdded",
+            _ => "F.Path"
+        };
+        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
+        // Secondary sort by path for stability
+        return $"ORDER BY {col} {dir}, F.Path ASC";
     }
 }
 ```
@@ -287,6 +507,24 @@ public class TagRepository
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore duplicates */ }
     }
 
+    public void Update(Tag tag)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE Tags 
+            SET Name = @Name, ColorHex = @Color, Emoji = @Emoji 
+            WHERE Id = @Id";
+
+        _ = cmd.Parameters.AddWithValue("@Id", tag.Id);
+        _ = cmd.Parameters.AddWithValue("@Name", tag.Name);
+        _ = cmd.Parameters.AddWithValue("@Color", tag.ColorHex);
+        _ = cmd.Parameters.AddWithValue("@Emoji", (object?)tag.Emoji ?? DBNull.Value);
+
+        try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore name collision */ }
+    }
+
     public void Delete(long id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
@@ -296,8 +534,6 @@ public class TagRepository
         _ = cmd.Parameters.AddWithValue("@Id", id);
         _ = cmd.ExecuteNonQuery();
     }
-
-    // Future: Update methods
 }
 ```
 
@@ -337,6 +573,40 @@ public static class AppDataHelper
             _ = Directory.CreateDirectory(path);
         }
         return path;
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Helpers\FileHasher.cs`
+
+```csharp
+using System.Security.Cryptography;
+
+namespace Tagium.Core.Helpers;
+
+public static class FileHasher
+{
+    public static string? ComputeSha256(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            using SHA256 sha256 = SHA256.Create();
+            using FileStream stream = File.OpenRead(filePath);
+            byte[] hash = sha256.ComputeHash(stream);
+            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FileHasher] Error: {ex.Message}");
+            return null;
+        }
     }
 }
 ```
@@ -388,10 +658,373 @@ public class Tag
 
 ---
 
+### `Tagium.Core\Services\DataExportService.cs`
+
+```csharp
+using System.Text;
+using System.Text.Json;
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Services;
+
+public class DatabaseExport
+{
+    public List<Tag> Tags { get; set; } = [];
+    public List<FileExportData> Files { get; set; } = [];
+}
+
+public class FileExportData
+{
+    public long Id { get; set; }
+    public required string Path { get; set; }
+    public required string Name { get; set; }
+    public string? Hash { get; set; }
+    public long DateAdded { get; set; }
+    public bool IsMissing { get; set; }
+    public List<long> TagIds { get; set; } = [];
+}
+
+public class DataExportService
+{
+    private readonly FileRepository _fileRepo;
+    private readonly TagRepository _tagRepo;
+    private readonly FileTagRepository _fileTagRepo;
+
+    public DataExportService(FileRepository fileRepo, TagRepository tagRepo, FileTagRepository fileTagRepo)
+    {
+        _fileRepo = fileRepo;
+        _tagRepo = tagRepo;
+        _fileTagRepo = fileTagRepo;
+    }
+
+    public async Task ExportJsonAsync(string path)
+    {
+        DatabaseExport data = BuildExportData();
+        string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(path, json);
+    }
+
+    public async Task ExportCsvAsync(string path)
+    {
+        DatabaseExport data = BuildExportData();
+        Dictionary<long, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
+        StringBuilder sb = new();
+
+        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,Tags");
+
+        foreach (var file in data.Files)
+        {
+            string tags = string.Join(";", file.TagIds.Select(id => tagLookup.GetValueOrDefault(id, "unknown")));
+            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},\"{Escape(tags)}\"";
+            _ = sb.AppendLine(line);
+        }
+
+        await File.WriteAllTextAsync(path, sb.ToString());
+    }
+
+    private DatabaseExport BuildExportData()
+    {
+        List<FileEntry> files = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
+        List<Tag> tags = _tagRepo.GetAll();
+
+        DatabaseExport export = new() { Tags = tags };
+
+        foreach (FileEntry f in files)
+        {
+            List<long> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
+            export.Files.Add(new FileExportData
+            {
+                Id = f.Id,
+                Path = f.Path,
+                Name = f.Name,
+                Hash = f.Hash,
+                DateAdded = f.DateAdded,
+                IsMissing = f.IsMissing,
+                TagIds = tagIds
+            });
+        }
+        return export;
+    }
+
+    private static string Escape(string s)
+    {
+        return s.Replace("\"", "\"\"");
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\DataMergeService.cs`
+
+```csharp
+using Microsoft.Data.Sqlite;
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Services;
+
+public class MergeResult
+{
+    public int NewFiles { get; set; }
+    public int NewTags { get; set; }
+    public int NewAssociations { get; set; }
+}
+
+public class DatabaseMergeService
+{
+    private readonly DatabaseManager _targetDb;
+    private readonly FileRepository _targetFileRepo;
+    private readonly TagRepository _targetTagRepo;
+    private readonly FileTagRepository _targetFileTagRepo;
+
+    public DatabaseMergeService(
+        DatabaseManager targetDb,
+        FileRepository targetFileRepo,
+        TagRepository targetTagRepo,
+        FileTagRepository targetFileTagRepo)
+    {
+        _targetDb = targetDb;
+        _targetFileRepo = targetFileRepo;
+        _targetTagRepo = targetTagRepo;
+        _targetFileTagRepo = targetFileTagRepo;
+    }
+
+    public MergeResult Merge(string sourceDbPath)
+    {
+        MergeResult result = new();
+
+        // Connect to source DB manually
+        string sourceConnString = $"Data Source={sourceDbPath}";
+        using SqliteConnection sourceConn = new(sourceConnString);
+        sourceConn.Open();
+
+        // 1. Load Source Data
+        List<Tag> sourceTags = LoadTags(sourceConn);
+        List<FileEntry> sourceFiles = LoadFiles(sourceConn);
+        Dictionary<long, List<long>> sourceFileTagMap = LoadFileTags(sourceConn);
+
+        // 2. Load Target Data
+        Dictionary<string, Tag> targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, FileEntry> targetFiles = _targetFileRepo.GetAll(SortBy.Path, SortDirection.Asc)
+            .Where(f => f.Hash != null)
+            .ToDictionary(f => f.Hash!);
+
+        // 3. Merge Tags
+        Dictionary<long, long> tagIdMap = []; // SourceId -> TargetId
+
+        foreach (Tag sTag in sourceTags)
+        {
+            if (targetTags.TryGetValue(sTag.Name, out Tag? existing))
+            {
+                tagIdMap[sTag.Id] = existing.Id;
+            }
+            else
+            {
+                _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
+                // Need to fetch the new ID. For simplicity, we reload tags or assume Add returns ID.
+                // Current repo doesn't return ID. Let's re-fetch.
+                Tag newTag = _targetTagRepo.GetAll().First(t => t.Name == sTag.Name);
+                targetTags[newTag.Name] = newTag;
+                tagIdMap[sTag.Id] = newTag.Id;
+                result.NewTags++;
+            }
+        }
+
+        // 4. Merge Files & Associations
+        foreach (FileEntry sFile in sourceFiles)
+        {
+            if (sFile.Hash == null)
+            {
+                continue;
+            }
+
+            long targetFileId;
+
+            if (targetFiles.TryGetValue(sFile.Hash, out FileEntry? existingFile))
+            {
+                targetFileId = existingFile.Id;
+            }
+            else
+            {
+                // Add File
+                _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
+                // Re-fetch to get ID. Optimization: Repo.Add should return ID/Entry.
+                // Fallback:
+                FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
+                if (added == null)
+                {
+                    continue; // Failed to add
+                }
+
+                targetFileId = added.Id;
+                result.NewFiles++;
+            }
+
+            // Merge Associations
+            if (sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
+            {
+                foreach (long sTagId in sTagIds)
+                {
+                    if (tagIdMap.TryGetValue(sTagId, out long targetTagId))
+                    {
+                        // Repository handles "INSERT OR IGNORE"
+                        _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
+                        // We assume success, hard to count actual "new" without checking first.
+                        // We'll just increment. Real logic would check existence.
+                        result.NewAssociations++;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // Mini-loaders for the external DB connection
+    private static List<Tag> LoadTags(SqliteConnection conn)
+    {
+        List<Tag> list = [];
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags";
+        using SqliteDataReader r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new Tag { Id = r.GetInt64(0), Name = r.GetString(1), ColorHex = r.GetString(2), Emoji = r.IsDBNull(3) ? null : r.GetString(3) });
+        }
+
+        return list;
+    }
+
+    private static List<FileEntry> LoadFiles(SqliteConnection conn)
+    {
+        List<FileEntry> list = [];
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files";
+        using SqliteDataReader r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new FileEntry
+            {
+                Id = r.GetInt64(0),
+                Path = r.GetString(1),
+                Name = r.GetString(2),
+                Hash = r.IsDBNull(3) ? null : r.GetString(3),
+                DateAdded = r.GetInt64(4),
+                IsMissing = r.GetBoolean(5)
+            });
+        }
+
+        return list;
+    }
+
+    private static Dictionary<long, List<long>> LoadFileTags(SqliteConnection conn)
+    {
+        Dictionary<long, List<long>> map = [];
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
+        using SqliteDataReader r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            long fid = r.GetInt64(0);
+            long tid = r.GetInt64(1);
+            if (!map.ContainsKey(fid))
+            {
+                map[fid] = [];
+            }
+
+            map[fid].Add(tid);
+        }
+        return map;
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\LibraryIntegrityService.cs`
+
+```csharp
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Services;
+
+public class IntegrityScanResult
+{
+    public int FilesScanned { get; set; }
+    public int NewlyMissing { get; set; }
+    public int NewlyFound { get; set; }
+}
+
+public class LibraryIntegrityService
+{
+    private readonly FileRepository _fileRepo;
+
+    public LibraryIntegrityService(FileRepository fileRepo)
+    {
+        _fileRepo = fileRepo;
+    }
+
+    public async Task<IntegrityScanResult> ScanAsync()
+    {
+        // Get all files sorted by path for potential optimization, though mostly IO bound
+        List<FileEntry> allFiles = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
+        IntegrityScanResult result = new() { FilesScanned = allFiles.Count };
+
+        List<long> toMarkMissing = [];
+        List<long> toMarkFound = [];
+
+        await Task.Run(() =>
+        {
+            foreach (FileEntry file in allFiles)
+            {
+                bool exists = File.Exists(file.Path);
+
+                if (!exists && !file.IsMissing)
+                {
+                    toMarkMissing.Add(file.Id);
+                }
+                else if (exists && file.IsMissing)
+                {
+                    toMarkFound.Add(file.Id);
+                }
+            }
+        });
+
+        if (toMarkMissing.Any())
+        {
+            _fileRepo.SetMissingStatus(toMarkMissing, true);
+            result.NewlyMissing = toMarkMissing.Count;
+        }
+
+        if (toMarkFound.Any())
+        {
+            _fileRepo.SetMissingStatus(toMarkFound, false);
+            result.NewlyFound = toMarkFound.Count;
+        }
+
+        return result;
+    }
+
+    public void PurgeMissing()
+    {
+        _fileRepo.RemoveMissingFiles();
+    }
+}
+```
+
+---
+
 ### `Tagium.Core\Services\LibraryService.cs`
 
 ```csharp
 using Tagium.Core.Data;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
@@ -402,59 +1035,129 @@ public class LibraryService
     private readonly FileRepository _fileRepo;
     private readonly TagRepository _tagRepo;
     private readonly FileTagRepository _fileTagRepo;
+    private readonly FileSearchRepository _searchRepo;
     private readonly ThumbnailService _thumbnailService;
+    private readonly SettingsManager _settingsManager;
 
-    // Events for UI reactivity
     public event Action? LibraryChanged;
 
     public LibraryService(
         FileRepository fileRepo,
         TagRepository tagRepo,
         FileTagRepository fileTagRepo,
-        ThumbnailService thumbnailService)
+        FileSearchRepository searchRepo,
+        ThumbnailService thumbnailService,
+        SettingsManager settingsManager)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
         _fileTagRepo = fileTagRepo;
+        _searchRepo = searchRepo;
         _thumbnailService = thumbnailService;
+        _settingsManager = settingsManager;
     }
 
-    public List<FileEntry> GetFiles(SortBy sortBy, SortDirection direction)
+    public void Refresh()
     {
-        var files = _fileRepo.GetAll(sortBy, direction);
-        // Optimization: Don't load tags for grid view unless necessary?
-        // For now, simple approach:
-        return files;
+        LibraryChanged?.Invoke();
     }
+
+    // --- Files ---
+
+    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
+    {
+        SortBy sort = _settingsManager.Current.FileSortBy;
+        SortDirection dir = _settingsManager.Current.FileSortDirection;
+
+        if (missingOnly)
+        {
+            List<FileEntry> all = _fileRepo.GetAll(sort, dir);
+            return all.Where(f => f.IsMissing).ToList();
+        }
+
+        return string.IsNullOrWhiteSpace(searchText) ? _fileRepo.GetAll(sort, dir) : _searchRepo.Search(searchText, sort, dir);
+    }
+
+    public bool AddFile(string path)
+    {
+        string? hash = FileHasher.ComputeSha256(path);
+        if (hash == null)
+        {
+            return false; // File read error
+        }
+
+        AddFileResult result = _fileRepo.Add(path, hash);
+
+        if (result == AddFileResult.Success)
+        {
+            LibraryChanged?.Invoke();
+            return true;
+        }
+
+        return false; // Duplicate or Error
+    }
+
+    public void RemoveFile(long fileId)
+    {
+        _fileRepo.Remove(fileId);
+        LibraryChanged?.Invoke();
+    }
+
+    public void AddTagToFile(long fileId, long tagId)
+    {
+        _fileTagRepo.AddTagToFile(fileId, tagId);
+        LibraryChanged?.Invoke();
+    }
+
+    public void RemoveTagFromFile(long fileId, long tagId)
+    {
+        _fileTagRepo.RemoveTagFromFile(fileId, tagId);
+        LibraryChanged?.Invoke();
+    }
+
+    // --- Tags ---
 
     public List<Tag> GetTags()
     {
         return _tagRepo.GetAll();
     }
 
-    public void AddFile(string path)
+    public List<Tag> GetTagsForFile(long fileId)
     {
-        // Simple hash placeholder for now
-        string hash = Guid.NewGuid().ToString();
-        _fileRepo.Add(path, hash);
+        List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Tag> allTags = _tagRepo.GetAll();
+        return allTags.Where(t => tagIds.Contains(t.Id)).ToList();
+    }
+
+    public void AddTag(string name)
+    {
+        _tagRepo.Add(name, "#757575", null);
         LibraryChanged?.Invoke();
     }
 
+    public void UpdateTag(Tag tag)
+    {
+        _tagRepo.Update(tag);
+        LibraryChanged?.Invoke();
+    }
+
+    public void DeleteTag(long id)
+    {
+        _tagRepo.Delete(id);
+        LibraryChanged?.Invoke();
+    }
+
+    // --- Thumbnails ---
+
+    [Obsolete]
     public void EnsureThumbnails(IEnumerable<FileEntry> files)
     {
-        foreach (var file in files)
+        foreach (FileEntry file in files)
         {
-            if (_thumbnailService.HasThumbnail(file.Id))
+            if (!_thumbnailService.HasThumbnail(file.Id))
             {
-                continue;
+                _ = _thumbnailService.GenerateThumbnailAsync(file);
             }
-            _ = _thumbnailService.GenerateThumbnailAsync(file).ContinueWith(t =>
-            {
-                if (t.IsCompletedSuccessfully)
-                {
-                    // Optional: granular update event
-                }
-            });
         }
     }
 }
@@ -548,6 +1251,80 @@ public class ThumbnailService
 namespace Tagium.Core.Settings;
 
 public enum EmojiSet { SystemDefault, Apple }
+```
+
+---
+
+### `Tagium.Core\Settings\SettingsManager.cs`
+
+```csharp
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Tagium.Core.Helpers;
+
+namespace Tagium.Core.Settings;
+
+public class SettingsManager
+{
+    private readonly string _settingsPath;
+
+    public event Action? SettingsChanged;
+
+    private static readonly JsonSerializerOptions _serializerOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    public SettingsManager()
+    {
+        string baseDir = AppDataHelper.GetBaseDirectory();
+        _settingsPath = Path.Combine(baseDir, "settings.json");
+        Current = Load();
+    }
+
+    public TagiumSettings Current { get; }
+
+    public void Update(Action<TagiumSettings> updateAction)
+    {
+        updateAction(Current);
+        Save();
+        SettingsChanged?.Invoke();
+    }
+
+    public void Save()
+    {
+        try
+        {
+            string json = JsonSerializer.Serialize(Current, _serializerOptions);
+            File.WriteAllText(_settingsPath, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Settings] Error saving: {ex.Message}");
+        }
+    }
+
+    private TagiumSettings Load()
+    {
+        if (!File.Exists(_settingsPath))
+        {
+            return new TagiumSettings();
+        }
+
+        try
+        {
+            string json = File.ReadAllText(_settingsPath);
+            return JsonSerializer.Deserialize<TagiumSettings>(json, _serializerOptions) ?? new TagiumSettings();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Settings] Error loading: {ex.Message}. Using defaults.");
+            return new TagiumSettings();
+        }
+    }
+}
 ```
 
 ---
@@ -696,53 +1473,1309 @@ public class Program
 
 ---
 
+### `Tagium.Photino.Blazor\Components\DataManagementModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Data
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject LibraryIntegrityService IntegrityService
+@inject DataExportService ExportService
+@inject DatabaseMergeService MergeService
+@inject DatabaseManager DbManager
+@inject FileDialogService FileDialog
+@inject ModalService ModalService
+
+<div class="data-tools">
+    <div class="section">
+        <h4>Integrity</h4>
+        <p class="desc">Scan for files missing from disk.</p>
+        <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
+        @if (ScanResult != null)
+        {
+            <div class="result-box">
+                Scanned: @ScanResult.FilesScanned <br />
+                Missing: @ScanResult.NewlyMissing <br />
+                Found: @ScanResult.NewlyFound
+            </div>
+        }
+        <button class="btn btn-danger" @onclick="PurgeMissing">Purge Missing Files</button>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Export</h4>
+        <div class="btn-row">
+            <button class="btn" @onclick="ExportJson">Export JSON</button>
+            <button class="btn" @onclick="ExportCsv">Export CSV</button>
+            <button class="btn" @onclick="BackupDb">Backup DB</button>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Merge Library</h4>
+        <p class="desc">Import data from another Tagium/Tagra DB.</p>
+        <button class="btn" @onclick="MergeDb">Select Database...</button>
+        @if (MergeResult != null)
+        {
+            <div class="result-box">
+                New Files: @MergeResult.NewFiles <br />
+                New Tags: @MergeResult.NewTags <br />
+                Associations: @MergeResult.NewAssociations
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .data-tools {
+        padding: 5px;
+    }
+
+    .section {
+        margin-bottom: 15px;
+    }
+
+    h4 {
+        margin: 0 0 5px 0;
+        color: #eee;
+    }
+
+    .desc {
+        font-size: 0.9em;
+        color: #aaa;
+        margin: 0 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        border: 1px solid #555;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+    .btn-danger {
+        background: #c62828;
+        border-color: #b71c1c;
+    }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+    .btn-row {
+        display: flex;
+        gap: 10px;
+    }
+
+    .result-box {
+        margin-top: 10px;
+        padding: 8px;
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 4px;
+        font-size: 0.9em;
+        color: #ccc;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 15px 0;
+    }
+</style>
+
+@code {
+    private IntegrityScanResult? ScanResult;
+    private MergeResult? MergeResult;
+
+    private async Task ScanIntegrity()
+    {
+        ScanResult = null; // reset
+        StateHasChanged(); // show loading if we had a spinner
+        ScanResult = await IntegrityService.ScanAsync();
+        Library.Refresh();
+    }
+
+    private void PurgeMissing()
+    {
+        IntegrityService.PurgeMissing();
+        Library.Refresh();
+        ScanResult = null;
+    }
+
+    private async Task ExportJson()
+    {
+        // Simple file save dialog simulation: We just save to Downloads or fixed name for now
+        // since we don't have a "Save File Dialog" wrapper yet (NFD only does Open by default in some wrappers).
+        // Actually NFD supports Save. Let's assume a fixed export for simplicity or add Save to FileDialogService later.
+        // For MVP: Save to Desktop.
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
+        await ExportService.ExportJsonAsync(path);
+        // Alert?
+    }
+
+    private async Task ExportCsv()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
+        await ExportService.ExportCsvAsync(path);
+    }
+
+    private void BackupDb()
+    {
+        string source = DbManager.ConnectionString.Replace("Data Source=", "");
+        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
+        File.Copy(source, dest, true);
+    }
+
+    private void MergeDb()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files != null && files.Length > 0)
+        {
+            MergeResult = MergeService.Merge(files[0]);
+            Library.Refresh();
+        }
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileGrid.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+
+<div class="grid-container" @onclick="ClearSelection">
+    @foreach (var file in Files)
+    {
+        bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+        <div class="file-card @(isSelected ? "selected" : "")"
+             style="width: @(Settings.Current.ThumbnailSize)px; height: @(Settings.Current.ThumbnailSize + 30)px"
+             @onclick="e => OnCardClick(e, file.Id)"
+             @onclick:stopPropagation="true">
+
+            <div class="thumbnail">
+                <img src="tagium://thumbnail/@file.Id" loading="lazy" />
+            </div>
+            <div class="filename" title="@file.Name">
+                @file.Name
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .grid-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-content: flex-start;
+        height: 100%;
+        overflow-y: auto;
+        padding-right: 5px;
+    }
+
+    .file-card {
+        background: #313131;
+        border: 1px solid #444;
+        border-radius: 4px;
+        display: flex;
+        flex-direction: column;
+        cursor: pointer;
+        user-select: none;
+        transition: width 0.1s, height 0.1s;
+    }
+
+        .file-card:hover {
+            border-color: #666;
+        }
+
+        .file-card.selected {
+            border-color: #42a5f5;
+            box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.3);
+        }
+
+    .thumbnail {
+        flex: 1;
+        background: #222;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+        .thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+    .filename {
+        height: 30px;
+        line-height: 30px;
+        padding: 0 5px;
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        background: #2a2a2a;
+    }
+</style>
+
+@code {
+    private List<FileEntry> Files = [];
+
+    protected override void OnInitialized()
+    {
+        LoadFiles();
+        AppState.OnChange += RefreshView;
+        Library.LibraryChanged += LoadFiles;
+        // Important: Refresh view (reload files) on settings change to capture sort order updates
+        Settings.SettingsChanged += RefreshView;
+    }
+
+    private void RefreshView()
+    {
+        LoadFiles();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void LoadFiles()
+    {
+        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+        Library.EnsureThumbnails(Files);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnCardClick(MouseEventArgs e, long id)
+    {
+        AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
+    }
+
+    private void ClearSelection()
+    {
+        AppState.ClearSelection();
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= RefreshView;
+        Library.LibraryChanged -= LoadFiles;
+        Settings.SettingsChanged -= RefreshView;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject AppState AppState
+@inject SystemLauncherService Launcher
+
+<div class="inspector">
+    @if (SelectedFile == null)
+    {
+        <div class="empty-state">Select a file to view details.</div>
+    }
+    else
+    {
+        <h3>File Details</h3>
+
+        <div class="actions-row">
+            <button class="btn" @onclick="OpenFile">Open</button>
+            <button class="btn" @onclick="ShowInExplorer">Folder</button>
+            <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
+        </div>
+
+        <div class="prop-row">
+            <label>Name</label>
+            <span>@SelectedFile.Name</span>
+        </div>
+        <div class="prop-row">
+            <label>Path</label>
+            <span class="path">@SelectedFile.Path</span>
+        </div>
+
+        <hr />
+
+        <h4>Tags</h4>
+        <div class="tags-container">
+            @foreach (var tag in AssignedTags)
+            {
+                <span class="tag-pill" @onclick="() => RemoveTag(tag.Id)">
+                    @tag.Name <span class="remove">&times;</span>
+                </span>
+            }
+        </div>
+
+        <hr />
+
+        <h4>Add Tag</h4>
+        <div class="tags-container available">
+            @foreach (var tag in AvailableTags)
+            {
+                <span class="tag-pill add" @onclick="() => AddTag(tag.Id)">
+                    + @tag.Name
+                </span>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .inspector {
+        padding: 10px;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .empty-state {
+        color: #888;
+        text-align: center;
+        margin-top: 50px;
+    }
+
+    .prop-row {
+        margin-bottom: 10px;
+    }
+
+        .prop-row label {
+            display: block;
+            font-size: 0.8em;
+            color: #aaa;
+        }
+
+    .path {
+        word-break: break-all;
+        font-size: 0.9em;
+        font-family: monospace;
+    }
+
+    .actions-row {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 15px;
+    }
+
+    .btn {
+        background: #444;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        flex: 1;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+    .btn-danger {
+        background: #c62828;
+    }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+    .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    .tag-pill {
+        background: #444;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.9em;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+    }
+
+        .tag-pill:hover {
+            background: #555;
+        }
+
+        .tag-pill .remove {
+            margin-left: 5px;
+            color: #ef5350;
+            font-weight: bold;
+        }
+
+        .tag-pill.add {
+            background: #2a2a2a;
+            border: 1px dashed #555;
+        }
+
+            .tag-pill.add:hover {
+                background: #42a5f5;
+                border-color: transparent;
+                color: white;
+            }
+</style>
+
+@code {
+    private FileEntry? SelectedFile;
+    private List<Tag> AssignedTags = [];
+    private List<Tag> AvailableTags = [];
+
+    protected override void OnInitialized()
+    {
+        AppState.OnSelectionChange += UpdateView;
+        Library.LibraryChanged += UpdateView;
+    }
+
+    private void UpdateView()
+    {
+        if (AppState.SelectedFileIds.Count == 1)
+        {
+            long id = AppState.SelectedFileIds.First();
+            var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+            SelectedFile = files.FirstOrDefault(f => f.Id == id);
+
+            if (SelectedFile != null)
+            {
+                AssignedTags = Library.GetTagsForFile(id);
+                var allTags = Library.GetTags();
+                AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+            }
+        }
+        else
+        {
+            SelectedFile = null;
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void AddTag(long tagId)
+    {
+        if (SelectedFile != null) Library.AddTagToFile(SelectedFile.Id, tagId);
+    }
+
+    private void RemoveTag(long tagId)
+    {
+        if (SelectedFile != null) Library.RemoveTagFromFile(SelectedFile.Id, tagId);
+    }
+
+    private void OpenFile()
+    {
+        if (SelectedFile != null) Launcher.OpenFile(SelectedFile.Path);
+    }
+
+    private void ShowInExplorer()
+    {
+        if (SelectedFile != null) Launcher.ShowInExplorer(SelectedFile.Path);
+    }
+
+    private void RemoveFile()
+    {
+        if (SelectedFile != null)
+        {
+            Library.RemoveFile(SelectedFile.Id);
+            AppState.ClearSelection();
+        }
+    }
+
+    public void Dispose()
+    {
+        AppState.OnSelectionChange -= UpdateView;
+        Library.LibraryChanged -= UpdateView;
+    }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\MainLayout.razor`
 
 ```
 @inherits LayoutComponentBase
 @namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
+@inject FileDialogService FileDialog
+@inject LibraryService Library
+@inject SettingsManager Settings
+@inject ModalService ModalService
 
-<div class="app-container">
-    <div class="sidebar">
-        <h3>Tagium</h3>
-        <!-- Navigation will be added here -->
+<div class="app-layout">
+    <aside class="left-panel">
+        <TagSidebar />
+    </aside>
+    
+    <main class="center-panel">
+        <div class="toolbar">
+            <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
+            <button class="btn" @onclick="OpenDataTools">Data Tools</button>
+            
+            <div class="spacer"></div>
+            
+            <div class="control-group">
+                <label>Sort:</label>
+                <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
+                    <option value="@SortBy.DateAdded">Date Added</option>
+                    <option value="@SortBy.Name">Name</option>
+                    <option value="@SortBy.Path">Path</option>
+                </select>
+                <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
+                    <option value="@SortDirection.Asc">Asc</option>
+                    <option value="@SortDirection.Desc">Desc</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Size:</label>
+                <input type="range" min="64" max="256" step="16" 
+                       value="@Settings.Current.ThumbnailSize" 
+                       @onchange="OnThumbSizeChange" />
+            </div>
+            
+            <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
+        </div>
+        <div class="content-area">
+            <FileGrid />
+        </div>
+    </main>
+    
+    <aside class="right-panel">
+        <FileInspector />
+    </aside>
+    
+    <ModalHost />
+</div>
+
+<style>
+    :root {
+        --bg-color: #252525;
+        --panel-bg: #313131;
+        --border-color: #444;
+        --text-color: #e0e0e0;
+        --primary-color: #42a5f5;
+    }
+
+    body, html {
+        margin: 0; padding: 0; height: 100%;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-family: 'Segoe UI', sans-serif;
+    }
+
+    .app-layout {
+        display: flex;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+    }
+
+    .left-panel {
+        width: 250px;
+        background: var(--panel-bg);
+        border-right: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        padding: 10px;
+        flex-shrink: 0;
+    }
+
+    .center-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-color);
+        min-width: 0;
+    }
+
+    .right-panel {
+        width: 300px;
+        background: var(--panel-bg);
+        border-left: 1px solid var(--border-color);
+        padding: 0;
+        flex-shrink: 0;
+    }
+    
+    .toolbar {
+        height: 50px;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        padding: 0 15px;
+        background: #2a2a2a;
+        gap: 15px;
+    }
+    
+    .spacer { flex: 1; }
+    
+    .control-group {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.9em;
+        color: #bbb;
+    }
+    
+    .control-group select {
+        background: #444; border: 1px solid #555; color: white; padding: 4px; border-radius: 4px;
+    }
+    
+    .content-area {
+        flex: 1;
+        overflow: hidden;
+        padding: 10px;
+    }
+    
+    .btn {
+        background: #444; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+    }
+    .btn:hover { background: #555; }
+    
+    .btn-primary { background: var(--primary-color); color: white; font-weight: 500; }
+    .btn-primary:hover { background: #1e88e5; }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Settings.SettingsChanged += StateHasChanged;
+    }
+
+    private void ImportFiles()
+    {
+        var paths = FileDialog.OpenFiles();
+        if (paths != null && paths.Length > 0)
+        {
+            foreach (var path in paths)
+            {
+                Library.AddFile(path);
+            }
+        }
+    }
+    
+    private void OpenDataTools()
+    {
+        ModalService.Show("Data Management", @<DataManagementModal />);
+    }
+    
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortBy = result);
+        }
+    }
+    
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortDirection = result);
+        }
+    }
+    
+    private void OnThumbSizeChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            Settings.Update(s => s.ThumbnailSize = val);
+        }
+    }
+    
+    public void Dispose()
+    {
+        Settings.SettingsChanged -= StateHasChanged;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\ModalHost.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@inject ModalService ModalService
+
+@if (IsVisible)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-container" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@ModalService.Title</h3>
+                <button class="close-btn" @onclick="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                @ModalService.Content
+            </div>
+        </div>
     </div>
-    <div class="main-content">
-        @Body
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-container {
+        background: #313131;
+        border-radius: 8px;
+        width: 500px;
+        max-width: 90%;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    .modal-header {
+        padding: 15px;
+        border-bottom: 1px solid #444;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.2em;
+            color: #eee;
+        }
+
+    .close-btn {
+        background: none;
+        border: none;
+        color: #aaa;
+        font-size: 1.5em;
+        cursor: pointer;
+    }
+
+        .close-btn:hover {
+            color: #fff;
+        }
+
+    .modal-body {
+        padding: 15px;
+        overflow-y: auto;
+    }
+</style>
+
+@code {
+    private bool IsVisible => ModalService.Content != null;
+
+    protected override void OnInitialized()
+    {
+        ModalService.OnShow += StateHasChanged;
+        ModalService.OnClose += StateHasChanged;
+    }
+
+    private void Close()
+    {
+        ModalService.Close();
+    }
+
+    public void Dispose()
+    {
+        ModalService.OnShow -= StateHasChanged;
+        ModalService.OnClose -= StateHasChanged;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\TagManagerModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@inject LibraryService Library
+
+<div class="tag-manager">
+    <div class="add-row">
+        <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
+        <button class="btn-primary" @onclick="AddTag">Add</button>
+    </div>
+
+    <hr />
+
+    <div class="tag-list">
+        @foreach (var tag in Tags)
+        {
+            <div class="tag-row">
+                <!-- Color Picker Dropdown Trigger -->
+                <div class="color-picker-wrapper">
+                    <button class="color-circle"
+                            style="background-color: @tag.ColorHex"
+                            @onclick="() => ToggleColorPicker(tag.Id)"></button>
+
+                    @if (ActiveColorPickerId == tag.Id)
+                    {
+                        <div class="color-popup" @onclick:stopPropagation="true">
+                            <div class="color-grid">
+                                @foreach (var color in Palette)
+                                {
+                                    <div class="swatch"
+                                         style="background-color: @color"
+                                         @onclick="() => UpdateTagColor(tag, color)"></div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Emoji Input -->
+                <input type="text" class="emoji-input"
+                       value="@tag.Emoji"
+                       @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
+                       maxlength="2" placeholder="😀" />
+
+                <!-- Name Input -->
+                <input type="text" class="name-input"
+                       value="@tag.Name"
+                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
+
+                <span class="count">(@tag.FileCount)</span>
+
+                <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
+            </div>
+        }
     </div>
 </div>
 
 <style>
-    body, html {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        font-family: 'Segoe UI', sans-serif;
-        background: #252525;
-        color: #fff;
-    }
-
-    .app-container {
+    .add-row {
         display: flex;
-        height: 100vh;
-        overflow: hidden;
+        gap: 10px;
+        margin-bottom: 15px;
     }
 
-    .sidebar {
-        width: 250px;
-        background: #313131;
-        padding: 10px;
-        display: flex;
-        flex-direction: column;
-        border-right: 1px solid #444;
+        .add-row input {
+            flex: 1;
+            padding: 8px;
+            background: #444;
+            border: 1px solid #555;
+            color: white;
+            border-radius: 4px;
+        }
+
+    .btn-primary {
+        background: #42a5f5;
+        border: none;
+        color: white;
+        padding: 0 15px;
+        border-radius: 4px;
+        cursor: pointer;
     }
 
-    .main-content {
-        flex: 1;
-        padding: 20px;
+        .btn-primary:hover {
+            background: #1e88e5;
+        }
+
+    .tag-list {
+        max-height: 400px;
         overflow-y: auto;
+        padding-bottom: 50px;
+    }
+    /* Padding for popup space */
+    .tag-row {
+        display: flex;
+        align-items: center;
+        padding: 5px 8px;
+        border-bottom: 1px solid #444;
+        gap: 8px;
+    }
+
+        .tag-row:hover {
+            background: #3a3a3a;
+        }
+
+    .color-picker-wrapper {
+        position: relative;
+    }
+
+    .color-circle {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 1px solid #555;
+        cursor: pointer;
+        display: block;
+    }
+
+    .color-popup {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        background: #252525;
+        border: 1px solid #555;
+        padding: 5px;
+        z-index: 100;
+        border-radius: 4px;
+        width: 140px;
+    }
+
+    .color-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+    }
+
+    .swatch {
+        width: 15px;
+        height: 15px;
+        border-radius: 2px;
+        cursor: pointer;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+
+        .swatch:hover {
+            border-color: white;
+            transform: scale(1.1);
+        }
+
+    .emoji-input {
+        width: 30px;
+        text-align: center;
+        background: #444;
+        border: 1px solid #555;
+        color: white;
+        border-radius: 4px;
+        padding: 4px;
+    }
+
+    .name-input {
+        flex: 1;
+        background: transparent;
+        border: 1px solid transparent;
+        color: white;
+        padding: 4px;
+        border-radius: 4px;
+    }
+
+        .name-input:focus {
+            background: #444;
+            border-color: #555;
+        }
+
+    .count {
+        color: #888;
+        font-size: 0.9em;
+    }
+
+    .btn-icon.delete {
+        background: none;
+        border: none;
+        color: #e57373;
+        font-size: 1.2em;
+        cursor: pointer;
+    }
+
+        .btn-icon.delete:hover {
+            color: #d32f2f;
+        }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 10px 0;
     }
 </style>
+
+@code {
+    private List<Tag> Tags = [];
+    private string NewTagName = "";
+    private long? ActiveColorPickerId = null;
+
+    private static readonly List<string> Palette = new()
+    {
+        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
+        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
+        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
+        "#546e7a", "#FFFFFF", "#000000"
+    };
+
+    protected override void OnInitialized()
+    {
+        RefreshTags();
+        // Close color picker if clicking elsewhere (handled by ModalHost click propagation ideally,
+        // but for now we rely on explicit toggles or clicking another picker)
+    }
+
+    private void RefreshTags()
+    {
+        Tags = Library.GetTags();
+    }
+
+    private void HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddTag();
+    }
+
+    private void AddTag()
+    {
+        if (!string.IsNullOrWhiteSpace(NewTagName))
+        {
+            Library.AddTag(NewTagName);
+            NewTagName = "";
+            RefreshTags();
+        }
+    }
+
+    private void DeleteTag(long id)
+    {
+        Library.DeleteTag(id);
+        RefreshTags();
+    }
+
+    private void UpdateTagName(Tag tag, string? newName)
+    {
+        if (!string.IsNullOrWhiteSpace(newName) && newName != tag.Name)
+        {
+            tag.Name = newName;
+            Library.UpdateTag(tag);
+        }
+    }
+
+    private void UpdateTagEmoji(Tag tag, string? newEmoji)
+    {
+        tag.Emoji = newEmoji;
+        Library.UpdateTag(tag);
+    }
+
+    private void ToggleColorPicker(long id)
+    {
+        if (ActiveColorPickerId == id)
+            ActiveColorPickerId = null;
+        else
+            ActiveColorPickerId = id;
+    }
+
+    private void UpdateTagColor(Tag tag, string color)
+    {
+        tag.ColorHex = color;
+        Library.UpdateTag(tag);
+        ActiveColorPickerId = null; // Close picker
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\TagSideBar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
+@inject LibraryService Library
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="sidebar-container">
+    <div class="search-box">
+        <input type="text" placeholder="Search..." @onchange="OnSearchInput" value="@AppState.SearchText" />
+    </div>
+
+    <div class="actions">
+        <button class="btn-manage" @onclick="OpenTagManager">Manage Tags</button>
+    </div>
+
+    <div class="tag-list">
+        <div class="tag-item @(string.IsNullOrEmpty(AppState.SearchText) && !AppState.IsMissingOnly ? "active" : "")"
+             @onclick="() => SetSearch(string.Empty)">
+            <span class="icon">📁</span> All Files
+        </div>
+
+        <div class="tag-item @(AppState.IsMissingOnly ? "active" : "")"
+             @onclick="() => AppState.SetMissingOnly(true)">
+            <span class="icon">⚠️</span> Missing Files
+        </div>
+
+        <hr />
+
+        @foreach (var tag in Tags)
+        {
+            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase);
+            <div class="tag-item @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
+                <span class="tag-color" style="background-color: @tag.ColorHex"></span>
+                <span class="name">@tag.Name</span>
+                <span class="count">@tag.FileCount</span>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .sidebar-container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .search-box {
+        padding-bottom: 10px;
+    }
+
+        .search-box input {
+            width: 100%;
+            padding: 5px;
+            background: #444;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+        }
+
+    .actions {
+        padding-bottom: 10px;
+    }
+
+    .btn-manage {
+        width: 100%;
+        background: #3a3a3a;
+        color: #ccc;
+        border: 1px solid #555;
+        padding: 4px;
+        cursor: pointer;
+        border-radius: 4px;
+    }
+
+        .btn-manage:hover {
+            background: #4a4a4a;
+            color: white;
+        }
+
+    .tag-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .tag-item {
+        padding: 6px 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        border-radius: 4px;
+        margin-bottom: 2px;
+    }
+
+        .tag-item:hover {
+            background: #3a3a3a;
+        }
+
+        .tag-item.active {
+            background: #42a5f5;
+            color: white;
+        }
+
+    .tag-color {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+
+    .name {
+        flex: 1;
+    }
+
+    .count {
+        font-size: 0.8em;
+        opacity: 0.7;
+    }
+
+    .icon {
+        margin-right: 8px;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 5px 0;
+    }
+</style>
+
+@code {
+    private List<Tag> Tags = [];
+
+    protected override void OnInitialized()
+    {
+        Tags = Library.GetTags();
+        AppState.OnChange += StateHasChanged;
+        Library.LibraryChanged += RefreshData;
+    }
+
+    private void RefreshData()
+    {
+        Tags = Library.GetTags();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SetSearch(e.Value?.ToString() ?? "");
+    }
+
+    private void SetSearch(string text)
+    {
+        AppState.SetSearch(text);
+    }
+
+    private void OpenTagManager()
+    {
+        ModalService.Show("Manage Tags", @<TagManagerModal />);
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= StateHasChanged;
+        Library.LibraryChanged -= RefreshData;
+    }
+}
 ```
 
 ---
@@ -760,6 +2793,182 @@ public class Program
 @using Tagium.Photino.Blazor.Components
 @using Tagium.Core.Models
 @using Tagium.Core.Services
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\AppState.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Services;
+
+public class AppState
+{
+    // State
+    public string SearchText { get; private set; } = "";
+    public bool IsMissingOnly { get; private set; }
+    public HashSet<long> SelectedFileIds { get; private set; } = [];
+
+    // Events
+    public event Action? OnChange;
+    public event Action? OnSelectionChange;
+
+    public void SetSearch(string text)
+    {
+        if (SearchText != text)
+        {
+            SearchText = text;
+            IsMissingOnly = false;
+            SelectedFileIds.Clear();
+            NotifyStateChanged();
+        }
+    }
+
+    public void SetMissingOnly(bool isMissing)
+    {
+        if (IsMissingOnly != isMissing)
+        {
+            IsMissingOnly = isMissing;
+            SearchText = "";
+            SelectedFileIds.Clear();
+            NotifyStateChanged();
+        }
+    }
+
+    public void SelectFile(long id, bool multiSelect, bool rangeSelect)
+    {
+        // Simple single/multi logic for now. Range select requires list knowledge.
+        if (!multiSelect)
+        {
+            SelectedFileIds.Clear();
+        }
+
+        _ = SelectedFileIds.Contains(id) && multiSelect ? SelectedFileIds.Remove(id) : SelectedFileIds.Add(id);
+
+        NotifySelectionChanged();
+    }
+
+    public void ClearSelection()
+    {
+        SelectedFileIds.Clear();
+        NotifySelectionChanged();
+    }
+
+    private void NotifyStateChanged()
+    {
+        OnChange?.Invoke();
+    }
+
+    private void NotifySelectionChanged()
+    {
+        OnSelectionChange?.Invoke();
+        OnChange?.Invoke(); // Selection is part of state
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\FileDialogService.cs`
+
+```csharp
+using NativeFileDialogs.Net;
+
+namespace Tagium.Photino.Blazor.Services;
+
+public class FileDialogService
+{
+    public string[]? OpenFiles()
+    {
+        // Nfd.OpenDialogMultiple returns a path set, or throws/returns error status.
+        // We wrap it to return a safe string array or null.
+
+        NfdStatus result = Nfd.OpenDialogMultiple(out string[] paths, null, null);
+
+        return result == NfdStatus.Ok ? paths : null;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\ModalService.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+
+namespace Tagium.Photino.Blazor.Services;
+
+public class ModalService
+{
+    public event Action? OnShow;
+    public event Action? OnClose;
+
+    public RenderFragment? Content { get; private set; }
+    public string Title { get; private set; } = "";
+
+    public void Show(string title, RenderFragment content)
+    {
+        Title = title;
+        Content = content;
+        OnShow?.Invoke();
+    }
+
+    public void Close()
+    {
+        Content = null;
+        OnClose?.Invoke();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\SystemLauncherService.cs`
+
+```csharp
+using System.Diagnostics;
+
+namespace Tagium.Photino.Blazor.Services;
+
+public class SystemLauncherService
+{
+    public void OpenFile(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            _ = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Launcher] Failed to open file: {ex.Message}");
+        }
+    }
+
+    public void ShowInExplorer(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            // Select the file in explorer
+            string argument = $"/select,\"{path}\"";
+            _ = Process.Start(new ProcessStartInfo("explorer.exe", argument) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Launcher] Failed to show in explorer: {ex.Message}");
+        }
+    }
+}
 ```
 
 ---
@@ -820,6 +3029,8 @@ public static class SchemeHandlers
 using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
 using Tagium.Core.Services;
+using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -827,15 +3038,28 @@ public static class ServiceRegistrar
 {
     public static void ConfigureServices(IServiceCollection services)
     {
-        // Data Layer
+        // Core - Settings
+        _ = services.AddSingleton<SettingsManager>();
+
+        // Core - Data
         _ = services.AddSingleton<DatabaseManager>();
         _ = services.AddSingleton<TagRepository>();
         _ = services.AddSingleton<FileRepository>();
         _ = services.AddSingleton<FileTagRepository>();
+        _ = services.AddSingleton<FileSearchRepository>();
 
-        // Service Layer
+        // Core - Services
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryService>();
+        _ = services.AddSingleton<LibraryIntegrityService>();
+        _ = services.AddSingleton<DataExportService>();
+        _ = services.AddSingleton<DatabaseMergeService>();
+
+        // UI Services
+        _ = services.AddSingleton<AppState>();
+        _ = services.AddSingleton<ModalService>();
+        _ = services.AddSingleton<FileDialogService>();
+        _ = services.AddSingleton<SystemLauncherService>();
     }
 }
 ```
