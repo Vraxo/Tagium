@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="FFMpegCore" Version="5.4.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.1" />
     <PackageReference Include="SkiaSharp" Version="3.119.1" />
   </ItemGroup>
@@ -1040,6 +1041,7 @@ public class LibraryService
     private readonly SettingsManager _settingsManager;
 
     public event Action? LibraryChanged;
+    public event Action<int, int>? ImportCompleted; // added, duplicates
 
     public LibraryService(
         FileRepository fileRepo,
@@ -1097,6 +1099,33 @@ public class LibraryService
         return false; // Duplicate or Error
     }
 
+    /// <summary>
+    /// Imports multiple files and fires the ImportCompleted event with statistics.
+    /// </summary>
+    public void ImportBatch(string[] paths)
+    {
+        int added = 0;
+        int duplicates = 0;
+
+        foreach (string path in paths)
+        {
+            // Basic validation to ensure it's a file
+            if (File.Exists(path))
+            {
+                if (AddFile(path))
+                {
+                    added++;
+                }
+                else
+                {
+                    duplicates++;
+                }
+            }
+        }
+
+        ImportCompleted?.Invoke(added, duplicates);
+    }
+
     public void RemoveFile(long fileId)
     {
         _fileRepo.Remove(fileId);
@@ -1149,7 +1178,6 @@ public class LibraryService
 
     // --- Thumbnails ---
 
-    [Obsolete]
     public void EnsureThumbnails(IEnumerable<FileEntry> files)
     {
         foreach (FileEntry file in files)
@@ -1168,6 +1196,7 @@ public class LibraryService
 ### `Tagium.Core\Services\ThumbnailService.cs`
 
 ```csharp
+using FFMpegCore;
 using SkiaSharp;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
@@ -1177,10 +1206,30 @@ namespace Tagium.Core.Services;
 public class ThumbnailService
 {
     private readonly string _cacheDir;
+    private readonly bool _hasFFmpeg;
+    private readonly HashSet<string> _imageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
+    private readonly HashSet<string> _videoExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm" };
 
     public ThumbnailService()
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+
+        // Check for FFmpeg binaries
+        string ffmpegPath = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+        string ffprobePath = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
+
+        _hasFFmpeg = File.Exists(ffmpegPath) && File.Exists(ffprobePath);
+
+        if (_hasFFmpeg)
+        {
+            GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
+        }
+        else
+        {
+            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails will use placeholders.");
+        }
     }
 
     public string GetThumbnailPath(long fileId)
@@ -1193,7 +1242,6 @@ public class ThumbnailService
         return File.Exists(GetThumbnailPath(fileId));
     }
 
-    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -1202,43 +1250,130 @@ public class ThumbnailService
             return;
         }
 
-        // Run on thread pool to avoid blocking UI
-        await Task.Run(() =>
+        if (!File.Exists(file.Path))
+        {
+            return;
+        }
+
+        string ext = Path.GetExtension(file.Path);
+
+        await Task.Run(async () =>
         {
             try
             {
-                if (!File.Exists(file.Path))
+                if (_imageExtensions.Contains(ext))
                 {
-                    return;
+                    GenerateImageThumbnail(file.Path, destPath, size);
                 }
-
-                using SKBitmap? original = SKBitmap.Decode(file.Path);
-
-                if (original is null)
+                else if (_videoExtensions.Contains(ext))
                 {
-                    return;
+                    if (_hasFFmpeg)
+                    {
+                        await GenerateVideoThumbnailAsync(file.Path, destPath, size);
+                    }
+                    else
+                    {
+                        GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
+                    }
                 }
-
-                // Resize
-                SKImageInfo info = new(size, size);
-                using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
-
-                if (resized is null)
+                else
                 {
-                    return;
+                    GeneratePlaceholder(destPath, size, ext.TrimStart('.').ToUpper(), SKColors.Gray);
                 }
-
-                using SKImage image = SKImage.FromBitmap(resized);
-                using SKData data = image.Encode(SKEncodedImageFormat.Png, 90);
-
-                using FileStream stream = File.OpenWrite(destPath);
-                data.SaveTo(stream);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
+                Console.WriteLine($"[Thumbnail] Error for {file.Path}: {ex.Message}");
+                GeneratePlaceholder(destPath, size, "ERR", SKColors.DarkRed);
             }
         });
+    }
+
+    private static void GenerateImageThumbnail(string sourcePath, string destPath, int size)
+    {
+        using SKBitmap? original = SKBitmap.Decode(sourcePath);
+        if (original is null)
+        {
+            return;
+        }
+
+        SaveResized(original, destPath, size);
+    }
+
+    private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
+    {
+        try
+        {
+            var analysis = await FFProbe.AnalyseAsync(sourcePath);
+            var duration = analysis.Duration;
+            var captureTime = duration.TotalSeconds > 10 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(duration.TotalSeconds * 0.1);
+
+            string tempFrame = Path.GetTempFileName() + ".png";
+
+            _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new System.Drawing.Size(size, size), captureTime);
+
+            if (File.Exists(tempFrame))
+            {
+                using SKBitmap? original = SKBitmap.Decode(tempFrame);
+                if (original != null)
+                {
+                    SaveResized(original, destPath, size);
+                }
+                File.Delete(tempFrame);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Thumbnail] FFMpeg error: {ex.Message}");
+            GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
+        }
+    }
+
+    [Obsolete]
+    private static void GeneratePlaceholder(string destPath, int size, string text, SKColor color)
+    {
+        using SKBitmap bitmap = new(size, size);
+        using SKCanvas canvas = new(bitmap);
+
+        canvas.Clear(color);
+
+        using SKPaint textPaint = new()
+        {
+            Color = SKColors.White,
+            TextSize = size / 4,
+            IsAntialias = true,
+            TextAlign = SKTextAlign.Center
+        };
+
+        float x = size / 2;
+        float y = (size / 2) + (textPaint.TextSize / 2) - 5;
+
+        canvas.DrawText(text, x, y, textPaint);
+
+        using SKImage image = SKImage.FromBitmap(bitmap);
+        using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
+        using FileStream stream = File.OpenWrite(destPath);
+        data.SaveTo(stream);
+    }
+
+    [Obsolete]
+    private static void SaveResized(SKBitmap original, string destPath, int size)
+    {
+        float ratio = (float)Math.Min((double)size / original.Width, (double)size / original.Height);
+        int w = (int)(original.Width * ratio);
+        int h = (int)(original.Height * ratio);
+
+        SKImageInfo info = new(w, h);
+        using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
+        if (resized is null)
+        {
+            return;
+        }
+
+        using SKImage image = SKImage.FromBitmap(resized);
+        using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
+        using FileStream stream = File.OpenWrite(destPath);
+        data.SaveTo(stream);
     }
 }
 ```
@@ -1395,8 +1530,6 @@ public class Program
         ServiceRegistrar.ConfigureServices(appBuilder.Services);
 
         // Register Root Component
-        // "App" is now explicitly in the Tagium.Photino.Blazor namespace (via @namespace in razor file)
-        // This guarantees it is found regardless of file folder structure.
         appBuilder.RootComponents.Add<App>("#app");
 
         var app = appBuilder.Build();
@@ -1432,9 +1565,10 @@ public class Program
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Photino.Blazor" Version="3.2.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.1" />
     <PackageReference Include="NativeFileDialogs.Net" Version="1.2.1" />
+    <!-- Downgraded to 3.2.3 to restore RegisterFileDropHandler support -->
+    <PackageReference Include="Photino.Blazor" Version="3.2.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -1675,7 +1809,10 @@ public class Program
              @onclick:stopPropagation="true">
 
             <div class="thumbnail">
-                <img src="tagium://thumbnail/@file.Id" loading="lazy" />
+                <img src="tagium://thumbnail/@file.Id"
+                     alt="@file.Name"
+                     onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
+                <div class="placeholder-icon">📷</div>
             </div>
             <div class="filename" title="@file.Name">
                 @file.Name
@@ -1722,13 +1859,28 @@ public class Program
         display: flex;
         align-items: center;
         justify-content: center;
+        position: relative;
     }
 
         .thumbnail img {
             width: 100%;
             height: 100%;
             object-fit: contain;
+            position: relative;
+            z-index: 2; /* Sit above placeholder */
         }
+
+    /* Fallback Icon behind the image */
+    .placeholder-icon {
+        position: absolute;
+        font-size: 2em;
+        color: #444;
+        z-index: 1;
+    }
+
+    .thumbnail.broken .placeholder-icon {
+        color: #666; /* Make it visible if image breaks */
+    }
 
     .filename {
         height: 30px;
@@ -1750,7 +1902,6 @@ public class Program
         LoadFiles();
         AppState.OnChange += RefreshView;
         Library.LibraryChanged += LoadFiles;
-        // Important: Refresh view (reload files) on settings change to capture sort order updates
         Settings.SettingsChanged += RefreshView;
     }
 
@@ -2031,6 +2182,7 @@ public class Program
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
+@inject IJSRuntime JS
 
 <div class="app-layout">
     <aside class="left-panel">
@@ -2043,6 +2195,9 @@ public class Program
             <button class="btn" @onclick="OpenDataTools">Data Tools</button>
             
             <div class="spacer"></div>
+            
+            <!-- Status Message Area -->
+            <span class="status-msg">@StatusMessage</span>
             
             <div class="control-group">
                 <label>Sort:</label>
@@ -2137,6 +2292,16 @@ public class Program
         gap: 15px;
     }
     
+    .status-msg {
+        font-size: 0.85em;
+        color: #888;
+        margin-right: 15px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+    
     .spacer { flex: 1; }
     
     .control-group {
@@ -2167,9 +2332,20 @@ public class Program
 </style>
 
 @code {
-    protected override void OnInitialized()
+    private DotNetObjectReference<MainLayout>? _objRef;
+    private string StatusMessage = "";
+
+    protected override async Task OnInitializedAsync()
     {
         Settings.SettingsChanged += StateHasChanged;
+        Library.ImportCompleted += ShowImportStatus;
+        
+        _objRef = DotNetObjectReference.Create(this);
+        try 
+        {
+            await JS.InvokeVoidAsync("dragDrop.init", _objRef);
+        }
+        catch { /* Ignore JS errors */ }
     }
 
     private void ImportFiles()
@@ -2177,11 +2353,22 @@ public class Program
         var paths = FileDialog.OpenFiles();
         if (paths != null && paths.Length > 0)
         {
-            foreach (var path in paths)
-            {
-                Library.AddFile(path);
-            }
+            Library.ImportBatch(paths);
         }
+    }
+    
+    private void ShowImportStatus(int added, int duplicates)
+    {
+        // Event comes from non-UI thread (native handler), invoke on UI thread
+        InvokeAsync(async () =>
+        {
+            StatusMessage = $"Added: {added}, Dupes: {duplicates}";
+            StateHasChanged();
+            
+            await Task.Delay(3000);
+            StatusMessage = "";
+            StateHasChanged();
+        });
     }
     
     private void OpenDataTools()
@@ -2216,6 +2403,8 @@ public class Program
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
+        Library.ImportCompleted -= ShowImportStatus;
+        _objRef?.Dispose();
     }
 }
 ```
@@ -2976,7 +3165,7 @@ public class SystemLauncherService
 ### `Tagium.Photino.Blazor\Setup\SchemeHandlers.cs`
 
 ```csharp
-using Tagium.Core.Services;
+using Tagium.Core.Helpers;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -2990,33 +3179,29 @@ public static class SchemeHandlers
         // Format: tagium://thumbnail/{fileId}
         if (!uri.Host.Equals("thumbnail", StringComparison.OrdinalIgnoreCase))
         {
-            return new MemoryStream();
+            return Stream.Null;
         }
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
 
         if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
         {
-            return new MemoryStream();
+            return Stream.Null;
         }
-        // We need to resolve the service from the app container. 
-        // Since this handler is static and outside DI scope, we rely on the fact 
-        // that Photino doesn't easily expose the provider here. 
-        // However, we can access singleton services if we store the provider in Program. 
-        // For simplified migration, we will instantiate a new ThumbnailService helper or 
-        // assume the cache path logic is static/safe.
 
-        // Better approach: Re-instantiate the path helper since it's stateless file IO.
-        ThumbnailService thumbnailService = new();
-        string path = thumbnailService.GetThumbnailPath(fileId);
+        string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+        string path = Path.Combine(cacheDir, $"{fileId}.png");
 
         if (!File.Exists(path))
         {
-            return new MemoryStream();
+            // Returning null here signals a "Not Found" to WebView2 in some contexts,
+            // or we can return a 404 stream if the wrapper supports it. 
+            // Photino: returning null usually results in an empty response or 404.
+            return null!;
         }
 
         contentType = "image/png";
-        return File.OpenRead(path);
+        return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
     }
 }
 ```
@@ -3077,14 +3262,77 @@ public static class ServiceRegistrar
     <title>Tagium</title>
     <base href="/" />
     <style>
-        /* Base styles if needed */
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #app {
+            height: 100%;
+        }
+
+        .drag-over::after {
+            content: 'Drop files to add';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(66, 165, 245, 0.3);
+            border: 4px dashed #42a5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            z-index: 9999;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
     </style>
 </head>
 <body>
     <div id="app">Loading...</div>
     <script src="_framework/blazor.webview.js"></script>
+    <script src="js/dragdrop.js"></script>
 </body>
 </html>
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\dragdrop.js`
+
+```javascript
+window.dragDrop = {
+    init: (dotNetHelper) => {
+        const dropZone = document.getElementById('app');
+
+        // Prevent default browser actions (like opening the file in the tab)
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight visual feedback
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+        });
+
+        // We do NOT handle the data transfer here.
+        // The C# Native Window Handler catches the files before JS sees them.
+    }
+};
 ```
 
 ---

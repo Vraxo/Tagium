@@ -4,13 +4,30 @@
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
+@using System.IO
 @inject FileDialogService FileDialog
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
 @inject IJSRuntime JS
 
-<div class="app-layout">
+<div class="app-layout" @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
+    
+    <!-- Drag Overlay -->
+    <div class="drag-overlay @(_isDragging ? "active" : "")">
+        <div class="drag-message">
+            <div style="font-size: 3em; color: #42a5f5; margin-bottom: 20px;">
+                📂
+            </div>
+            <h2>Drop files to import</h2>
+        </div>
+        @if (_isDragging)
+        {
+            <!-- InputFile captures the drop event -->
+            <InputFile OnChange="HandleFileDrop" multiple class="drag-input" />
+        }
+    </div>
+
     <aside class="left-panel">
         <TagSidebar />
     </aside>
@@ -80,6 +97,44 @@
         height: 100vh;
         width: 100vw;
         overflow: hidden;
+        position: relative;
+    }
+
+    /* Drag Overlay Styles */
+    .drag-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+    }
+
+    .drag-overlay.active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .drag-input {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: copy;
+    }
+
+    .drag-message {
+        text-align: center;
+        color: white;
     }
 
     .left-panel {
@@ -158,20 +213,14 @@
 </style>
 
 @code {
-    private DotNetObjectReference<MainLayout>? _objRef;
     private string StatusMessage = "";
+    private bool _isDragging = false;
+    private int _dragCounter = 0;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
         Library.ImportCompleted += ShowImportStatus;
-        
-        _objRef = DotNetObjectReference.Create(this);
-        try 
-        {
-            await JS.InvokeVoidAsync("dragDrop.init", _objRef);
-        }
-        catch { /* Ignore JS errors */ }
     }
 
     private void ImportFiles()
@@ -182,10 +231,71 @@
             Library.ImportBatch(paths);
         }
     }
+
+    private void OnDragEnter(DragEventArgs e)
+    {
+        _dragCounter++;
+        if (_dragCounter == 1) _isDragging = true;
+    }
+
+    private void OnDragLeave(DragEventArgs e)
+    {
+        _dragCounter--;
+        if (_dragCounter <= 0)
+        {
+            _dragCounter = 0;
+            _isDragging = false;
+        }
+    }
+
+    private async Task HandleFileDrop(InputFileChangeEventArgs e)
+    {
+        _dragCounter = 0;
+        _isDragging = false;
+
+        var files = e.GetMultipleFiles(100);
+        int count = 0;
+        
+        // Tagium indexes file paths. Since browser drag-and-drop only gives streams,
+        // we must save the file to a local "Imports" folder to index it.
+        string importDir = Path.Combine(Tagium.Core.Helpers.AppDataHelper.GetBaseDirectory(), "Imports");
+        if (!Directory.Exists(importDir)) Directory.CreateDirectory(importDir);
+
+        List<string> importedPaths = [];
+
+        foreach (var file in files)
+        {
+            try 
+            {
+                // Create unique filename to prevent collisions
+                string safeName = Path.GetFileNameWithoutExtension(file.Name) 
+                                  + "_" + Guid.NewGuid().ToString().Substring(0, 8) 
+                                  + Path.GetExtension(file.Name);
+                
+                string localPath = Path.Combine(importDir, safeName);
+
+                // Stream max size: 500MB
+                using var stream = file.OpenReadStream(500 * 1024 * 1024); 
+                using var fs = File.Create(localPath);
+                await stream.CopyToAsync(fs);
+                
+                importedPaths.Add(localPath);
+                count++;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Import failed: {ex.Message}");
+            }
+        }
+
+        if (importedPaths.Count > 0)
+        {
+            Library.ImportBatch(importedPaths.ToArray());
+        }
+    }
     
     private void ShowImportStatus(int added, int duplicates)
     {
-        // Event comes from non-UI thread (native handler), invoke on UI thread
         InvokeAsync(async () =>
         {
             StatusMessage = $"Added: {added}, Dupes: {duplicates}";
@@ -230,6 +340,5 @@
     {
         Settings.SettingsChanged -= StateHasChanged;
         Library.ImportCompleted -= ShowImportStatus;
-        _objRef?.Dispose();
     }
 }

@@ -1,6 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Photino.Blazor;
-using Tagium.Core.Services;
+﻿using Photino.Blazor;
 using Tagium.Photino.Blazor.Setup;
 
 namespace Tagium.Photino.Blazor;
@@ -22,14 +20,6 @@ public class Program
 
         // Custom Scheme for Thumbnails
         _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
-
-        // Native File Drop Handler
-        // Bypasses WebView security to get full file paths
-        _ = app.MainWindow.RegisterFileDropHandler((object sender, string[] files) =>
-        {
-            var libraryService = app.Services.GetService<LibraryService>();
-            libraryService?.ImportBatch(files);
-        });
 
         _ = app.MainWindow
             .SetTitle("Tagium")
