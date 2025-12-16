@@ -9,7 +9,6 @@
 @inject SystemLauncherService Launcher
 @inject IJSRuntime JS
 
-<!-- Removed @onclick="ClearSelection" to prevent conflict with marquee JS -->
 <div id="file-grid-container" class="grid-container">
     @foreach (var file in Files)
     {
@@ -42,34 +41,36 @@
         align-content: flex-start;
         height: 100%;
         overflow-y: auto;
-        /* Padding moved here to ensure click-events on edges are captured by the grid container */
         padding: 10px;
         position: relative;
+        /* Ensure background matches theme */
+        background-color: var(--bg-color);
     }
 
     .file-card {
-        background: #313131;
-        border: 1px solid #444;
+        background: var(--surface-bg);
+        border: 1px solid var(--border-color);
         border-radius: 4px;
         display: flex;
         flex-direction: column;
         cursor: pointer;
         user-select: none;
-        transition: width 0.1s, height 0.1s;
+        transition: width 0.1s, height 0.1s, border-color 0.1s;
     }
 
         .file-card:hover {
-            border-color: #666;
+            border-color: #666; /* Slightly lighter than border-color */
+            background: var(--panel-bg);
         }
 
         .file-card.selected {
-            border-color: #42a5f5;
-            box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.3);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.3); /* Keep subtle blue glow */
         }
 
     .thumbnail {
         flex: 1;
-        background: #222;
+        background: #000; /* Thumbnails look best on pure black */
         overflow: hidden;
         display: flex;
         align-items: center;
@@ -82,18 +83,18 @@
             height: 100%;
             object-fit: contain;
             position: relative;
-            z-index: 2; /* Sit above placeholder */
+            z-index: 2;
         }
 
     .placeholder-icon {
         position: absolute;
         font-size: 2em;
-        color: #444;
+        color: var(--border-color);
         z-index: 1;
     }
 
     .thumbnail.broken .placeholder-icon {
-        color: #666;
+        color: var(--text-muted);
     }
 
     .filename {
@@ -104,7 +105,9 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        background: #2a2a2a;
+        background: var(--surface-bg);
+        color: var(--text-color);
+        border-top: 1px solid var(--border-color);
     }
 </style>
 

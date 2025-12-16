@@ -29,10 +29,11 @@
         padding: 10px;
         height: 100%;
         overflow-y: auto;
+        color: var(--text-color);
     }
 
     .empty-state {
-        color: #888;
+        color: var(--text-muted);
         text-align: center;
         margin-top: 50px;
     }
@@ -71,7 +72,6 @@
             SelectionMode = InspectorMode.Single;
             long id = AppState.SelectedFileIds.First();
 
-            // Re-fetch to ensure fresh state (e.g. after relocation)
             var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
             SelectedFile = files.FirstOrDefault(f => f.Id == id);
 
@@ -83,7 +83,6 @@
             }
             else
             {
-                // Edge case: File removed but selection state not cleared yet
                 SelectionMode = InspectorMode.None;
             }
         }

@@ -20,7 +20,7 @@
     
     <div class="drag-overlay @(_isDragging ? "active" : "")">
         <div class="drag-message">
-            <div style="font-size: 3em; color: #42a5f5; margin-bottom: 20px;">
+            <div style="font-size: 3em; color: var(--primary-color); margin-bottom: 20px;">
                 📂
             </div>
             <h2>@(_isProcessing ? "Processing..." : "Drop files to import")</h2>
@@ -59,11 +59,29 @@
 
 <style>
     :root {
-        --bg-color: #252525;
-        --panel-bg: #313131;
-        --border-color: #444;
-        --text-color: #e0e0e0;
+        /* Revised Palette for "32,32,32" Request */
+        
+        /* The main content area (Grid) is slightly darker to create depth */
+        --bg-color: #181818; 
+        
+        /* The Sidebars/Panels use the requested 32,32,32 (#202020) */
+        --panel-bg: #202020; 
+        
+        /* Inputs, Cards, and Toolbar use a slightly lighter surface for contrast */
+        --surface-bg: #2D2D2D; 
+        
+        /* Subtle borders */
+        --border-color: #383838;
+        
+        /* Text Colors */
+        --text-color: #E0E0E0;
+        --text-muted: #9E9E9E;
+        
+        /* Accents */
         --primary-color: #42a5f5;
+        --primary-hover: #1e88e5;
+        --danger-color: #e57373; /* Softer red for dark mode */
+        --danger-hover: #ef5350;
     }
 
     body, html {
@@ -103,7 +121,8 @@
     .drag-message { text-align: center; color: white; }
 
     .left-panel {
-        width: 250px; background: var(--panel-bg);
+        width: 250px; 
+        background: var(--panel-bg);
         border-right: 1px solid var(--border-color);
         display: flex; flex-direction: column;
         padding: 10px; flex-shrink: 0;
@@ -115,7 +134,8 @@
     }
 
     .right-panel {
-        width: 300px; background: var(--panel-bg);
+        width: 300px; 
+        background: var(--panel-bg);
         border-left: 1px solid var(--border-color);
         padding: 0; flex-shrink: 0;
     }

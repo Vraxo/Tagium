@@ -33,13 +33,12 @@
                                          @onclick="() => UpdateTagColor(tag, color)"></div>
                                 }
                             </div>
-                            <!-- Close overlay -->
                             <div class="overlay" @onclick="() => ActiveColorPickerId = null"></div>
                         </div>
                     }
                 </div>
 
-                <!-- Emoji Input: Removed placeholder to show empty state clearly -->
+                <!-- Emoji Input -->
                 <input type="text" class="emoji-input"
                        value="@tag.Emoji"
                        @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
@@ -64,8 +63,8 @@
         display: flex;
         flex-direction: column;
         padding: 20px;
-        background: #252525;
-        color: #e0e0e0;
+        background: var(--bg-color);
+        color: var(--text-color);
     }
 
     .header-row {
@@ -73,13 +72,13 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 20px;
-        border-bottom: 1px solid #444;
+        border-bottom: 1px solid var(--border-color);
         padding-bottom: 15px;
     }
 
         .header-row h3 {
             margin: 0;
-            color: #eee;
+            color: var(--text-color);
         }
 
     .add-row {
@@ -89,15 +88,20 @@
 
         .add-row input {
             padding: 8px;
-            background: #444;
-            border: 1px solid #555;
-            color: white;
+            background: var(--surface-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
             border-radius: 4px;
             width: 250px;
         }
 
+            .add-row input:focus {
+                outline: none;
+                border-color: var(--primary-color);
+            }
+
     .btn-primary {
-        background: #42a5f5;
+        background: var(--primary-color);
         border: none;
         color: white;
         padding: 0 15px;
@@ -106,7 +110,7 @@
     }
 
         .btn-primary:hover {
-            background: #1e88e5;
+            background: var(--primary-hover);
         }
 
     .tag-list {
@@ -121,14 +125,14 @@
         display: flex;
         align-items: center;
         padding: 8px 12px;
-        background: #313131;
+        background: var(--surface-bg);
         border-radius: 4px;
         gap: 15px;
         transition: background 0.1s;
     }
 
         .tag-row:hover {
-            background: #3a3a3a;
+            background: var(--panel-bg);
         }
 
     .color-picker-wrapper {
@@ -141,7 +145,7 @@
         width: 24px;
         height: 24px;
         border-radius: 50%;
-        border: 2px solid #555;
+        border: 2px solid var(--border-color);
         cursor: pointer;
         display: block;
     }
@@ -150,8 +154,8 @@
         position: absolute;
         top: 35px;
         left: 0;
-        background: #252525;
-        border: 1px solid #555;
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
         padding: 8px;
         z-index: 1000;
         border-radius: 6px;
@@ -180,7 +184,6 @@
             transform: scale(1.1);
         }
 
-    /* Invisible overlay to catch clicks outside */
     .overlay {
         position: fixed;
         top: 0;
@@ -191,33 +194,38 @@
     }
 
     .emoji-input {
-        width: 40px;
+        width: 30px;
         text-align: center;
-        background: #444;
-        border: 1px solid #555;
-        color: white;
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
         border-radius: 4px;
         padding: 5px;
         font-size: 1.2em;
     }
 
+        .emoji-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
     .name-input {
         flex: 1;
         background: transparent;
         border: 1px solid transparent;
-        color: white;
+        color: var(--text-color);
         padding: 5px;
         border-radius: 4px;
         font-size: 1em;
     }
 
         .name-input:focus {
-            background: #444;
-            border-color: #555;
+            background: var(--bg-color);
+            border-color: var(--border-color);
         }
 
     .count {
-        color: #888;
+        color: var(--text-muted);
         font-size: 0.9em;
         width: 80px;
         text-align: right;
@@ -293,17 +301,13 @@
 
     private void UpdateTagEmoji(Tag tag, string? newEmoji)
     {
-        // Sanitize input: clean whitespace or set to null
         tag.Emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji;
         Library.UpdateTag(tag);
     }
 
     private void ToggleColorPicker(long id)
     {
-        if (ActiveColorPickerId == id)
-            ActiveColorPickerId = null;
-        else
-            ActiveColorPickerId = id;
+        ActiveColorPickerId = (ActiveColorPickerId == id) ? null : id;
     }
 
     private void UpdateTagColor(Tag tag, string color)

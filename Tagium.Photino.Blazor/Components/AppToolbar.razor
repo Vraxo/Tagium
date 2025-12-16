@@ -11,18 +11,14 @@
 
 <div class="toolbar">
     <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
-
-    <!-- View Switcher Button -->
     <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
             @onclick="ToggleTagView">
         Tags
     </button>
-
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
     <div class="spacer"></div>
 
-    <!-- Only show file controls in Files View -->
     @if (AppState.CurrentView == AppView.Files)
     {
         <div class="control-group">
@@ -53,11 +49,11 @@
 <style>
     .toolbar {
         height: 50px;
-        border-bottom: 1px solid #444;
+        border-bottom: 1px solid var(--border-color);
         display: flex;
         align-items: center;
         padding: 0 15px;
-        background: #2a2a2a;
+        background: var(--surface-bg);
         gap: 10px;
     }
 
@@ -70,43 +66,45 @@
         align-items: center;
         gap: 5px;
         font-size: 0.9em;
-        color: #bbb;
+        color: var(--text-muted);
     }
 
         .control-group select {
-            background: #444;
-            border: 1px solid #555;
-            color: white;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
             padding: 4px;
             border-radius: 4px;
         }
 
     .btn {
-        background: #444;
-        border: none;
-        color: white;
+        background: var(--bg-color);
+        border: 1px solid var(--border-color); /* Added border for better contrast */
+        color: var(--text-color);
         padding: 6px 12px;
         border-radius: 4px;
         cursor: pointer;
     }
 
         .btn:hover {
-            background: #555;
+            background: var(--border-color);
         }
 
         .btn.active {
-            background: #555;
-            border: 1px solid #777;
+            background: var(--border-color);
+            color: white;
         }
 
     .btn-primary {
-        background: #42a5f5;
+        background: var(--primary-color);
         color: white;
         font-weight: 500;
+        border-color: var(--primary-color);
     }
 
         .btn-primary:hover {
-            background: #1e88e5;
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
         }
 </style>
 
