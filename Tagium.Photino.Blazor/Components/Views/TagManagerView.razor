@@ -39,11 +39,11 @@
                     }
                 </div>
 
-                <!-- Emoji Input -->
+                <!-- Emoji Input: Removed placeholder to show empty state clearly -->
                 <input type="text" class="emoji-input"
                        value="@tag.Emoji"
                        @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
-                       maxlength="2" placeholder="😀" />
+                       maxlength="2" />
 
                 <!-- Name Input -->
                 <input type="text" class="name-input"
@@ -279,9 +279,6 @@
 
     private void DeleteTag(long id)
     {
-        // For a full view, we might want a confirmation modal,
-        // but for now immediate delete matches the "power user" feel.
-        // We can add a confirmation later if needed.
         Library.DeleteTag(id);
     }
 
@@ -296,7 +293,8 @@
 
     private void UpdateTagEmoji(Tag tag, string? newEmoji)
     {
-        tag.Emoji = newEmoji;
+        // Sanitize input: clean whitespace or set to null
+        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji;
         Library.UpdateTag(tag);
     }
 

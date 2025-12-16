@@ -7,26 +7,6 @@
 <div class="modal-header">Preferences</div>
 <div class="modal-body">
 
-    <h4>Tag Display Style</h4>
-    <div class="radio-group">
-        <label>
-            <input type="radio"
-                   name="tagDisplay"
-                   checked="@(Settings.Current.TagDisplay == TagDisplayMode.ColorCircle)"
-                   @onchange="@(() => UpdateTagDisplay(TagDisplayMode.ColorCircle))" />
-            Color Circle
-        </label>
-        <label>
-            <input type="radio"
-                   name="tagDisplay"
-                   checked="@(Settings.Current.TagDisplay == TagDisplayMode.Emoji)"
-                   @onchange="@(() => UpdateTagDisplay(TagDisplayMode.Emoji))" />
-            Emoji
-        </label>
-    </div>
-
-    <hr />
-
     <h4>Emoji Set</h4>
     <p class="hint">Requires restart to fully apply font changes.</p>
     <div class="radio-group">
@@ -73,12 +53,6 @@
         margin: -5px 0 10px 0;
     }
 
-    hr {
-        border: 0;
-        border-top: 1px solid #444;
-        margin: 20px 0;
-    }
-
     .btn {
         background: #444;
         color: white;
@@ -94,11 +68,6 @@
 </style>
 
 @code {
-    private void UpdateTagDisplay(TagDisplayMode mode)
-    {
-        Settings.Update(s => s.TagDisplay = mode);
-    }
-
     private void UpdateEmojiSet(EmojiSet set)
     {
         Settings.Update(s => s.EmojiPreference = set);

@@ -2,6 +2,7 @@
 @using Tagium.Core.Models
 @using Tagium.Core.Services
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Shared
 @inject LibraryService Library
 @inject AppState AppState
 
@@ -21,7 +22,10 @@
     {
         @foreach (var tag in CommonTags)
         {
-            <span class="tag-pill" @onclick="() => BulkRemoveTag(tag.Id)">
+            <span class="tag-pill"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => BulkRemoveTag(tag.Id)">
+                <TagIcon Tag="@tag" />
                 @tag.Name <span class="remove">&times;</span>
             </span>
         }
@@ -39,7 +43,10 @@
 <div class="tags-container available">
     @foreach (var tag in AvailableTags)
     {
-        <span class="tag-pill add" @onclick="() => BulkAddTag(tag.Id)">
+        <span class="tag-pill add"
+              style="border-color: @tag.ColorHex"
+              @onclick="() => BulkAddTag(tag.Id)">
+            <TagIcon Tag="@tag" />
             + @tag.Name
         </span>
     }
@@ -99,18 +106,20 @@
     }
 
     .tag-pill {
-        background: #444;
-        padding: 4px 8px;
+        background: #333;
+        padding: 3px 8px;
         border-radius: 12px;
         font-size: 0.9em;
         cursor: pointer;
         display: flex;
         align-items: center;
         user-select: none;
+        border: 1px solid #555;
+        transition: background-color 0.1s;
     }
 
         .tag-pill:hover {
-            background: #555;
+            background: #444;
         }
 
         .tag-pill .remove {
@@ -120,14 +129,15 @@
         }
 
         .tag-pill.add {
-            background: #2a2a2a;
-            border: 1px dashed #555;
+            background: transparent;
+            border-style: dashed;
+            opacity: 0.8;
         }
 
             .tag-pill.add:hover {
-                background: #42a5f5;
-                border-color: transparent;
-                color: white;
+                background: #333;
+                border-style: solid;
+                opacity: 1;
             }
 </style>
 

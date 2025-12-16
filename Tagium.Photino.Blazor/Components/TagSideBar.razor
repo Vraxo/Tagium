@@ -2,17 +2,14 @@
 @using Tagium.Core.Services
 @using Tagium.Core.Models
 @using Tagium.Photino.Blazor.Services
-@using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Shared
 @inject LibraryService Library
 @inject AppState AppState
-@inject ModalService ModalService
 
 <div class="sidebar-container">
     <div class="search-box">
         <input type="text" placeholder="Search..." @onchange="OnSearchInput" value="@AppState.SearchText" />
     </div>
-
-    <!-- Removed "Manage Tags" button here since it's now in the Top Toolbar -->
 
     <div class="tag-list">
         <div class="tag-item @(IsAllFilesActive ? "active" : "")"
@@ -34,7 +31,7 @@
             && AppState.CurrentView == AppView.Files;
 
             <div class="tag-item @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
-                <span class="tag-color" style="background-color: @tag.ColorHex"></span>
+                <TagIcon Tag="@tag" />
                 <span class="name">@tag.Name</span>
                 <span class="count">@tag.FileCount</span>
             </div>
@@ -85,13 +82,6 @@
             color: white;
         }
 
-    .tag-color {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        margin-right: 8px;
-    }
-
     .name {
         flex: 1;
     }
@@ -103,6 +93,9 @@
 
     .icon {
         margin-right: 8px;
+        display: inline-block;
+        width: 1.2em;
+        text-align: center;
     }
 
     hr {
@@ -115,7 +108,6 @@
 @code {
     private List<Tag> Tags = [];
 
-    // Helper properties to keep logic clean in Razor
     private bool IsAllFilesActive => string.IsNullOrEmpty(AppState.SearchText)
                                      && !AppState.IsMissingOnly
                                      && AppState.CurrentView == AppView.Files;
@@ -143,7 +135,6 @@
     private void SetSearch(string text)
     {
         AppState.SetSearch(text);
-        // AppState automatically switches view to Files in SetSearch
     }
 
     public void Dispose()
