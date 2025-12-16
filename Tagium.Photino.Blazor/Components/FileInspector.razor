@@ -7,11 +7,11 @@
 @inject SystemLauncherService Launcher
 
 <div class="inspector">
-    @if (SelectedFile == null)
+    @if (SelectionMode == InspectorMode.None)
     {
         <div class="empty-state">Select a file to view details.</div>
     }
-    else
+    else if (SelectionMode == InspectorMode.Single)
     {
         <h3>File Details</h3>
 
@@ -23,7 +23,7 @@
 
         <div class="prop-row">
             <label>Name</label>
-            <span>@SelectedFile.Name</span>
+            <span>@SelectedFile!.Name</span>
         </div>
         <div class="prop-row">
             <label>Path</label>
@@ -49,6 +49,48 @@
             @foreach (var tag in AvailableTags)
             {
                 <span class="tag-pill add" @onclick="() => AddTag(tag.Id)">
+                    + @tag.Name
+                </span>
+            }
+        </div>
+    }
+    else if (SelectionMode == InspectorMode.Multi)
+    {
+        <h3>Bulk Edit</h3>
+        <p class="summary-text">@AppState.SelectedFileIds.Count items selected.</p>
+
+        <div class="actions-row">
+            <button class="btn btn-danger" @onclick="RemoveMultipleFiles">Remove All Selected</button>
+        </div>
+
+        <hr />
+
+        <h4>Common Tags</h4>
+        <p class="help-text">Click to remove from all selected files.</p>
+        <div class="tags-container">
+            @if (CommonTags.Any())
+            {
+                @foreach (var tag in CommonTags)
+                {
+                    <span class="tag-pill" @onclick="() => BulkRemoveTag(tag.Id)">
+                        @tag.Name <span class="remove">&times;</span>
+                    </span>
+                }
+            }
+            else
+            {
+                <span class="empty-tag">No common tags.</span>
+            }
+        </div>
+
+        <hr />
+
+        <h4>Add Tag</h4>
+        <p class="help-text">Click to add to all selected files.</p>
+        <div class="tags-container available">
+            @foreach (var tag in AvailableTags)
+            {
+                <span class="tag-pill add" @onclick="() => BulkAddTag(tag.Id)">
                     + @tag.Name
                 </span>
             }
@@ -83,6 +125,17 @@
         word-break: break-all;
         font-size: 0.9em;
         font-family: monospace;
+    }
+
+    .summary-text {
+        color: #bbb;
+        margin-bottom: 10px;
+    }
+
+    .help-text {
+        font-size: 0.8em;
+        color: #888;
+        margin: -5px 0 10px 0;
     }
 
     .actions-row {
@@ -120,6 +173,12 @@
         gap: 5px;
     }
 
+    .empty-tag {
+        color: #666;
+        font-style: italic;
+        font-size: 0.9em;
+    }
+
     .tag-pill {
         background: #444;
         padding: 4px 8px;
@@ -128,6 +187,7 @@
         cursor: pointer;
         display: flex;
         align-items: center;
+        user-select: none;
     }
 
         .tag-pill:hover {
@@ -153,8 +213,16 @@
 </style>
 
 @code {
+    private enum InspectorMode { None, Single, Multi }
+
+    private InspectorMode SelectionMode = InspectorMode.None;
     private FileEntry? SelectedFile;
+
+    // Single Mode Lists
     private List<Tag> AssignedTags = [];
+
+    // Shared / Multi Mode Lists
+    private List<Tag> CommonTags = [];
     private List<Tag> AvailableTags = [];
 
     protected override void OnInitialized()
@@ -165,8 +233,16 @@
 
     private void UpdateView()
     {
-        if (AppState.SelectedFileIds.Count == 1)
+        int count = AppState.SelectedFileIds.Count;
+
+        if (count == 0)
         {
+            SelectionMode = InspectorMode.None;
+            SelectedFile = null;
+        }
+        else if (count == 1)
+        {
+            SelectionMode = InspectorMode.Single;
             long id = AppState.SelectedFileIds.First();
             var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
             SelectedFile = files.FirstOrDefault(f => f.Id == id);
@@ -180,11 +256,23 @@
         }
         else
         {
+            SelectionMode = InspectorMode.Multi;
             SelectedFile = null;
+
+            CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
+            var allTags = Library.GetTags();
+
+            // Available in Bulk Mode = All tags that are NOT already Common.
+            // Tagra logic: "AddableTags" = AllTags.Except(CommonTags).
+            // This means even if some files have Tag A, but not all, Tag A appears in "Add".
+            // Adding it pushes it to the files that don't have it (and effectively those that do, safely).
+            AvailableTags = allTags.Where(t => !CommonTags.Any(ct => ct.Id == t.Id)).ToList();
         }
 
         InvokeAsync(StateHasChanged);
     }
+
+    // --- Single File Actions ---
 
     private void AddTag(long tagId)
     {
@@ -213,6 +301,24 @@
             Library.RemoveFile(SelectedFile.Id);
             AppState.ClearSelection();
         }
+    }
+
+    // --- Bulk Actions ---
+
+    private void BulkAddTag(long tagId)
+    {
+        Library.AddTagToFiles(AppState.SelectedFileIds, tagId);
+    }
+
+    private void BulkRemoveTag(long tagId)
+    {
+        Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
+    }
+
+    private void RemoveMultipleFiles()
+    {
+        Library.RemoveFiles(AppState.SelectedFileIds);
+        AppState.ClearSelection();
     }
 
     public void Dispose()

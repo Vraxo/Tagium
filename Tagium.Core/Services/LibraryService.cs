@@ -106,15 +106,57 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
+    public void RemoveFiles(IEnumerable<long> fileIds)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        foreach (long id in fileIds)
+        {
+            _fileRepo.Remove(id);
+        }
+        LibraryChanged?.Invoke();
+    }
+
     public void AddTagToFile(long fileId, long tagId)
     {
         _fileTagRepo.AddTagToFile(fileId, tagId);
         LibraryChanged?.Invoke();
     }
 
+    public void AddTagToFiles(IEnumerable<long> fileIds, long tagId)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        foreach (long id in fileIds)
+        {
+            _fileTagRepo.AddTagToFile(id, tagId);
+        }
+        LibraryChanged?.Invoke();
+    }
+
     public void RemoveTagFromFile(long fileId, long tagId)
     {
         _fileTagRepo.RemoveTagFromFile(fileId, tagId);
+        LibraryChanged?.Invoke();
+    }
+
+    public void RemoveTagFromFiles(IEnumerable<long> fileIds, long tagId)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        foreach (long id in fileIds)
+        {
+            _fileTagRepo.RemoveTagFromFile(id, tagId);
+        }
         LibraryChanged?.Invoke();
     }
 
@@ -130,6 +172,34 @@ public class LibraryService
         List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
         List<Tag> allTags = _tagRepo.GetAll();
         return allTags.Where(t => tagIds.Contains(t.Id)).ToList();
+    }
+
+    public List<Tag> GetCommonTags(IEnumerable<long> fileIds)
+    {
+        List<long> ids = fileIds.ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        // Start with tags of first file
+        HashSet<long> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
+
+        // Intersect with remaining files
+        for (int i = 1; i < ids.Count; i++)
+        {
+            List<long> tags = _fileTagRepo.GetTagIdsForFile(ids[i]);
+            commonIds.IntersectWith(tags);
+
+            // Optimization: If intersection is empty, no need to continue
+            if (commonIds.Count == 0)
+            {
+                break;
+            }
+        }
+
+        List<Tag> allTags = _tagRepo.GetAll();
+        return allTags.Where(t => commonIds.Contains(t.Id)).ToList();
     }
 
     public void AddTag(string name)
