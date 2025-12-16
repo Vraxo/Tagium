@@ -1,0 +1,108 @@
+﻿@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Inspectors
+@inject LibraryService Library
+@inject AppState AppState
+
+<div class="inspector">
+    @if (SelectionMode == InspectorMode.None)
+    {
+        <div class="empty-state">Select a file to view details.</div>
+    }
+    else if (SelectionMode == InspectorMode.Single && SelectedFile != null)
+    {
+        <SingleFileInspector File="SelectedFile"
+                             AssignedTags="AssignedTags"
+                             AvailableTags="AvailableTags" />
+    }
+    else if (SelectionMode == InspectorMode.Multi)
+    {
+        <MultiFileInspector CommonTags="CommonTags"
+                            AvailableTags="AvailableTags" />
+    }
+</div>
+
+<style>
+    .inspector {
+        padding: 10px;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .empty-state {
+        color: #888;
+        text-align: center;
+        margin-top: 50px;
+    }
+</style>
+
+@code {
+    private enum InspectorMode { None, Single, Multi }
+
+    private InspectorMode SelectionMode = InspectorMode.None;
+    private FileEntry? SelectedFile;
+
+    // Single Mode Data
+    private List<Tag> AssignedTags = [];
+
+    // Multi Mode Data
+    private List<Tag> CommonTags = [];
+    private List<Tag> AvailableTags = [];
+
+    protected override void OnInitialized()
+    {
+        AppState.OnSelectionChange += UpdateView;
+        Library.LibraryChanged += UpdateView;
+    }
+
+    private void UpdateView()
+    {
+        int count = AppState.SelectedFileIds.Count;
+
+        if (count == 0)
+        {
+            SelectionMode = InspectorMode.None;
+            SelectedFile = null;
+        }
+        else if (count == 1)
+        {
+            SelectionMode = InspectorMode.Single;
+            long id = AppState.SelectedFileIds.First();
+
+            // Re-fetch to ensure fresh state (e.g. after relocation)
+            var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+            SelectedFile = files.FirstOrDefault(f => f.Id == id);
+
+            if (SelectedFile != null)
+            {
+                AssignedTags = Library.GetTagsForFile(id);
+                var allTags = Library.GetTags();
+                AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+            }
+            else
+            {
+                // Edge case: File removed but selection state not cleared yet
+                SelectionMode = InspectorMode.None;
+            }
+        }
+        else
+        {
+            SelectionMode = InspectorMode.Multi;
+            SelectedFile = null;
+
+            CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
+            var allTags = Library.GetTags();
+            AvailableTags = allTags.Where(t => !CommonTags.Any(ct => ct.Id == t.Id)).ToList();
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AppState.OnSelectionChange -= UpdateView;
+        Library.LibraryChanged -= UpdateView;
+    }
+}

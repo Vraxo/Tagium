@@ -97,6 +97,25 @@ public class FileRepository
         }
     }
 
+    public void Update(FileEntry file)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE Files 
+            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing 
+            WHERE Id = @Id";
+
+        _ = cmd.Parameters.AddWithValue("@Id", file.Id);
+        _ = cmd.Parameters.AddWithValue("@Path", file.Path);
+        _ = cmd.Parameters.AddWithValue("@Name", file.Name);
+        _ = cmd.Parameters.AddWithValue("@Hash", (object?)file.Hash ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@IsMissing", file.IsMissing ? 1 : 0);
+
+        _ = cmd.ExecuteNonQuery();
+    }
+
     public void Remove(long id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);

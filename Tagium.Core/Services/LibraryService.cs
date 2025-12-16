@@ -100,6 +100,46 @@ public class LibraryService
         ImportCompleted?.Invoke(added, duplicates);
     }
 
+    public bool RelocateFile(long fileId, string newPath)
+    {
+        if (!File.Exists(newPath))
+        {
+            return false;
+        }
+
+        string? newHash = FileHasher.ComputeSha256(newPath);
+        if (newHash == null)
+        {
+            return false;
+        }
+
+        // Check if the new file is already in the database
+        FileEntry? existing = _fileRepo.GetByHash(newHash);
+        if (existing != null && existing.Id != fileId)
+        {
+            return false; // Duplicate: The file at newPath is already tracked
+        }
+
+        FileEntry? file = _fileRepo.GetById(fileId);
+        if (file == null)
+        {
+            return false;
+        }
+
+        file.Path = newPath;
+        file.Name = Path.GetFileName(newPath);
+        file.Hash = newHash;
+        file.IsMissing = false;
+
+        _fileRepo.Update(file);
+
+        // Regenerate thumbnail for the new path
+        _ = _thumbnailService.GenerateThumbnailAsync(file);
+
+        LibraryChanged?.Invoke();
+        return true;
+    }
+
     public void RemoveFile(long fileId)
     {
         _fileRepo.Remove(fileId);

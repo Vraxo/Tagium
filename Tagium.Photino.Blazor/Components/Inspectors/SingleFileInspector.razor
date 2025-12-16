@@ -1,0 +1,223 @@
+﻿@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Core.Models
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject SystemLauncherService Launcher
+@inject FileDialogService FileDialog
+@inject AppState AppState
+
+<h3>File Details</h3>
+
+@if (File.IsMissing)
+{
+    <div class="missing-warning">
+        <h4>⚠️ File Missing</h4>
+        <p>This file was not found at its original path.</p>
+        <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
+    </div>
+}
+
+<div class="actions-row">
+    <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
+    <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
+    <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
+</div>
+
+<div class="prop-row">
+    <label>Name</label>
+    <span>@File.Name</span>
+</div>
+<div class="prop-row">
+    <label>Path</label>
+    <span class="path">@File.Path</span>
+</div>
+
+<hr />
+
+<h4>Tags</h4>
+<div class="tags-container">
+    @foreach (var tag in AssignedTags)
+    {
+        <span class="tag-pill" @onclick="() => RemoveTag(tag.Id)">
+            @tag.Name <span class="remove">&times;</span>
+        </span>
+    }
+</div>
+
+<hr />
+
+<h4>Add Tag</h4>
+<div class="tags-container available">
+    @foreach (var tag in AvailableTags)
+    {
+        <span class="tag-pill add" @onclick="() => AddTag(tag.Id)">
+            + @tag.Name
+        </span>
+    }
+</div>
+
+<style>
+    .prop-row {
+        margin-bottom: 10px;
+    }
+
+        .prop-row label {
+            display: block;
+            font-size: 0.8em;
+            color: #aaa;
+        }
+
+    .path {
+        word-break: break-all;
+        font-size: 0.9em;
+        font-family: monospace;
+    }
+
+    .actions-row {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 15px;
+    }
+
+    .btn {
+        background: #444;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        flex: 1;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+        .btn:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+    .btn-danger {
+        background: #c62828;
+    }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+    .btn-primary {
+        background: #42a5f5;
+    }
+
+        .btn-primary:hover {
+            background: #1e88e5;
+        }
+
+    .btn-small {
+        font-size: 0.8em;
+        padding: 4px 8px;
+    }
+
+    .missing-warning {
+        background: rgba(239, 83, 80, 0.15);
+        border: 1px solid #c62828;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+    }
+
+        .missing-warning h4 {
+            margin: 0 0 5px 0;
+            color: #ef5350;
+            font-size: 1em;
+        }
+
+        .missing-warning p {
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+            color: #ccc;
+        }
+
+    .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    .tag-pill {
+        background: #444;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.9em;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        user-select: none;
+    }
+
+        .tag-pill:hover {
+            background: #555;
+        }
+
+        .tag-pill .remove {
+            margin-left: 5px;
+            color: #ef5350;
+            font-weight: bold;
+        }
+
+        .tag-pill.add {
+            background: #2a2a2a;
+            border: 1px dashed #555;
+        }
+
+            .tag-pill.add:hover {
+                background: #42a5f5;
+                border-color: transparent;
+                color: white;
+            }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public required FileEntry File { get; set; }
+    [Parameter] public List<Tag> AssignedTags { get; set; } = [];
+    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
+
+    private void AddTag(long tagId)
+    {
+        Library.AddTagToFile(File.Id, tagId);
+    }
+
+    private void RemoveTag(long tagId)
+    {
+        Library.RemoveTagFromFile(File.Id, tagId);
+    }
+
+    private void OpenFile()
+    {
+        Launcher.OpenFile(File.Path);
+    }
+
+    private void ShowInExplorer()
+    {
+        Launcher.ShowInExplorer(File.Path);
+    }
+
+    private void RemoveFile()
+    {
+        Library.RemoveFile(File.Id);
+        AppState.ClearSelection();
+    }
+
+    private void RelocateFile()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files != null && files.Length > 0)
+        {
+            Library.RelocateFile(File.Id, files[0]);
+        }
+    }
+}
