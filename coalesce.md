@@ -618,8 +618,9 @@ public class Program
         ServiceRegistrar.ConfigureServices(appBuilder.Services);
 
         // Register Root Component
-        // Ensure "App" is resolved from Tagium.Photino.Blazor.Components namespace
-        appBuilder.RootComponents.Add<App>("app");
+        // "App" is now explicitly in the Tagium.Photino.Blazor namespace (via @namespace in razor file)
+        // This guarantees it is found regardless of file folder structure.
+        appBuilder.RootComponents.Add<App>("#app");
 
         var app = appBuilder.Build();
 
@@ -677,7 +678,8 @@ public class Program
 ### `Tagium.Photino.Blazor\Components\App.razor`
 
 ```
-@namespace Tagium.Photino.Blazor.Components
+@namespace Tagium.Photino.Blazor
+@using Tagium.Photino.Blazor.Components
 @using Tagium.Photino.Blazor
 
 <Router AppAssembly="@typeof(Program).Assembly">

@@ -9,59 +9,100 @@ public class LibraryService
     private readonly FileRepository _fileRepo;
     private readonly TagRepository _tagRepo;
     private readonly FileTagRepository _fileTagRepo;
+    private readonly FileSearchRepository _searchRepo;
     private readonly ThumbnailService _thumbnailService;
+    private readonly SettingsManager _settingsManager;
 
-    // Events for UI reactivity
     public event Action? LibraryChanged;
 
     public LibraryService(
         FileRepository fileRepo,
         TagRepository tagRepo,
         FileTagRepository fileTagRepo,
-        ThumbnailService thumbnailService)
+        FileSearchRepository searchRepo,
+        ThumbnailService thumbnailService,
+        SettingsManager settingsManager)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
         _fileTagRepo = fileTagRepo;
+        _searchRepo = searchRepo;
         _thumbnailService = thumbnailService;
+        _settingsManager = settingsManager;
     }
 
-    public List<FileEntry> GetFiles(SortBy sortBy, SortDirection direction)
+    // --- Files ---
+
+    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
     {
-        var files = _fileRepo.GetAll(sortBy, direction);
-        // Optimization: Don't load tags for grid view unless necessary?
-        // For now, simple approach:
-        return files;
+        SortBy sort = _settingsManager.Current.FileSortBy;
+        SortDirection dir = _settingsManager.Current.FileSortDirection;
+
+        if (missingOnly)
+        {
+            List<FileEntry> all = _fileRepo.GetAll(sort, dir);
+            return all.Where(f => f.IsMissing).ToList();
+        }
+
+        return string.IsNullOrWhiteSpace(searchText) ? _fileRepo.GetAll(sort, dir) : _searchRepo.Search(searchText, sort, dir);
     }
+
+    public void AddFile(string path)
+    {
+        string hash = Guid.NewGuid().ToString(); // Placeholder for real hashing
+        _fileRepo.Add(path, hash);
+        LibraryChanged?.Invoke();
+    }
+
+    public void AddTagToFile(long fileId, long tagId)
+    {
+        _fileTagRepo.AddTagToFile(fileId, tagId);
+        LibraryChanged?.Invoke();
+    }
+
+    public void RemoveTagFromFile(long fileId, long tagId)
+    {
+        _fileTagRepo.RemoveTagFromFile(fileId, tagId);
+        LibraryChanged?.Invoke();
+    }
+
+    // --- Tags ---
 
     public List<Tag> GetTags()
     {
         return _tagRepo.GetAll();
     }
 
-    public void AddFile(string path)
+    public List<Tag> GetTagsForFile(long fileId)
     {
-        // Simple hash placeholder for now
-        string hash = Guid.NewGuid().ToString();
-        _fileRepo.Add(path, hash);
+        List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Tag> allTags = _tagRepo.GetAll();
+        return allTags.Where(t => tagIds.Contains(t.Id)).ToList();
+    }
+
+    public void AddTag(string name)
+    {
+        _tagRepo.Add(name, "#757575", null);
         LibraryChanged?.Invoke();
     }
 
+    public void DeleteTag(long id)
+    {
+        _tagRepo.Delete(id);
+        LibraryChanged?.Invoke();
+    }
+
+    // --- Thumbnails ---
+
+    [Obsolete]
     public void EnsureThumbnails(IEnumerable<FileEntry> files)
     {
-        foreach (var file in files)
+        foreach (FileEntry file in files)
         {
-            if (_thumbnailService.HasThumbnail(file.Id))
+            if (!_thumbnailService.HasThumbnail(file.Id))
             {
-                continue;
+                _ = _thumbnailService.GenerateThumbnailAsync(file);
             }
-            _ = _thumbnailService.GenerateThumbnailAsync(file).ContinueWith(t =>
-            {
-                if (t.IsCompletedSuccessfully)
-                {
-                    // Optional: granular update event
-                }
-            });
         }
     }
 }

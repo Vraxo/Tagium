@@ -1,0 +1,180 @@
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject AppState AppState
+
+<div class="inspector">
+    @if (SelectedFile == null)
+    {
+        <div class="empty-state">Select a file to view details.</div>
+    }
+    else
+    {
+        <h3>File Details</h3>
+        <div class="prop-row">
+            <label>Name</label>
+            <span>@SelectedFile.Name</span>
+        </div>
+        <div class="prop-row">
+            <label>Path</label>
+            <span class="path">@SelectedFile.Path</span>
+        </div>
+
+        <hr />
+
+        <h4>Tags</h4>
+        <div class="tags-container">
+            @foreach (var tag in AssignedTags)
+            {
+                <span class="tag-pill" @onclick="() => RemoveTag(tag.Id)">
+                    @tag.Name <span class="remove">&times;</span>
+                </span>
+            }
+        </div>
+
+        <hr />
+
+        <h4>Add Tag</h4>
+        <div class="tags-container available">
+            @foreach (var tag in AvailableTags)
+            {
+                <span class="tag-pill add" @onclick="() => AddTag(tag.Id)">
+                    + @tag.Name
+                </span>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .inspector {
+        padding: 10px;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .empty-state {
+        color: #888;
+        text-align: center;
+        margin-top: 50px;
+    }
+
+    .prop-row {
+        margin-bottom: 10px;
+    }
+
+        .prop-row label {
+            display: block;
+            font-size: 0.8em;
+            color: #aaa;
+        }
+
+    .path {
+        word-break: break-all;
+        font-size: 0.9em;
+        font-family: monospace;
+    }
+
+    .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    .tag-pill {
+        background: #444;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.9em;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+    }
+
+        .tag-pill:hover {
+            background: #555;
+        }
+
+        .tag-pill .remove {
+            margin-left: 5px;
+            color: #ef5350;
+            font-weight: bold;
+        }
+
+        .tag-pill.add {
+            background: #2a2a2a;
+            border: 1px dashed #555;
+        }
+
+            .tag-pill.add:hover {
+                background: #42a5f5;
+                border-color: transparent;
+                color: white;
+            }
+</style>
+
+@code {
+    private FileEntry? SelectedFile;
+    private List<Tag> AssignedTags = [];
+    private List<Tag> AvailableTags = [];
+
+    protected override void OnInitialized()
+    {
+        AppState.OnSelectionChange += UpdateView;
+        Library.LibraryChanged += UpdateView;
+    }
+
+    private void UpdateView()
+    {
+        if (AppState.SelectedFileIds.Count == 1)
+        {
+            long id = AppState.SelectedFileIds.First();
+            // We need to fetch the file details again to ensure freshness
+            // Since GetFiles returns basic entries, we might want a GetById in Service later.
+            // For now, search from current list is okay or fetch from Library.
+            // To keep it robust, let's grab from repo via service (we need to add GetById to Service).
+            // Simplification: We assume the FileEntry in the grid is valid, but we need fresh Tags.
+
+            // We'll just fetch tags for now.
+            var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+            SelectedFile = files.FirstOrDefault(f => f.Id == id);
+
+            if (SelectedFile != null)
+            {
+                AssignedTags = Library.GetTagsForFile(id);
+                var allTags = Library.GetTags();
+                AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+            }
+        }
+        else
+        {
+            SelectedFile = null;
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void AddTag(long tagId)
+    {
+        if (SelectedFile != null)
+        {
+            Library.AddTagToFile(SelectedFile.Id, tagId);
+        }
+    }
+
+    private void RemoveTag(long tagId)
+    {
+        if (SelectedFile != null)
+        {
+            Library.RemoveTagFromFile(SelectedFile.Id, tagId);
+        }
+    }
+
+    public void Dispose()
+    {
+        AppState.OnSelectionChange -= UpdateView;
+        Library.LibraryChanged -= UpdateView;
+    }
+}

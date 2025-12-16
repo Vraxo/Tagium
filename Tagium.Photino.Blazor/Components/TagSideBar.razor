@@ -1,0 +1,169 @@
+﻿@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
+@inject LibraryService Library
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="sidebar-container">
+    <div class="search-box">
+        <input type="text" placeholder="Search..." @onchange="OnSearchInput" value="@AppState.SearchText" />
+    </div>
+
+    <div class="actions">
+        <button class="btn-manage" @onclick="OpenTagManager">Manage Tags</button>
+    </div>
+
+    <div class="tag-list">
+        <div class="tag-item @(string.IsNullOrEmpty(AppState.SearchText) && !AppState.IsMissingOnly ? "active" : "")"
+             @onclick="() => SetSearch(string.Empty)">
+            <span class="icon">📁</span> All Files
+        </div>
+
+        <div class="tag-item @(AppState.IsMissingOnly ? "active" : "")"
+             @onclick="() => AppState.SetMissingOnly(true)">
+            <span class="icon">⚠️</span> Missing Files
+        </div>
+
+        <hr />
+
+        @foreach (var tag in Tags)
+        {
+            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase);
+            <div class="tag-item @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
+                <span class="tag-color" style="background-color: @tag.ColorHex"></span>
+                <span class="name">@tag.Name</span>
+                <span class="count">@tag.FileCount</span>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .sidebar-container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .search-box {
+        padding-bottom: 10px;
+    }
+
+        .search-box input {
+            width: 100%;
+            padding: 5px;
+            background: #444;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+        }
+
+    .actions {
+        padding-bottom: 10px;
+    }
+
+    .btn-manage {
+        width: 100%;
+        background: #3a3a3a;
+        color: #ccc;
+        border: 1px solid #555;
+        padding: 4px;
+        cursor: pointer;
+        border-radius: 4px;
+    }
+
+        .btn-manage:hover {
+            background: #4a4a4a;
+            color: white;
+        }
+
+    .tag-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .tag-item {
+        padding: 6px 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        border-radius: 4px;
+        margin-bottom: 2px;
+    }
+
+        .tag-item:hover {
+            background: #3a3a3a;
+        }
+
+        .tag-item.active {
+            background: #42a5f5;
+            color: white;
+        }
+
+    .tag-color {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+
+    .name {
+        flex: 1;
+    }
+
+    .count {
+        font-size: 0.8em;
+        opacity: 0.7;
+    }
+
+    .icon {
+        margin-right: 8px;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 5px 0;
+    }
+</style>
+
+@code {
+    private List<Tag> Tags = [];
+
+    protected override void OnInitialized()
+    {
+        Tags = Library.GetTags();
+        AppState.OnChange += StateHasChanged;
+        Library.LibraryChanged += RefreshData;
+    }
+
+    private void RefreshData()
+    {
+        Tags = Library.GetTags();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SetSearch(e.Value?.ToString() ?? "");
+    }
+
+    private void SetSearch(string text)
+    {
+        AppState.SetSearch(text);
+    }
+
+    private void OpenTagManager()
+    {
+        ModalService.Show("Manage Tags", @<TagManagerModal />);
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= StateHasChanged;
+        Library.LibraryChanged -= RefreshData;
+    }
+}

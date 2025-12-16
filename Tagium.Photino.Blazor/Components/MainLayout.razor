@@ -1,44 +1,119 @@
 @inherits LayoutComponentBase
 @namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@inject FileDialogService FileDialog
+@inject LibraryService Library
 
-<div class="app-container">
-    <div class="sidebar">
-        <h3>Tagium</h3>
-        <!-- Navigation will be added here -->
-    </div>
-    <div class="main-content">
-        @Body
-    </div>
+<div class="app-layout">
+    <aside class="left-panel">
+        <TagSidebar />
+    </aside>
+    
+    <main class="center-panel">
+        <div class="toolbar">
+            <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
+            <div class="spacer"></div>
+            <!-- Settings or View Options can go here -->
+        </div>
+        <div class="content-area">
+            <FileGrid />
+        </div>
+    </main>
+    
+    <aside class="right-panel">
+        <FileInspector />
+    </aside>
+    
+    <ModalHost />
 </div>
 
 <style>
-    body, html {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        font-family: 'Segoe UI', sans-serif;
-        background: #252525;
-        color: #fff;
+    :root {
+        --bg-color: #252525;
+        --panel-bg: #313131;
+        --border-color: #444;
+        --text-color: #e0e0e0;
+        --primary-color: #42a5f5;
     }
 
-    .app-container {
+    body, html {
+        margin: 0; padding: 0; height: 100%;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-family: 'Segoe UI', sans-serif;
+    }
+
+    .app-layout {
         display: flex;
         height: 100vh;
+        width: 100vw;
         overflow: hidden;
     }
 
-    .sidebar {
+    .left-panel {
         width: 250px;
-        background: #313131;
-        padding: 10px;
+        background: var(--panel-bg);
+        border-right: 1px solid var(--border-color);
         display: flex;
         flex-direction: column;
-        border-right: 1px solid #444;
+        padding: 10px;
+        flex-shrink: 0;
     }
 
-    .main-content {
+    .center-panel {
         flex: 1;
-        padding: 20px;
-        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-color);
+        min-width: 0;
     }
+
+    .right-panel {
+        width: 300px;
+        background: var(--panel-bg);
+        border-left: 1px solid var(--border-color);
+        padding: 0;
+        flex-shrink: 0;
+    }
+    
+    .toolbar {
+        height: 50px;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        padding: 0 15px;
+        background: #2a2a2a;
+        gap: 10px;
+    }
+    
+    .spacer { flex: 1; }
+    
+    .content-area {
+        flex: 1;
+        overflow: hidden;
+        padding: 10px;
+    }
+    
+    .btn {
+        background: #444; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+    }
+    .btn:hover { background: #555; }
+    
+    .btn-primary { background: var(--primary-color); color: white; font-weight: 500; }
+    .btn-primary:hover { background: #1e88e5; }
 </style>
+
+@code {
+    private void ImportFiles()
+    {
+        var paths = FileDialog.OpenFiles();
+        if (paths != null && paths.Length > 0)
+        {
+            foreach (var path in paths)
+            {
+                Library.AddFile(path);
+            }
+        }
+    }
+}

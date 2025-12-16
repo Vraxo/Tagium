@@ -1,0 +1,145 @@
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@inject LibraryService Library
+
+<div class="tag-manager">
+    <div class="add-row">
+        <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
+        <button class="btn-primary" @onclick="AddTag">Add</button>
+    </div>
+
+    <hr />
+
+    <div class="tag-list">
+        @foreach (var tag in Tags)
+        {
+            <div class="tag-row">
+                <span class="color-circle" style="background-color: @tag.ColorHex"></span>
+                <span class="name">@tag.Name</span>
+                <span class="count">(@tag.FileCount)</span>
+                <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .add-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+
+        .add-row input {
+            flex: 1;
+            padding: 8px;
+            background: #444;
+            border: 1px solid #555;
+            color: white;
+            border-radius: 4px;
+        }
+
+    .btn-primary {
+        background: #42a5f5;
+        border: none;
+        color: white;
+        padding: 0 15px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn-primary:hover {
+            background: #1e88e5;
+        }
+
+    .tag-list {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .tag-row {
+        display: flex;
+        align-items: center;
+        padding: 8px;
+        border-bottom: 1px solid #444;
+    }
+
+        .tag-row:hover {
+            background: #3a3a3a;
+        }
+
+    .color-circle {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 10px;
+    }
+
+    .name {
+        flex: 1;
+        font-weight: 500;
+    }
+
+    .count {
+        color: #888;
+        font-size: 0.9em;
+        margin-right: 10px;
+    }
+
+    .btn-icon.delete {
+        background: none;
+        border: none;
+        color: #e57373;
+        font-size: 1.2em;
+        cursor: pointer;
+    }
+
+        .btn-icon.delete:hover {
+            color: #d32f2f;
+        }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 10px 0;
+    }
+</style>
+
+@code {
+    private List<Tag> Tags = [];
+    private string NewTagName = "";
+
+    protected override void OnInitialized()
+    {
+        RefreshTags();
+    }
+
+    private void RefreshTags()
+    {
+        Tags = Library.GetTags();
+    }
+
+    private void HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddTag();
+    }
+
+    private void AddTag()
+    {
+        if (!string.IsNullOrWhiteSpace(NewTagName))
+        {
+            Library.AddTag(NewTagName);
+            NewTagName = "";
+            RefreshTags();
+        }
+    }
+
+    private void DeleteTag(long id)
+    {
+        // In a real app, we'd confirm this first.
+        // Direct deletion for now to match simplicity principle.
+        Library.DeleteTag(id);
+        RefreshTags();
+    }
+}

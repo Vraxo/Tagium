@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
 using Tagium.Core.Services;
+using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -8,14 +10,23 @@ public static class ServiceRegistrar
 {
     public static void ConfigureServices(IServiceCollection services)
     {
-        // Data Layer
+        // Core - Settings
+        _ = services.AddSingleton<SettingsManager>();
+
+        // Core - Data
         _ = services.AddSingleton<DatabaseManager>();
         _ = services.AddSingleton<TagRepository>();
         _ = services.AddSingleton<FileRepository>();
         _ = services.AddSingleton<FileTagRepository>();
+        _ = services.AddSingleton<FileSearchRepository>();
 
-        // Service Layer
+        // Core - Services
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryService>();
+
+        // UI Services
+        _ = services.AddSingleton<AppState>();
+        _ = services.AddSingleton<ModalService>();
+        _ = services.AddSingleton<FileDialogService>();
     }
 }
