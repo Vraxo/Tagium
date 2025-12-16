@@ -14,6 +14,7 @@
 @inject ToastService Toast
 @inject FileImportService FileImportService
 @inject AppState AppState
+@inject IJSRuntime JS
 
 <div class="app-layout @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
      @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
@@ -31,10 +32,12 @@
         }
     </div>
 
-    <aside class="left-panel">
+    <aside id="sidebar-panel" class="left-panel">
         <TagSidebar />
     </aside>
     
+    <div id="splitter-left" class="splitter"></div>
+
     <main class="center-panel">
         <AppToolbar />
         <div class="content-area">
@@ -49,7 +52,9 @@
         </div>
     </main>
     
-    <aside class="right-panel">
+    <div id="splitter-right" class="splitter"></div>
+    
+    <aside id="inspector-panel" class="right-panel">
         <FileInspector />
     </aside>
     
@@ -60,27 +65,15 @@
 <style>
     :root {
         /* Revised Palette for "32,32,32" Request */
-        
-        /* The main content area (Grid) is slightly darker to create depth */
         --bg-color: #181818; 
-        
-        /* The Sidebars/Panels use the requested 32,32,32 (#202020) */
         --panel-bg: #202020; 
-        
-        /* Inputs, Cards, and Toolbar use a slightly lighter surface for contrast */
         --surface-bg: #2D2D2D; 
-        
-        /* Subtle borders */
         --border-color: #383838;
-        
-        /* Text Colors */
         --text-color: #E0E0E0;
         --text-muted: #9E9E9E;
-        
-        /* Accents */
         --primary-color: #42a5f5;
         --primary-hover: #1e88e5;
-        --danger-color: #e57373; /* Softer red for dark mode */
+        --danger-color: #e57373;
         --danger-hover: #ef5350;
     }
 
@@ -123,9 +116,9 @@
     .left-panel {
         width: 250px; 
         background: var(--panel-bg);
-        border-right: 1px solid var(--border-color);
         display: flex; flex-direction: column;
         padding: 10px; flex-shrink: 0;
+        /* Border removed, handled by splitter visual or just background contrast */
     }
 
     .center-panel {
@@ -136,7 +129,6 @@
     .right-panel {
         width: 300px; 
         background: var(--panel-bg);
-        border-left: 1px solid var(--border-color);
         padding: 0; flex-shrink: 0;
     }
     
@@ -144,6 +136,27 @@
         flex: 1; overflow: hidden;
         position: relative;
     }
+
+    /* Splitter Styles */
+    .splitter {
+        width: 4px;
+        background: var(--bg-color); /* Defaults to bg, visible on hover */
+        cursor: col-resize;
+        flex-shrink: 0;
+        position: relative;
+        z-index: 10;
+        transition: background 0.2s;
+    }
+
+    .splitter:hover, .splitter.active {
+        background: var(--primary-color);
+    }
+    
+    /* Ensure border line exists visually via the panel or splitter */
+    .left-panel { border-right: 1px solid var(--border-color); }
+    .right-panel { border-left: 1px solid var(--border-color); }
+    
+    /* When splitter is active or hovered, it covers the border */
 </style>
 
 @code {
@@ -156,6 +169,14 @@
         Settings.SettingsChanged += StateHasChanged;
         Library.ImportCompleted += ShowImportStatus;
         AppState.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("layoutResizer.init", "sidebar-panel", "splitter-left", "inspector-panel", "splitter-right");
+        }
     }
 
     private void OnDragEnter(DragEventArgs e)

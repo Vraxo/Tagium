@@ -1,3 +1,8 @@
+/* Global Reset */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
 @font-face {
     font-family: 'Apple Emoji';
     src: url('../fonts/AppleColorEmoji.ttf');
@@ -6,6 +11,45 @@
 /* Base body style uses default font */
 body {
     font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
+}
+
+/* Remove default focus outline to prevent lingering blue rings on clicks */
+*:focus {
+    outline: none;
+}
+
+/* Custom Text Selection Styling */
+::selection {
+    background: rgba(66, 165, 245, 0.4); /* Matches primary-color with transparency */
+    color: white;
+}
+
+/* Global Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-color, #181818);
+}
+
+::-webkit-scrollbar-thumb {
+    background: #383838; /* Matches --border-color */
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 5px;
+}
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #484848;
+    }
+
+/* Sidebar and Panel specific track colors for better blending */
+.left-panel ::-webkit-scrollbar-track,
+.right-panel ::-webkit-scrollbar-track,
+.modal-container ::-webkit-scrollbar-track {
+    background: var(--panel-bg, #202020);
 }
 
 /* When this class is applied to the root layout, override font family */

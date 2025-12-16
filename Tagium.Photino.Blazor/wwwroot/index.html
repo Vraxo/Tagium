@@ -36,6 +36,11 @@
             pointer-events: none;
             box-sizing: border-box;
         }
+
+        /* Utility class used by layout.js during drag */
+        .no-select {
+            user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -43,5 +48,6 @@
     <script src="_framework/blazor.webview.js"></script>
     <script src="js/dragdrop.js"></script>
     <script src="js/grid.js"></script>
+    <script src="js/layout.js"></script>
 </body>
 </html>

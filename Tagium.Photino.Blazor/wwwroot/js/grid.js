@@ -9,7 +9,7 @@ window.gridInteractions = {
     init: function (dotNetRef, containerId) {
         this.dotNetRef = dotNetRef;
         this.containerId = containerId;
-        
+
         // Create selection box element if it doesn't exist
         if (!document.getElementById('selection-box')) {
             this.selectionBox = document.createElement('div');
@@ -27,7 +27,7 @@ window.gridInteractions = {
 
         // Attach global events
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
-        
+
         const container = document.getElementById(containerId);
         if (container) {
             container.addEventListener('mousedown', this.handleMouseDown.bind(this));
@@ -78,13 +78,25 @@ window.gridInteractions = {
         // Get ID
         const id = items[index].getAttribute('data-id');
         items[index].scrollIntoView({ block: 'nearest' });
-        
+
         this.dotNetRef.invokeMethodAsync('SelectFile', parseInt(id));
     },
 
     handleMouseDown: function (e) {
         // Ignore clicks on items (handled by Blazor onclick)
         if (e.target.closest('.file-card')) return;
+
+        // Detect if click is on scrollbar
+        // If the target is the container itself, check if click is outside client area
+        if (e.target.id === this.containerId) {
+            const rect = e.target.getBoundingClientRect();
+            const isVerticalScrollbar = e.clientX > rect.left + e.target.clientWidth;
+            const isHorizontalScrollbar = e.clientY > rect.top + e.target.clientHeight;
+
+            if (isVerticalScrollbar || isHorizontalScrollbar) {
+                return;
+            }
+        }
 
         e.preventDefault();
         this.isSelecting = true;
@@ -118,7 +130,7 @@ window.gridInteractions = {
     handleMouseUp: function (e) {
         this.isSelecting = false;
         this.selectionBox.style.display = 'none';
-        
+
         document.removeEventListener('mousemove', this.boundMouseMove);
         document.removeEventListener('mouseup', this.boundMouseUp);
 
@@ -133,9 +145,6 @@ window.gridInteractions = {
         const ids = [];
         document.querySelectorAll('.file-card').forEach(item => {
             const rect = item.getBoundingClientRect();
-            // Offset scroll position because getBoundingClientRect is relative to viewport,
-            // but mouse coordinates include scroll. Wait, simple intersection logic:
-            
             // Adjust rect to page coordinates
             const pageRect = {
                 left: rect.left + window.scrollX,
@@ -144,10 +153,10 @@ window.gridInteractions = {
                 bottom: rect.bottom + window.scrollY
             };
 
-            const intersect = !(boxRect.right < pageRect.left || 
-                              boxRect.left > pageRect.right || 
-                              boxRect.bottom < pageRect.top || 
-                              boxRect.top > pageRect.bottom);
+            const intersect = !(boxRect.right < pageRect.left ||
+                boxRect.left > pageRect.right ||
+                boxRect.bottom < pageRect.top ||
+                boxRect.top > pageRect.bottom);
 
             if (intersect) {
                 ids.push(parseInt(item.getAttribute('data-id')));
