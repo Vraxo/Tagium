@@ -181,6 +181,25 @@ public class FileRepository
         }
     }
 
+    public void Update(FileEntry file)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE Files 
+            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing 
+            WHERE Id = @Id";
+
+        _ = cmd.Parameters.AddWithValue("@Id", file.Id);
+        _ = cmd.Parameters.AddWithValue("@Path", file.Path);
+        _ = cmd.Parameters.AddWithValue("@Name", file.Name);
+        _ = cmd.Parameters.AddWithValue("@Hash", (object?)file.Hash ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@IsMissing", file.IsMissing ? 1 : 0);
+
+        _ = cmd.ExecuteNonQuery();
+    }
+
     public void Remove(long id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
@@ -1031,6 +1050,20 @@ using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
 
+public enum RelocateResultStatus { Success, Duplicate, Error, NotFound }
+
+public class RelocateResult
+{
+    public RelocateResultStatus Status { get; set; }
+    public FileEntry? ConflictingFile { get; set; }
+}
+
+public class AddFileDetailedResult
+{
+    public AddFileResult Status { get; set; }
+    public FileEntry? Entry { get; set; }
+}
+
 public class LibraryService
 {
     private readonly FileRepository _fileRepo;
@@ -1041,7 +1074,7 @@ public class LibraryService
     private readonly SettingsManager _settingsManager;
 
     public event Action? LibraryChanged;
-    public event Action<int, int>? ImportCompleted; // added, duplicates
+    public event Action<int, int, int>? ImportCompleted; // added, duplicates, errors
 
     public LibraryService(
         FileRepository fileRepo,
@@ -1082,53 +1115,144 @@ public class LibraryService
 
     public bool AddFile(string path)
     {
+        return AddFileDetailed(path).Status == AddFileResult.Success;
+    }
+
+    public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
+    {
         string? hash = FileHasher.ComputeSha256(path);
         if (hash == null)
         {
-            return false; // File read error
+            return new AddFileDetailedResult { Status = AddFileResult.Error };
+        }
+
+        // Check for existing by hash first to return the entry
+        FileEntry? existing = _fileRepo.GetByHash(hash);
+        if (existing != null)
+        {
+            return new AddFileDetailedResult { Status = AddFileResult.Duplicate, Entry = existing };
         }
 
         AddFileResult result = _fileRepo.Add(path, hash);
 
         if (result == AddFileResult.Success)
         {
-            LibraryChanged?.Invoke();
-            return true;
+            if (!suppressNotification)
+            {
+                LibraryChanged?.Invoke();
+            }
+            // Fetch the newly added entry
+            FileEntry? newEntry = _fileRepo.GetByHash(hash);
+            return new AddFileDetailedResult { Status = AddFileResult.Success, Entry = newEntry };
         }
 
-        return false; // Duplicate or Error
+        return new AddFileDetailedResult { Status = result };
     }
 
     /// <summary>
-    /// Imports multiple files and fires the ImportCompleted event with statistics.
+    /// Imports multiple files asynchronously and fires the ImportCompleted event with detailed statistics.
     /// </summary>
-    public void ImportBatch(string[] paths)
+    public async Task ImportBatchAsync(string[] paths)
     {
-        int added = 0;
-        int duplicates = 0;
-
-        foreach (string path in paths)
+        await Task.Run(() =>
         {
-            // Basic validation to ensure it's a file
-            if (File.Exists(path))
+            int added = 0;
+            int duplicates = 0;
+            int errors = 0;
+
+            foreach (string path in paths)
             {
-                if (AddFile(path))
+                if (File.Exists(path))
                 {
-                    added++;
-                }
-                else
-                {
-                    duplicates++;
+                    // Suppress individual refresh events for performance
+                    var result = AddFileDetailed(path, suppressNotification: true);
+                    switch (result.Status)
+                    {
+                        case AddFileResult.Success:
+                            added++;
+                            break;
+                        case AddFileResult.Duplicate:
+                            duplicates++;
+                            break;
+                        case AddFileResult.Error:
+                            errors++;
+                            break;
+                    }
                 }
             }
+
+            if (added > 0)
+            {
+                LibraryChanged?.Invoke();
+            }
+
+            ImportCompleted?.Invoke(added, duplicates, errors);
+        });
+    }
+
+    // Kept for backward compatibility if needed, but redirects to async
+    public void ImportBatch(string[] paths)
+    {
+        _ = ImportBatchAsync(paths);
+    }
+
+    public RelocateResult RelocateFile(long fileId, string newPath)
+    {
+        if (!File.Exists(newPath))
+        {
+            return new RelocateResult { Status = RelocateResultStatus.NotFound };
         }
 
-        ImportCompleted?.Invoke(added, duplicates);
+        string? newHash = FileHasher.ComputeSha256(newPath);
+        if (newHash == null)
+        {
+            return new RelocateResult { Status = RelocateResultStatus.Error };
+        }
+
+        // Check if the new file is already in the database
+        FileEntry? existing = _fileRepo.GetByHash(newHash);
+        if (existing != null && existing.Id != fileId)
+        {
+            return new RelocateResult { Status = RelocateResultStatus.Duplicate, ConflictingFile = existing };
+        }
+
+        FileEntry? file = _fileRepo.GetById(fileId);
+        if (file == null)
+        {
+            return new RelocateResult { Status = RelocateResultStatus.Error };
+        }
+
+        file.Path = newPath;
+        file.Name = Path.GetFileName(newPath);
+        file.Hash = newHash;
+        file.IsMissing = false;
+
+        _fileRepo.Update(file);
+
+        // Regenerate thumbnail for the new path
+        _ = _thumbnailService.GenerateThumbnailAsync(file);
+
+        LibraryChanged?.Invoke();
+        return new RelocateResult { Status = RelocateResultStatus.Success };
     }
 
     public void RemoveFile(long fileId)
     {
         _fileRepo.Remove(fileId);
+        LibraryChanged?.Invoke();
+    }
+
+    public void RemoveFiles(IEnumerable<long> fileIds)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        foreach (long id in fileIds)
+        {
+            _fileRepo.Remove(id);
+        }
         LibraryChanged?.Invoke();
     }
 
@@ -1138,9 +1262,37 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
+    public void AddTagToFiles(IEnumerable<long> fileIds, long tagId)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        foreach (long id in fileIds)
+        {
+            _fileTagRepo.AddTagToFile(id, tagId);
+        }
+        LibraryChanged?.Invoke();
+    }
+
     public void RemoveTagFromFile(long fileId, long tagId)
     {
         _fileTagRepo.RemoveTagFromFile(fileId, tagId);
+        LibraryChanged?.Invoke();
+    }
+
+    public void RemoveTagFromFiles(IEnumerable<long> fileIds, long tagId)
+    {
+        if (!fileIds.Any())
+        {
+            return;
+        }
+
+        foreach (long id in fileIds)
+        {
+            _fileTagRepo.RemoveTagFromFile(id, tagId);
+        }
         LibraryChanged?.Invoke();
     }
 
@@ -1156,6 +1308,34 @@ public class LibraryService
         List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
         List<Tag> allTags = _tagRepo.GetAll();
         return allTags.Where(t => tagIds.Contains(t.Id)).ToList();
+    }
+
+    public List<Tag> GetCommonTags(IEnumerable<long> fileIds)
+    {
+        List<long> ids = fileIds.ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        // Start with tags of first file
+        HashSet<long> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
+
+        // Intersect with remaining files
+        for (int i = 1; i < ids.Count; i++)
+        {
+            List<long> tags = _fileTagRepo.GetTagIdsForFile(ids[i]);
+            commonIds.IntersectWith(tags);
+
+            // Optimization: If intersection is empty, no need to continue
+            if (commonIds.Count == 0)
+            {
+                break;
+            }
+        }
+
+        List<Tag> allTags = _tagRepo.GetAll();
+        return allTags.Where(t => commonIds.Contains(t.Id)).ToList();
     }
 
     public void AddTag(string name)
@@ -1534,7 +1714,10 @@ public class Program
 
         var app = appBuilder.Build();
 
-        // Custom Scheme for Thumbnails
+        // Pass ServiceProvider to static SchemeHandler
+        SchemeHandlers.ServiceProvider = app.Services;
+
+        // Custom Scheme for Thumbnails and Previews
         _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
 
         _ = app.MainWindow
@@ -1581,6 +1764,11 @@ public class Program
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Components\Shared\" />
+    <Folder Include="Components\Views\" />
+  </ItemGroup>
+
 </Project>
 ```
 
@@ -1607,180 +1795,181 @@ public class Program
 
 ---
 
-### `Tagium.Photino.Blazor\Components\DataManagementModal.razor`
+### `Tagium.Photino.Blazor\Components\AppToolbar.razor`
 
 ```
-@namespace Tagium.Photino.Blazor.Components.Modals
-@using Tagium.Core.Data
+@namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
+@using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
 @inject LibraryService Library
-@inject LibraryIntegrityService IntegrityService
-@inject DataExportService ExportService
-@inject DatabaseMergeService MergeService
-@inject DatabaseManager DbManager
+@inject SettingsManager Settings
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
+@inject AppState AppState
 
-<div class="data-tools">
-    <div class="section">
-        <h4>Integrity</h4>
-        <p class="desc">Scan for files missing from disk.</p>
-        <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
-        @if (ScanResult != null)
-        {
-            <div class="result-box">
-                Scanned: @ScanResult.FilesScanned <br />
-                Missing: @ScanResult.NewlyMissing <br />
-                Found: @ScanResult.NewlyFound
-            </div>
-        }
-        <button class="btn btn-danger" @onclick="PurgeMissing">Purge Missing Files</button>
-    </div>
+<div class="toolbar">
+    <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
+    <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
+            @onclick="ToggleTagView">
+        Tags
+    </button>
+    <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
-    <hr />
+    <div class="spacer"></div>
 
-    <div class="section">
-        <h4>Export</h4>
-        <div class="btn-row">
-            <button class="btn" @onclick="ExportJson">Export JSON</button>
-            <button class="btn" @onclick="ExportCsv">Export CSV</button>
-            <button class="btn" @onclick="BackupDb">Backup DB</button>
+    @if (AppState.CurrentView == AppView.Files)
+    {
+        <div class="control-group">
+            <label>Sort:</label>
+            <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
+                <option value="@SortBy.DateAdded">Date Added</option>
+                <option value="@SortBy.Name">Name</option>
+                <option value="@SortBy.Path">Path</option>
+            </select>
+            <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
+                <option value="@SortDirection.Asc">Asc</option>
+                <option value="@SortDirection.Desc">Desc</option>
+            </select>
         </div>
-    </div>
 
-    <hr />
+        <div class="control-group">
+            <label>Size:</label>
+            <input type="range" min="64" max="256" step="16"
+                   value="@Settings.Current.ThumbnailSize"
+                   @onchange="OnThumbSizeChange" />
+        </div>
+    }
 
-    <div class="section">
-        <h4>Merge Library</h4>
-        <p class="desc">Import data from another Tagium/Tagra DB.</p>
-        <button class="btn" @onclick="MergeDb">Select Database...</button>
-        @if (MergeResult != null)
-        {
-            <div class="result-box">
-                New Files: @MergeResult.NewFiles <br />
-                New Tags: @MergeResult.NewTags <br />
-                Associations: @MergeResult.NewAssociations
-            </div>
-        }
-    </div>
+    <button class="btn" @onclick="OpenPreferences" title="Settings">⚙</button>
+    <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
 </div>
 
 <style>
-    .data-tools {
-        padding: 5px;
+    .toolbar {
+        height: 50px;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        padding: 0 15px;
+        background: var(--surface-bg);
+        gap: 10px;
     }
 
-    .section {
-        margin-bottom: 15px;
+    .spacer {
+        flex: 1;
     }
 
-    h4 {
-        margin: 0 0 5px 0;
-        color: #eee;
-    }
-
-    .desc {
+    .control-group {
+        display: flex;
+        align-items: center;
+        gap: 5px;
         font-size: 0.9em;
-        color: #aaa;
-        margin: 0 0 10px 0;
+        color: var(--text-muted);
     }
+
+        .control-group select {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 4px;
+            border-radius: 4px;
+        }
 
     .btn {
-        background: #444;
-        border: 1px solid #555;
-        color: white;
+        background: var(--bg-color);
+        border: 1px solid var(--border-color); /* Added border for better contrast */
+        color: var(--text-color);
         padding: 6px 12px;
         border-radius: 4px;
         cursor: pointer;
     }
 
         .btn:hover {
-            background: #555;
+            background: var(--border-color);
         }
 
-    .btn-danger {
-        background: #c62828;
-        border-color: #b71c1c;
-    }
-
-        .btn-danger:hover {
-            background: #d32f2f;
+        .btn.active {
+            background: var(--border-color);
+            color: white;
         }
 
-    .btn-row {
-        display: flex;
-        gap: 10px;
+    .btn-primary {
+        background: var(--primary-color);
+        color: white;
+        font-weight: 500;
+        border-color: var(--primary-color);
     }
 
-    .result-box {
-        margin-top: 10px;
-        padding: 8px;
-        background: #222;
-        border: 1px solid #333;
-        border-radius: 4px;
-        font-size: 0.9em;
-        color: #ccc;
-    }
-
-    hr {
-        border: 0;
-        border-top: 1px solid #444;
-        margin: 15px 0;
-    }
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
+        }
 </style>
 
 @code {
-    private IntegrityScanResult? ScanResult;
-    private MergeResult? MergeResult;
-
-    private async Task ScanIntegrity()
+    protected override void OnInitialized()
     {
-        ScanResult = null; // reset
-        StateHasChanged(); // show loading if we had a spinner
-        ScanResult = await IntegrityService.ScanAsync();
-        Library.Refresh();
+        Settings.SettingsChanged += StateHasChanged;
+        AppState.OnChange += StateHasChanged;
     }
 
-    private void PurgeMissing()
+    private void ImportFiles()
     {
-        IntegrityService.PurgeMissing();
-        Library.Refresh();
-        ScanResult = null;
-    }
-
-    private async Task ExportJson()
-    {
-        // Simple file save dialog simulation: We just save to Downloads or fixed name for now
-        // since we don't have a "Save File Dialog" wrapper yet (NFD only does Open by default in some wrappers).
-        // Actually NFD supports Save. Let's assume a fixed export for simplicity or add Save to FileDialogService later.
-        // For MVP: Save to Desktop.
-        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
-        await ExportService.ExportJsonAsync(path);
-        // Alert?
-    }
-
-    private async Task ExportCsv()
-    {
-        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
-        await ExportService.ExportCsvAsync(path);
-    }
-
-    private void BackupDb()
-    {
-        string source = DbManager.ConnectionString.Replace("Data Source=", "");
-        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
-        File.Copy(source, dest, true);
-    }
-
-    private void MergeDb()
-    {
-        var files = FileDialog.OpenFiles();
-        if (files != null && files.Length > 0)
+        var paths = FileDialog.OpenFiles();
+        if (paths != null && paths.Length > 0)
         {
-            MergeResult = MergeService.Merge(files[0]);
-            Library.Refresh();
+            Library.ImportBatch(paths);
         }
+    }
+
+    private void ToggleTagView()
+    {
+        if (AppState.CurrentView == AppView.Tags)
+            AppState.SwitchView(AppView.Files);
+        else
+            AppState.SwitchView(AppView.Tags);
+    }
+
+    private void OpenDataTools()
+    {
+        ModalService.Show("Data Management", @<DataManagementModal />);
+    }
+
+    private void OpenPreferences()
+    {
+        ModalService.Show("Preferences", @<PreferencesModal />);
+    }
+
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortBy = result);
+        }
+    }
+
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortDirection = result);
+        }
+    }
+
+    private void OnThumbSizeChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            Settings.Update(s => s.ThumbnailSize = val);
+        }
+    }
+
+    public void Dispose()
+    {
+        Settings.SettingsChanged -= StateHasChanged;
+        AppState.OnChange -= StateHasChanged;
     }
 }
 ```
@@ -1798,14 +1987,18 @@ public class Program
 @inject LibraryService Library
 @inject AppState AppState
 @inject SettingsManager Settings
+@inject SystemLauncherService Launcher
+@inject IJSRuntime JS
 
-<div class="grid-container" @onclick="ClearSelection">
+<div id="file-grid-container" class="grid-container">
     @foreach (var file in Files)
     {
         bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
         <div class="file-card @(isSelected ? "selected" : "")"
+             data-id="@file.Id"
              style="width: @(Settings.Current.ThumbnailSize)px; height: @(Settings.Current.ThumbnailSize + 30)px"
              @onclick="e => OnCardClick(e, file.Id)"
+             @ondblclick="e => OnCardDoubleClick(e, file)"
              @onclick:stopPropagation="true">
 
             <div class="thumbnail">
@@ -1829,32 +2022,36 @@ public class Program
         align-content: flex-start;
         height: 100%;
         overflow-y: auto;
-        padding-right: 5px;
+        padding: 10px;
+        position: relative;
+        /* Ensure background matches theme */
+        background-color: var(--bg-color);
     }
 
     .file-card {
-        background: #313131;
-        border: 1px solid #444;
+        background: var(--surface-bg);
+        border: 1px solid var(--border-color);
         border-radius: 4px;
         display: flex;
         flex-direction: column;
         cursor: pointer;
         user-select: none;
-        transition: width 0.1s, height 0.1s;
+        transition: width 0.1s, height 0.1s, border-color 0.1s;
     }
 
         .file-card:hover {
-            border-color: #666;
+            border-color: #666; /* Slightly lighter than border-color */
+            background: var(--panel-bg);
         }
 
         .file-card.selected {
-            border-color: #42a5f5;
-            box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.3);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.3); /* Keep subtle blue glow */
         }
 
     .thumbnail {
         flex: 1;
-        background: #222;
+        background: #000; /* Thumbnails look best on pure black */
         overflow: hidden;
         display: flex;
         align-items: center;
@@ -1867,19 +2064,18 @@ public class Program
             height: 100%;
             object-fit: contain;
             position: relative;
-            z-index: 2; /* Sit above placeholder */
+            z-index: 2;
         }
 
-    /* Fallback Icon behind the image */
     .placeholder-icon {
         position: absolute;
         font-size: 2em;
-        color: #444;
+        color: var(--border-color);
         z-index: 1;
     }
 
     .thumbnail.broken .placeholder-icon {
-        color: #666; /* Make it visible if image breaks */
+        color: var(--text-muted);
     }
 
     .filename {
@@ -1890,19 +2086,31 @@ public class Program
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        background: #2a2a2a;
+        background: var(--surface-bg);
+        color: var(--text-color);
+        border-top: 1px solid var(--border-color);
     }
 </style>
 
 @code {
     private List<FileEntry> Files = [];
+    private DotNetObjectReference<FileGrid>? _objRef;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         LoadFiles();
         AppState.OnChange += RefreshView;
         Library.LibraryChanged += LoadFiles;
         Settings.SettingsChanged += RefreshView;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _objRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
+        }
     }
 
     private void RefreshView()
@@ -1923,9 +2131,60 @@ public class Program
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
 
-    private void ClearSelection()
+    private void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
+    {
+        if (!file.IsMissing)
+        {
+            Launcher.OpenFile(file.Path);
+        }
+    }
+
+    [JSInvokable]
+    public void SelectFile(long id)
+    {
+        AppState.SelectFile(id, false, false);
+    }
+
+    [JSInvokable]
+    public void SelectFiles(long[] ids)
+    {
+        AppState.SetSelection(ids);
+    }
+
+    [JSInvokable]
+    public void SelectAll()
+    {
+        AppState.SetSelection(Files.Select(f => f.Id));
+    }
+
+    [JSInvokable]
+    public void ClearSelection()
     {
         AppState.ClearSelection();
+    }
+
+    [JSInvokable]
+    public void OnEnterKey()
+    {
+        if (AppState.SelectedFileIds.Count == 1)
+        {
+            long id = AppState.SelectedFileIds.First();
+            var file = Files.FirstOrDefault(f => f.Id == id);
+            if (file != null && !file.IsMissing)
+            {
+                Launcher.OpenFile(file.Path);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnDeleteKey()
+    {
+        if (AppState.SelectedFileIds.Any())
+        {
+            Library.RemoveFiles(AppState.SelectedFileIds);
+            AppState.ClearSelection();
+        }
     }
 
     public void Dispose()
@@ -1933,236 +2192,7 @@ public class Program
         AppState.OnChange -= RefreshView;
         Library.LibraryChanged -= LoadFiles;
         Settings.SettingsChanged -= RefreshView;
-    }
-}
-```
-
----
-
-### `Tagium.Photino.Blazor\Components\FileInspector.razor`
-
-```
-@namespace Tagium.Photino.Blazor.Components
-@using Tagium.Core.Services
-@using Tagium.Core.Models
-@using Tagium.Photino.Blazor.Services
-@inject LibraryService Library
-@inject AppState AppState
-@inject SystemLauncherService Launcher
-
-<div class="inspector">
-    @if (SelectedFile == null)
-    {
-        <div class="empty-state">Select a file to view details.</div>
-    }
-    else
-    {
-        <h3>File Details</h3>
-
-        <div class="actions-row">
-            <button class="btn" @onclick="OpenFile">Open</button>
-            <button class="btn" @onclick="ShowInExplorer">Folder</button>
-            <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
-        </div>
-
-        <div class="prop-row">
-            <label>Name</label>
-            <span>@SelectedFile.Name</span>
-        </div>
-        <div class="prop-row">
-            <label>Path</label>
-            <span class="path">@SelectedFile.Path</span>
-        </div>
-
-        <hr />
-
-        <h4>Tags</h4>
-        <div class="tags-container">
-            @foreach (var tag in AssignedTags)
-            {
-                <span class="tag-pill" @onclick="() => RemoveTag(tag.Id)">
-                    @tag.Name <span class="remove">&times;</span>
-                </span>
-            }
-        </div>
-
-        <hr />
-
-        <h4>Add Tag</h4>
-        <div class="tags-container available">
-            @foreach (var tag in AvailableTags)
-            {
-                <span class="tag-pill add" @onclick="() => AddTag(tag.Id)">
-                    + @tag.Name
-                </span>
-            }
-        </div>
-    }
-</div>
-
-<style>
-    .inspector {
-        padding: 10px;
-        height: 100%;
-        overflow-y: auto;
-    }
-
-    .empty-state {
-        color: #888;
-        text-align: center;
-        margin-top: 50px;
-    }
-
-    .prop-row {
-        margin-bottom: 10px;
-    }
-
-        .prop-row label {
-            display: block;
-            font-size: 0.8em;
-            color: #aaa;
-        }
-
-    .path {
-        word-break: break-all;
-        font-size: 0.9em;
-        font-family: monospace;
-    }
-
-    .actions-row {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 15px;
-    }
-
-    .btn {
-        background: #444;
-        color: white;
-        border: none;
-        padding: 5px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.9em;
-        flex: 1;
-    }
-
-        .btn:hover {
-            background: #555;
-        }
-
-    .btn-danger {
-        background: #c62828;
-    }
-
-        .btn-danger:hover {
-            background: #d32f2f;
-        }
-
-    .tags-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-    }
-
-    .tag-pill {
-        background: #444;
-        padding: 4px 8px;
-        border-radius: 12px;
-        font-size: 0.9em;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-    }
-
-        .tag-pill:hover {
-            background: #555;
-        }
-
-        .tag-pill .remove {
-            margin-left: 5px;
-            color: #ef5350;
-            font-weight: bold;
-        }
-
-        .tag-pill.add {
-            background: #2a2a2a;
-            border: 1px dashed #555;
-        }
-
-            .tag-pill.add:hover {
-                background: #42a5f5;
-                border-color: transparent;
-                color: white;
-            }
-</style>
-
-@code {
-    private FileEntry? SelectedFile;
-    private List<Tag> AssignedTags = [];
-    private List<Tag> AvailableTags = [];
-
-    protected override void OnInitialized()
-    {
-        AppState.OnSelectionChange += UpdateView;
-        Library.LibraryChanged += UpdateView;
-    }
-
-    private void UpdateView()
-    {
-        if (AppState.SelectedFileIds.Count == 1)
-        {
-            long id = AppState.SelectedFileIds.First();
-            var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
-            SelectedFile = files.FirstOrDefault(f => f.Id == id);
-
-            if (SelectedFile != null)
-            {
-                AssignedTags = Library.GetTagsForFile(id);
-                var allTags = Library.GetTags();
-                AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
-            }
-        }
-        else
-        {
-            SelectedFile = null;
-        }
-
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void AddTag(long tagId)
-    {
-        if (SelectedFile != null) Library.AddTagToFile(SelectedFile.Id, tagId);
-    }
-
-    private void RemoveTag(long tagId)
-    {
-        if (SelectedFile != null) Library.RemoveTagFromFile(SelectedFile.Id, tagId);
-    }
-
-    private void OpenFile()
-    {
-        if (SelectedFile != null) Launcher.OpenFile(SelectedFile.Path);
-    }
-
-    private void ShowInExplorer()
-    {
-        if (SelectedFile != null) Launcher.ShowInExplorer(SelectedFile.Path);
-    }
-
-    private void RemoveFile()
-    {
-        if (SelectedFile != null)
-        {
-            Library.RemoveFile(SelectedFile.Id);
-            AppState.ClearSelection();
-        }
-    }
-
-    public void Dispose()
-    {
-        AppState.OnSelectionChange -= UpdateView;
-        Library.LibraryChanged -= UpdateView;
+        _objRef?.Dispose();
     }
 }
 ```
@@ -2176,28 +2206,31 @@ public class Program
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
+@using Tagium.Core.Data
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Views
 @using System.IO
 @inject FileDialogService FileDialog
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
-@inject IJSRuntime JS
+@inject ToastService Toast
+@inject FileImportService FileImportService
+@inject AppState AppState
 
-<div class="app-layout" @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
+<div class="app-layout @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
+     @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
     
-    <!-- Drag Overlay -->
     <div class="drag-overlay @(_isDragging ? "active" : "")">
         <div class="drag-message">
-            <div style="font-size: 3em; color: #42a5f5; margin-bottom: 20px;">
+            <div style="font-size: 3em; color: var(--primary-color); margin-bottom: 20px;">
                 📂
             </div>
-            <h2>Drop files to import</h2>
+            <h2>@(_isProcessing ? "Processing..." : "Drop files to import")</h2>
         </div>
-        @if (_isDragging)
+        @if (_isDragging || _isProcessing)
         {
-            <!-- InputFile captures the drop event -->
             <InputFile OnChange="HandleFileDrop" multiple class="drag-input" />
         }
     </div>
@@ -2207,39 +2240,16 @@ public class Program
     </aside>
     
     <main class="center-panel">
-        <div class="toolbar">
-            <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
-            <button class="btn" @onclick="OpenDataTools">Data Tools</button>
-            
-            <div class="spacer"></div>
-            
-            <!-- Status Message Area -->
-            <span class="status-msg">@StatusMessage</span>
-            
-            <div class="control-group">
-                <label>Sort:</label>
-                <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
-                    <option value="@SortBy.DateAdded">Date Added</option>
-                    <option value="@SortBy.Name">Name</option>
-                    <option value="@SortBy.Path">Path</option>
-                </select>
-                <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
-                    <option value="@SortDirection.Asc">Asc</option>
-                    <option value="@SortDirection.Desc">Desc</option>
-                </select>
-            </div>
-            
-            <div class="control-group">
-                <label>Size:</label>
-                <input type="range" min="64" max="256" step="16" 
-                       value="@Settings.Current.ThumbnailSize" 
-                       @onchange="OnThumbSizeChange" />
-            </div>
-            
-            <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
-        </div>
+        <AppToolbar />
         <div class="content-area">
-            <FileGrid />
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <FileGrid />
+            }
+            else if (AppState.CurrentView == AppView.Tags)
+            {
+                <TagManagerView />
+            }
         </div>
     </main>
     
@@ -2248,15 +2258,34 @@ public class Program
     </aside>
     
     <ModalHost />
+    <ToastContainer />
 </div>
 
 <style>
     :root {
-        --bg-color: #252525;
-        --panel-bg: #313131;
-        --border-color: #444;
-        --text-color: #e0e0e0;
+        /* Revised Palette for "32,32,32" Request */
+        
+        /* The main content area (Grid) is slightly darker to create depth */
+        --bg-color: #181818; 
+        
+        /* The Sidebars/Panels use the requested 32,32,32 (#202020) */
+        --panel-bg: #202020; 
+        
+        /* Inputs, Cards, and Toolbar use a slightly lighter surface for contrast */
+        --surface-bg: #2D2D2D; 
+        
+        /* Subtle borders */
+        --border-color: #383838;
+        
+        /* Text Colors */
+        --text-color: #E0E0E0;
+        --text-muted: #9E9E9E;
+        
+        /* Accents */
         --primary-color: #42a5f5;
+        --primary-hover: #1e88e5;
+        --danger-color: #e57373; /* Softer red for dark mode */
+        --danger-hover: #ef5350;
     }
 
     body, html {
@@ -2274,136 +2303,63 @@ public class Program
         position: relative;
     }
 
-    /* Drag Overlay Styles */
     .drag-overlay {
         position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0, 0, 0, 0.85);
         z-index: 9999;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        opacity: 0;
-        pointer-events: none;
+        display: flex; justify-content: center; align-items: center;
+        opacity: 0; pointer-events: none;
         transition: opacity 0.2s;
     }
 
     .drag-overlay.active {
-        opacity: 1;
-        pointer-events: auto;
+        opacity: 1; pointer-events: auto;
     }
 
     .drag-input {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        opacity: 0;
-        cursor: copy;
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        opacity: 0; cursor: copy;
     }
 
-    .drag-message {
-        text-align: center;
-        color: white;
-    }
+    .drag-message { text-align: center; color: white; }
 
     .left-panel {
-        width: 250px;
+        width: 250px; 
         background: var(--panel-bg);
         border-right: 1px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
-        padding: 10px;
-        flex-shrink: 0;
+        display: flex; flex-direction: column;
+        padding: 10px; flex-shrink: 0;
     }
 
     .center-panel {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        background: var(--bg-color);
-        min-width: 0;
+        flex: 1; display: flex; flex-direction: column;
+        background: var(--bg-color); min-width: 0;
     }
 
     .right-panel {
-        width: 300px;
+        width: 300px; 
         background: var(--panel-bg);
         border-left: 1px solid var(--border-color);
-        padding: 0;
-        flex-shrink: 0;
-    }
-    
-    .toolbar {
-        height: 50px;
-        border-bottom: 1px solid var(--border-color);
-        display: flex;
-        align-items: center;
-        padding: 0 15px;
-        background: #2a2a2a;
-        gap: 15px;
-    }
-    
-    .status-msg {
-        font-size: 0.85em;
-        color: #888;
-        margin-right: 15px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 200px;
-    }
-    
-    .spacer { flex: 1; }
-    
-    .control-group {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.9em;
-        color: #bbb;
-    }
-    
-    .control-group select {
-        background: #444; border: 1px solid #555; color: white; padding: 4px; border-radius: 4px;
+        padding: 0; flex-shrink: 0;
     }
     
     .content-area {
-        flex: 1;
-        overflow: hidden;
-        padding: 10px;
+        flex: 1; overflow: hidden;
+        position: relative;
     }
-    
-    .btn {
-        background: #444; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer;
-    }
-    .btn:hover { background: #555; }
-    
-    .btn-primary { background: var(--primary-color); color: white; font-weight: 500; }
-    .btn-primary:hover { background: #1e88e5; }
 </style>
 
 @code {
-    private string StatusMessage = "";
     private bool _isDragging = false;
+    private bool _isProcessing = false;
     private int _dragCounter = 0;
 
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
         Library.ImportCompleted += ShowImportStatus;
-    }
-
-    private void ImportFiles()
-    {
-        var paths = FileDialog.OpenFiles();
-        if (paths != null && paths.Length > 0)
-        {
-            Library.ImportBatch(paths);
-        }
+        AppState.OnChange += StateHasChanged;
     }
 
     private void OnDragEnter(DragEventArgs e)
@@ -2424,96 +2380,49 @@ public class Program
 
     private async Task HandleFileDrop(InputFileChangeEventArgs e)
     {
+        _isProcessing = true;
+        StateHasChanged(); 
+
+        var files = e.GetMultipleFiles(500);
+        string[] importedPaths = await FileImportService.SaveDroppedFilesAsync(files);
+
         _dragCounter = 0;
         _isDragging = false;
+        _isProcessing = false;
+        StateHasChanged();
 
-        var files = e.GetMultipleFiles(100);
-        int count = 0;
+        if (importedPaths.Length > 0)
+        {
+            await Library.ImportBatchAsync(importedPaths);
+        }
+    }
+    
+    private void ShowImportStatus(int added, int duplicates, int errors)
+    {
+        int total = added + duplicates + errors;
+        if (total == 0) return;
+
+        List<string> parts = [];
         
-        // Tagium indexes file paths. Since browser drag-and-drop only gives streams,
-        // we must save the file to a local "Imports" folder to index it.
-        string importDir = Path.Combine(Tagium.Core.Helpers.AppDataHelper.GetBaseDirectory(), "Imports");
-        if (!Directory.Exists(importDir)) Directory.CreateDirectory(importDir);
+        if (added > 0) parts.Add($"{added} added");
+        if (duplicates > 0) parts.Add($"{duplicates} duplicate{(duplicates == 1 ? "" : "s")}");
+        if (errors > 0) parts.Add($"{errors} failed");
 
-        List<string> importedPaths = [];
+        string message = $"Import: {string.Join(", ", parts)}";
 
-        foreach (var file in files)
-        {
-            try 
-            {
-                // Create unique filename to prevent collisions
-                string safeName = Path.GetFileNameWithoutExtension(file.Name) 
-                                  + "_" + Guid.NewGuid().ToString().Substring(0, 8) 
-                                  + Path.GetExtension(file.Name);
-                
-                string localPath = Path.Combine(importDir, safeName);
+        ToastType type;
+        if (errors > 0) type = ToastType.Error;
+        else if (added > 0) type = ToastType.Success;
+        else type = ToastType.Info;
 
-                // Stream max size: 500MB
-                using var stream = file.OpenReadStream(500 * 1024 * 1024); 
-                using var fs = File.Create(localPath);
-                await stream.CopyToAsync(fs);
-                
-                importedPaths.Add(localPath);
-                count++;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Import failed: {ex.Message}");
-            }
-        }
-
-        if (importedPaths.Count > 0)
-        {
-            Library.ImportBatch(importedPaths.ToArray());
-        }
-    }
-    
-    private void ShowImportStatus(int added, int duplicates)
-    {
-        InvokeAsync(async () =>
-        {
-            StatusMessage = $"Added: {added}, Dupes: {duplicates}";
-            StateHasChanged();
-            
-            await Task.Delay(3000);
-            StatusMessage = "";
-            StateHasChanged();
-        });
-    }
-    
-    private void OpenDataTools()
-    {
-        ModalService.Show("Data Management", @<DataManagementModal />);
-    }
-    
-    private void OnSortByChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortBy = result);
-        }
-    }
-    
-    private void OnSortDirChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortDirection = result);
-        }
-    }
-    
-    private void OnThumbSizeChange(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out int val))
-        {
-            Settings.Update(s => s.ThumbnailSize = val);
-        }
+        Toast.Show(message, type);
     }
     
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
         Library.ImportCompleted -= ShowImportStatus;
+        AppState.OnChange -= StateHasChanged;
     }
 }
 ```
@@ -2623,285 +2532,6 @@ public class Program
 
 ---
 
-### `Tagium.Photino.Blazor\Components\TagManagerModal.razor`
-
-```
-@namespace Tagium.Photino.Blazor.Components.Modals
-@using Tagium.Core.Services
-@using Tagium.Core.Models
-@inject LibraryService Library
-
-<div class="tag-manager">
-    <div class="add-row">
-        <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
-        <button class="btn-primary" @onclick="AddTag">Add</button>
-    </div>
-
-    <hr />
-
-    <div class="tag-list">
-        @foreach (var tag in Tags)
-        {
-            <div class="tag-row">
-                <!-- Color Picker Dropdown Trigger -->
-                <div class="color-picker-wrapper">
-                    <button class="color-circle"
-                            style="background-color: @tag.ColorHex"
-                            @onclick="() => ToggleColorPicker(tag.Id)"></button>
-
-                    @if (ActiveColorPickerId == tag.Id)
-                    {
-                        <div class="color-popup" @onclick:stopPropagation="true">
-                            <div class="color-grid">
-                                @foreach (var color in Palette)
-                                {
-                                    <div class="swatch"
-                                         style="background-color: @color"
-                                         @onclick="() => UpdateTagColor(tag, color)"></div>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
-
-                <!-- Emoji Input -->
-                <input type="text" class="emoji-input"
-                       value="@tag.Emoji"
-                       @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
-                       maxlength="2" placeholder="😀" />
-
-                <!-- Name Input -->
-                <input type="text" class="name-input"
-                       value="@tag.Name"
-                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
-
-                <span class="count">(@tag.FileCount)</span>
-
-                <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
-            </div>
-        }
-    </div>
-</div>
-
-<style>
-    .add-row {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 15px;
-    }
-
-        .add-row input {
-            flex: 1;
-            padding: 8px;
-            background: #444;
-            border: 1px solid #555;
-            color: white;
-            border-radius: 4px;
-        }
-
-    .btn-primary {
-        background: #42a5f5;
-        border: none;
-        color: white;
-        padding: 0 15px;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-        .btn-primary:hover {
-            background: #1e88e5;
-        }
-
-    .tag-list {
-        max-height: 400px;
-        overflow-y: auto;
-        padding-bottom: 50px;
-    }
-    /* Padding for popup space */
-    .tag-row {
-        display: flex;
-        align-items: center;
-        padding: 5px 8px;
-        border-bottom: 1px solid #444;
-        gap: 8px;
-    }
-
-        .tag-row:hover {
-            background: #3a3a3a;
-        }
-
-    .color-picker-wrapper {
-        position: relative;
-    }
-
-    .color-circle {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        border: 1px solid #555;
-        cursor: pointer;
-        display: block;
-    }
-
-    .color-popup {
-        position: absolute;
-        top: 20px;
-        left: 0;
-        background: #252525;
-        border: 1px solid #555;
-        padding: 5px;
-        z-index: 100;
-        border-radius: 4px;
-        width: 140px;
-    }
-
-    .color-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 3px;
-    }
-
-    .swatch {
-        width: 15px;
-        height: 15px;
-        border-radius: 2px;
-        cursor: pointer;
-        border: 1px solid rgba(255,255,255,0.1);
-    }
-
-        .swatch:hover {
-            border-color: white;
-            transform: scale(1.1);
-        }
-
-    .emoji-input {
-        width: 30px;
-        text-align: center;
-        background: #444;
-        border: 1px solid #555;
-        color: white;
-        border-radius: 4px;
-        padding: 4px;
-    }
-
-    .name-input {
-        flex: 1;
-        background: transparent;
-        border: 1px solid transparent;
-        color: white;
-        padding: 4px;
-        border-radius: 4px;
-    }
-
-        .name-input:focus {
-            background: #444;
-            border-color: #555;
-        }
-
-    .count {
-        color: #888;
-        font-size: 0.9em;
-    }
-
-    .btn-icon.delete {
-        background: none;
-        border: none;
-        color: #e57373;
-        font-size: 1.2em;
-        cursor: pointer;
-    }
-
-        .btn-icon.delete:hover {
-            color: #d32f2f;
-        }
-
-    hr {
-        border: 0;
-        border-top: 1px solid #444;
-        margin: 10px 0;
-    }
-</style>
-
-@code {
-    private List<Tag> Tags = [];
-    private string NewTagName = "";
-    private long? ActiveColorPickerId = null;
-
-    private static readonly List<string> Palette = new()
-    {
-        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
-        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
-        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
-        "#546e7a", "#FFFFFF", "#000000"
-    };
-
-    protected override void OnInitialized()
-    {
-        RefreshTags();
-        // Close color picker if clicking elsewhere (handled by ModalHost click propagation ideally,
-        // but for now we rely on explicit toggles or clicking another picker)
-    }
-
-    private void RefreshTags()
-    {
-        Tags = Library.GetTags();
-    }
-
-    private void HandleKeyUp(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter") AddTag();
-    }
-
-    private void AddTag()
-    {
-        if (!string.IsNullOrWhiteSpace(NewTagName))
-        {
-            Library.AddTag(NewTagName);
-            NewTagName = "";
-            RefreshTags();
-        }
-    }
-
-    private void DeleteTag(long id)
-    {
-        Library.DeleteTag(id);
-        RefreshTags();
-    }
-
-    private void UpdateTagName(Tag tag, string? newName)
-    {
-        if (!string.IsNullOrWhiteSpace(newName) && newName != tag.Name)
-        {
-            tag.Name = newName;
-            Library.UpdateTag(tag);
-        }
-    }
-
-    private void UpdateTagEmoji(Tag tag, string? newEmoji)
-    {
-        tag.Emoji = newEmoji;
-        Library.UpdateTag(tag);
-    }
-
-    private void ToggleColorPicker(long id)
-    {
-        if (ActiveColorPickerId == id)
-            ActiveColorPickerId = null;
-        else
-            ActiveColorPickerId = id;
-    }
-
-    private void UpdateTagColor(Tag tag, string color)
-    {
-        tag.ColorHex = color;
-        Library.UpdateTag(tag);
-        ActiveColorPickerId = null; // Close picker
-    }
-}
-```
-
----
-
 ### `Tagium.Photino.Blazor\Components\TagSideBar.razor`
 
 ```
@@ -2909,27 +2539,22 @@ public class Program
 @using Tagium.Core.Services
 @using Tagium.Core.Models
 @using Tagium.Photino.Blazor.Services
-@using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Shared
 @inject LibraryService Library
 @inject AppState AppState
-@inject ModalService ModalService
 
 <div class="sidebar-container">
     <div class="search-box">
         <input type="text" placeholder="Search..." @onchange="OnSearchInput" value="@AppState.SearchText" />
     </div>
 
-    <div class="actions">
-        <button class="btn-manage" @onclick="OpenTagManager">Manage Tags</button>
-    </div>
-
     <div class="tag-list">
-        <div class="tag-item @(string.IsNullOrEmpty(AppState.SearchText) && !AppState.IsMissingOnly ? "active" : "")"
+        <div class="tag-item @(IsAllFilesActive ? "active" : "")"
              @onclick="() => SetSearch(string.Empty)">
             <span class="icon">📁</span> All Files
         </div>
 
-        <div class="tag-item @(AppState.IsMissingOnly ? "active" : "")"
+        <div class="tag-item @(IsMissingActive ? "active" : "")"
              @onclick="() => AppState.SetMissingOnly(true)">
             <span class="icon">⚠️</span> Missing Files
         </div>
@@ -2938,9 +2563,12 @@ public class Program
 
         @foreach (var tag in Tags)
         {
-            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase);
+            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase)
+            && !AppState.IsMissingOnly
+            && AppState.CurrentView == AppView.Files;
+
             <div class="tag-item @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
-                <span class="tag-color" style="background-color: @tag.ColorHex"></span>
+                <TagIcon Tag="@tag" />
                 <span class="name">@tag.Name</span>
                 <span class="count">@tag.FileCount</span>
             </div>
@@ -2962,30 +2590,16 @@ public class Program
         .search-box input {
             width: 100%;
             padding: 5px;
-            background: #444;
-            border: 1px solid #555;
-            color: #fff;
+            background: var(--surface-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
             border-radius: 4px;
         }
 
-    .actions {
-        padding-bottom: 10px;
-    }
-
-    .btn-manage {
-        width: 100%;
-        background: #3a3a3a;
-        color: #ccc;
-        border: 1px solid #555;
-        padding: 4px;
-        cursor: pointer;
-        border-radius: 4px;
-    }
-
-        .btn-manage:hover {
-            background: #4a4a4a;
-            color: white;
-        }
+            .search-box input:focus {
+                outline: none;
+                border-color: var(--primary-color);
+            }
 
     .tag-list {
         flex: 1;
@@ -2999,23 +2613,17 @@ public class Program
         align-items: center;
         border-radius: 4px;
         margin-bottom: 2px;
+        color: var(--text-color);
     }
 
         .tag-item:hover {
-            background: #3a3a3a;
+            background: var(--surface-bg);
         }
 
         .tag-item.active {
-            background: #42a5f5;
+            background: var(--primary-color);
             color: white;
         }
-
-    .tag-color {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        margin-right: 8px;
-    }
 
     .name {
         flex: 1;
@@ -3023,22 +2631,35 @@ public class Program
 
     .count {
         font-size: 0.8em;
-        opacity: 0.7;
+        color: var(--text-muted);
+    }
+
+    .tag-item.active .count {
+        color: rgba(255,255,255,0.8);
     }
 
     .icon {
         margin-right: 8px;
+        display: inline-block;
+        width: 1.2em;
+        text-align: center;
     }
 
     hr {
         border: 0;
-        border-top: 1px solid #444;
+        border-top: 1px solid var(--border-color);
         margin: 5px 0;
     }
 </style>
 
 @code {
     private List<Tag> Tags = [];
+
+    private bool IsAllFilesActive => string.IsNullOrEmpty(AppState.SearchText)
+                                     && !AppState.IsMissingOnly
+                                     && AppState.CurrentView == AppView.Files;
+
+    private bool IsMissingActive => AppState.IsMissingOnly && AppState.CurrentView == AppView.Files;
 
     protected override void OnInitialized()
     {
@@ -3063,15 +2684,115 @@ public class Program
         AppState.SetSearch(text);
     }
 
-    private void OpenTagManager()
-    {
-        ModalService.Show("Manage Tags", @<TagManagerModal />);
-    }
-
     public void Dispose()
     {
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= RefreshData;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\ToastContainer.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@inject ToastService ToastService
+
+<div class="toast-container">
+    @foreach (var toast in ToastService.Toasts)
+    {
+        <div class="toast @GetClass(toast)" @onclick="() => Remove(toast)">
+            @toast.Message
+        </div>
+    }
+</div>
+
+<style>
+    .toast-container {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 9999;
+        pointer-events: none;
+    }
+
+    .toast {
+        background: #333;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        font-size: 0.9em;
+        min-width: 200px;
+        pointer-events: auto;
+        cursor: pointer;
+        animation: slideIn 0.3s ease-out;
+        border-left: 4px solid transparent;
+        opacity: 0.95;
+    }
+
+        .toast:hover {
+            opacity: 1;
+        }
+
+        .toast.info {
+            border-left-color: #42a5f5;
+        }
+
+        .toast.success {
+            border-left-color: #66bb6a;
+        }
+
+        .toast.error {
+            border-left-color: #ef5350;
+        }
+
+    @@keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateX(0);
+            opacity: 0.95;
+        }
+    }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        ToastService.OnChange += HandleToastChange;
+    }
+
+    private async void HandleToastChange()
+    {
+        // Marshals the update to the UI thread to prevent cross-thread exceptions/silence
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetClass(Toast toast) => toast.Type switch
+    {
+        ToastType.Success => "success",
+        ToastType.Error => "error",
+        _ => "info"
+    };
+
+    private void Remove(Toast toast)
+    {
+        ToastService.Remove(toast);
+    }
+
+    public void Dispose()
+    {
+        ToastService.OnChange -= HandleToastChange;
     }
 }
 ```
@@ -3100,9 +2821,12 @@ public class Program
 ```csharp
 namespace Tagium.Photino.Blazor.Services;
 
+public enum AppView { Files, Tags }
+
 public class AppState
 {
     // State
+    public AppView CurrentView { get; private set; } = AppView.Files;
     public string SearchText { get; private set; } = "";
     public bool IsMissingOnly { get; private set; }
     public HashSet<long> SelectedFileIds { get; private set; } = [];
@@ -3111,6 +2835,15 @@ public class AppState
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
+    public void SwitchView(AppView view)
+    {
+        if (CurrentView != view)
+        {
+            CurrentView = view;
+            NotifyStateChanged();
+        }
+    }
+
     public void SetSearch(string text)
     {
         if (SearchText != text)
@@ -3118,6 +2851,12 @@ public class AppState
             SearchText = text;
             IsMissingOnly = false;
             SelectedFileIds.Clear();
+            // Searching implies looking for files
+            if (CurrentView != AppView.Files)
+            {
+                CurrentView = AppView.Files;
+            }
+
             NotifyStateChanged();
         }
     }
@@ -3129,13 +2868,18 @@ public class AppState
             IsMissingOnly = isMissing;
             SearchText = "";
             SelectedFileIds.Clear();
+            // Filter implies looking for files
+            if (CurrentView != AppView.Files)
+            {
+                CurrentView = AppView.Files;
+            }
+
             NotifyStateChanged();
         }
     }
 
     public void SelectFile(long id, bool multiSelect, bool rangeSelect)
     {
-        // Simple single/multi logic for now. Range select requires list knowledge.
         if (!multiSelect)
         {
             SelectedFileIds.Clear();
@@ -3146,10 +2890,23 @@ public class AppState
         NotifySelectionChanged();
     }
 
-    public void ClearSelection()
+    public void SetSelection(IEnumerable<long> ids)
     {
         SelectedFileIds.Clear();
+        foreach (long id in ids)
+        {
+            _ = SelectedFileIds.Add(id);
+        }
         NotifySelectionChanged();
+    }
+
+    public void ClearSelection()
+    {
+        if (SelectedFileIds.Count > 0)
+        {
+            SelectedFileIds.Clear();
+            NotifySelectionChanged();
+        }
     }
 
     private void NotifyStateChanged()
@@ -3160,7 +2917,7 @@ public class AppState
     private void NotifySelectionChanged()
     {
         OnSelectionChange?.Invoke();
-        OnChange?.Invoke(); // Selection is part of state
+        OnChange?.Invoke();
     }
 }
 ```
@@ -3184,6 +2941,58 @@ public class FileDialogService
         NfdStatus result = Nfd.OpenDialogMultiple(out string[] paths, null, null);
 
         return result == NfdStatus.Ok ? paths : null;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\FileImportService.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components.Forms;
+using Tagium.Core.Helpers;
+
+namespace Tagium.Photino.Blazor.Services;
+
+public class FileImportService
+{
+    private const long MaxFileSize = 500 * 1024 * 1024; // 500 MB
+
+    public async Task<string[]> SaveDroppedFilesAsync(IReadOnlyList<IBrowserFile> files)
+    {
+        string importDir = Path.Combine(AppDataHelper.GetBaseDirectory(), "Imports");
+        if (!Directory.Exists(importDir))
+        {
+            _ = Directory.CreateDirectory(importDir);
+        }
+
+        List<string> savedPaths = [];
+
+        foreach (var file in files)
+        {
+            try
+            {
+                // Create unique filename to prevent collisions in staging
+                string safeName = Path.GetFileNameWithoutExtension(file.Name)
+                                  + "_" + Guid.NewGuid().ToString()[..8]
+                                  + Path.GetExtension(file.Name);
+
+                string localPath = Path.Combine(importDir, safeName);
+
+                using var stream = file.OpenReadStream(MaxFileSize);
+                using var fs = File.Create(localPath);
+                await stream.CopyToAsync(fs);
+
+                savedPaths.Add(localPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FileImportService] Failed to save dropped file '{file.Name}': {ex.Message}");
+            }
+        }
+
+        return savedPaths.ToArray();
     }
 }
 ```
@@ -3271,28 +3080,96 @@ public class SystemLauncherService
 
 ---
 
+### `Tagium.Photino.Blazor\Services\ToastService.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Services;
+
+public enum ToastType { Info, Success, Error }
+
+public class Toast
+{
+    public Guid Id { get; } = Guid.NewGuid();
+    public required string Message { get; init; }
+    public ToastType Type { get; init; }
+}
+
+public class ToastService
+{
+    public event Action? OnChange;
+    public List<Toast> Toasts { get; } = [];
+
+    public void Show(string message, ToastType type = ToastType.Info, int durationMs = 3000)
+    {
+        var toast = new Toast { Message = message, Type = type };
+        Toasts.Add(toast);
+        NotifyStateChanged();
+
+        if (durationMs > 0)
+        {
+            _ = RemoveAfterDelay(toast, durationMs);
+        }
+    }
+
+    public void Remove(Toast toast)
+    {
+        if (Toasts.Remove(toast))
+        {
+            NotifyStateChanged();
+        }
+    }
+
+    private async Task RemoveAfterDelay(Toast toast, int delay)
+    {
+        await Task.Delay(delay);
+        Remove(toast);
+    }
+
+    private void NotifyStateChanged()
+    {
+        OnChange?.Invoke();
+    }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Setup\SchemeHandlers.cs`
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using Tagium.Core.Data;
 using Tagium.Core.Helpers;
+using Tagium.Core.Models;
 
 namespace Tagium.Photino.Blazor.Setup;
 
 public static class SchemeHandlers
 {
+    // We need access to the repository to look up file paths by ID.
+    // Since this is a static callback, we need a reference to the ServiceProvider.
+    public static IServiceProvider? ServiceProvider { get; set; }
+
     public static Stream HandleTagiumScheme(object sender, string scheme, string url, out string contentType)
     {
         contentType = "text/plain";
         Uri uri = new(url);
 
-        // Format: tagium://thumbnail/{fileId}
-        if (!uri.Host.Equals("thumbnail", StringComparison.OrdinalIgnoreCase))
+        // 1. Thumbnail Handler
+        if (uri.Host.Equals("thumbnail", StringComparison.OrdinalIgnoreCase))
         {
-            return Stream.Null;
+            return HandleThumbnail(uri, out contentType);
         }
 
-        string[] segments = uri.AbsolutePath.Trim('/').Split('/');
+        // 2. Preview Handler
+        return uri.Host.Equals("preview", StringComparison.OrdinalIgnoreCase) ? HandlePreview(uri, out contentType) : Stream.Null;
+    }
 
+    private static Stream HandleThumbnail(Uri uri, out string contentType)
+    {
+        contentType = "image/png";
+
+        string[] segments = uri.AbsolutePath.Trim('/').Split('/');
         if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
         {
             return Stream.Null;
@@ -3303,14 +3180,55 @@ public static class SchemeHandlers
 
         if (!File.Exists(path))
         {
-            // Returning null here signals a "Not Found" to WebView2 in some contexts,
-            // or we can return a 404 stream if the wrapper supports it. 
-            // Photino: returning null usually results in an empty response or 404.
-            return null!;
+            return null!; // 404
         }
 
-        contentType = "image/png";
         return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    }
+
+    private static Stream HandlePreview(Uri uri, out string contentType)
+    {
+        contentType = "application/octet-stream";
+
+        if (ServiceProvider == null)
+        {
+            return Stream.Null;
+        }
+
+        string[] segments = uri.AbsolutePath.Trim('/').Split('/');
+        if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
+        {
+            return Stream.Null;
+        }
+
+        // Resolve the file path from the database
+        var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+        FileEntry? entry = fileRepo.GetById(fileId);
+
+        if (entry == null || !File.Exists(entry.Path))
+        {
+            return null!; // 404
+        }
+
+        contentType = GetMimeType(Path.GetExtension(entry.Path));
+        return new FileStream(entry.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    }
+
+    private static string GetMimeType(string extension)
+    {
+        return extension.ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            ".webp" => "image/webp",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".mkv" => "video/x-matroska", // Browsers struggle with this, but WebView might try
+            _ => "application/octet-stream"
+        };
     }
 }
 ```
@@ -3354,6 +3272,8 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<ModalService>();
         _ = services.AddSingleton<FileDialogService>();
         _ = services.AddSingleton<SystemLauncherService>();
+        _ = services.AddSingleton<ToastService>();
+        _ = services.AddSingleton<FileImportService>();
     }
 }
 ```
@@ -3370,6 +3290,7 @@ public static class ServiceRegistrar
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tagium</title>
     <base href="/" />
+    <link href="css/app.css" rel="stylesheet" />
     <style>
         html, body {
             height: 100%;
@@ -3406,8 +3327,1388 @@ public static class ServiceRegistrar
     <div id="app">Loading...</div>
     <script src="_framework/blazor.webview.js"></script>
     <script src="js/dragdrop.js"></script>
+    <script src="js/grid.js"></script>
 </body>
 </html>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Inspectors
+@inject LibraryService Library
+@inject AppState AppState
+
+<div class="inspector">
+    @if (SelectionMode == InspectorMode.None)
+    {
+        <div class="empty-state">Select a file to view details.</div>
+    }
+    else if (SelectionMode == InspectorMode.Single && SelectedFile != null)
+    {
+        <SingleFileInspector File="SelectedFile"
+                             AssignedTags="AssignedTags"
+                             AvailableTags="AvailableTags" />
+    }
+    else if (SelectionMode == InspectorMode.Multi)
+    {
+        <MultiFileInspector CommonTags="CommonTags"
+                            AvailableTags="AvailableTags" />
+    }
+</div>
+
+<style>
+    .inspector {
+        padding: 10px;
+        height: 100%;
+        overflow-y: auto;
+        color: var(--text-color);
+    }
+
+    .empty-state {
+        color: var(--text-muted);
+        text-align: center;
+        margin-top: 50px;
+    }
+</style>
+
+@code {
+    private enum InspectorMode { None, Single, Multi }
+
+    private InspectorMode SelectionMode = InspectorMode.None;
+    private FileEntry? SelectedFile;
+
+    // Single Mode Data
+    private List<Tag> AssignedTags = [];
+
+    // Multi Mode Data
+    private List<Tag> CommonTags = [];
+    private List<Tag> AvailableTags = [];
+
+    protected override void OnInitialized()
+    {
+        AppState.OnSelectionChange += UpdateView;
+        Library.LibraryChanged += UpdateView;
+    }
+
+    private void UpdateView()
+    {
+        int count = AppState.SelectedFileIds.Count;
+
+        if (count == 0)
+        {
+            SelectionMode = InspectorMode.None;
+            SelectedFile = null;
+        }
+        else if (count == 1)
+        {
+            SelectionMode = InspectorMode.Single;
+            long id = AppState.SelectedFileIds.First();
+
+            var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+            SelectedFile = files.FirstOrDefault(f => f.Id == id);
+
+            if (SelectedFile != null)
+            {
+                AssignedTags = Library.GetTagsForFile(id);
+                var allTags = Library.GetTags();
+                AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+            }
+            else
+            {
+                SelectionMode = InspectorMode.None;
+            }
+        }
+        else
+        {
+            SelectionMode = InspectorMode.Multi;
+            SelectedFile = null;
+
+            CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
+            var allTags = Library.GetTags();
+            AvailableTags = allTags.Where(t => !CommonTags.Any(ct => ct.Id == t.Id)).ToList();
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AppState.OnSelectionChange -= UpdateView;
+        Library.LibraryChanged -= UpdateView;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Core.Models
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Shared
+@inject LibraryService Library
+@inject AppState AppState
+
+<h3>Bulk Edit</h3>
+<p class="summary-text">@AppState.SelectedFileIds.Count items selected.</p>
+
+<div class="actions-row">
+    <button class="btn btn-danger" @onclick="RemoveMultipleFiles">Remove All Selected</button>
+</div>
+
+<hr />
+
+<h4>Common Tags</h4>
+<p class="help-text">Click to remove from all selected files.</p>
+<div class="tags-container">
+    @if (CommonTags.Any())
+    {
+        @foreach (var tag in CommonTags)
+        {
+            <span class="tag-pill"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => BulkRemoveTag(tag.Id)">
+                <TagIcon Tag="@tag" />
+                @tag.Name <span class="remove">&times;</span>
+            </span>
+        }
+    }
+    else
+    {
+        <span class="empty-tag">No common tags.</span>
+    }
+</div>
+
+<hr />
+
+<h4>Add Tag</h4>
+<p class="help-text">Click to add to all selected files.</p>
+<div class="tags-container available">
+    @foreach (var tag in AvailableTags)
+    {
+        <span class="tag-pill add"
+              style="border-color: @tag.ColorHex"
+              @onclick="() => BulkAddTag(tag.Id)">
+            <TagIcon Tag="@tag" />
+            + @tag.Name
+        </span>
+    }
+</div>
+
+<style>
+    .summary-text {
+        color: var(--text-muted);
+        margin-bottom: 10px;
+    }
+
+    .help-text {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        margin: -5px 0 10px 0;
+    }
+
+    .actions-row {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 15px;
+    }
+
+    .btn {
+        background: var(--surface-bg);
+        color: var(--text-color);
+        border: 1px solid var(--border-color);
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        flex: 1;
+    }
+
+        .btn:hover {
+            background: var(--border-color);
+        }
+
+    .btn-danger {
+        background: var(--danger-color);
+        border-color: var(--danger-color);
+        color: white;
+    }
+
+        .btn-danger:hover {
+            background: var(--danger-hover);
+        }
+
+    .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    .empty-tag {
+        color: var(--text-muted);
+        font-style: italic;
+        font-size: 0.9em;
+    }
+
+    .tag-pill {
+        background: var(--surface-bg);
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.9em;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        user-select: none;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.1s;
+    }
+
+        .tag-pill:hover {
+            background: var(--border-color);
+        }
+
+        .tag-pill .remove {
+            margin-left: 5px;
+            color: var(--danger-color);
+            font-weight: bold;
+        }
+
+        .tag-pill.add {
+            background: transparent;
+            border-style: dashed;
+            opacity: 0.8;
+        }
+
+            .tag-pill.add:hover {
+                background: var(--surface-bg);
+                border-style: solid;
+                opacity: 1;
+            }
+</style>
+
+@code {
+    [Parameter] public List<Tag> CommonTags { get; set; } = [];
+    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
+
+    private void BulkAddTag(long tagId)
+    {
+        Library.AddTagToFiles(AppState.SelectedFileIds, tagId);
+    }
+
+    private void BulkRemoveTag(long tagId)
+    {
+        Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
+    }
+
+    private void RemoveMultipleFiles()
+    {
+        Library.RemoveFiles(AppState.SelectedFileIds);
+        AppState.ClearSelection();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Core.Models
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Shared
+@inject LibraryService Library
+@inject SystemLauncherService Launcher
+@inject FileDialogService FileDialog
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="preview-container">
+    @if (!File.IsMissing)
+    {
+        @if (IsImage)
+        {
+            <img src="tagium://preview/@File.Id" class="preview-media" />
+        }
+        else if (IsVideo)
+        {
+            <video src="tagium://preview/@File.Id" class="preview-media" controls autoplay muted loop></video>
+        }
+        else
+        {
+            <div class="preview-placeholder">📄</div>
+        }
+    }
+    else
+    {
+        <div class="preview-placeholder error">❓</div>
+    }
+</div>
+
+<h3>File Details</h3>
+
+@if (File.IsMissing)
+{
+    <div class="missing-warning">
+        <h4>⚠️ File Missing</h4>
+        <p>This file was not found at its original path.</p>
+        <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
+    </div>
+}
+
+<div class="actions-row">
+    <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
+    <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
+    <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
+</div>
+
+<div class="prop-row">
+    <label>Name</label>
+    <span>@File.Name</span>
+</div>
+<div class="prop-row">
+    <label>Path</label>
+    <span class="path">@File.Path</span>
+</div>
+
+<hr />
+
+<h4>Tags</h4>
+<div class="tags-container">
+    @foreach (var tag in AssignedTags)
+    {
+        <span class="tag-pill"
+              style="border-color: @tag.ColorHex"
+              @onclick="() => RemoveTag(tag.Id)">
+            <TagIcon Tag="@tag" />
+            @tag.Name <span class="remove">&times;</span>
+        </span>
+    }
+</div>
+
+<hr />
+
+<h4>Add Tag</h4>
+<div class="tags-container available">
+    @foreach (var tag in AvailableTags)
+    {
+        <span class="tag-pill add"
+              style="border-color: @tag.ColorHex"
+              @onclick="() => AddTag(tag.Id)">
+            <TagIcon Tag="@tag" />
+            @tag.Name
+        </span>
+    }
+</div>
+
+<style>
+    .preview-container {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        background: #000;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border: 1px solid var(--border-color);
+    }
+
+    .preview-media {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+
+    .preview-placeholder {
+        font-size: 3em;
+        color: var(--border-color);
+    }
+
+        .preview-placeholder.error {
+            color: var(--danger-color);
+        }
+
+    .prop-row {
+        margin-bottom: 10px;
+    }
+
+        .prop-row label {
+            display: block;
+            font-size: 0.8em;
+            color: var(--text-muted);
+        }
+
+    .path {
+        word-break: break-all;
+        font-size: 0.9em;
+        font-family: monospace;
+        color: var(--text-muted);
+    }
+
+    .actions-row {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 15px;
+    }
+
+    .btn {
+        background: var(--surface-bg);
+        color: var(--text-color);
+        border: 1px solid var(--border-color);
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        flex: 1;
+    }
+
+        .btn:hover {
+            background: var(--border-color);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+    .btn-danger {
+        background: var(--danger-color);
+        border-color: var(--danger-color);
+        color: white;
+    }
+
+        .btn-danger:hover {
+            background: var(--danger-hover);
+        }
+
+    .btn-primary {
+        background: var(--primary-color);
+        border-color: var(--primary-color);
+        color: white;
+    }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+    .btn-small {
+        font-size: 0.8em;
+        padding: 4px 8px;
+    }
+
+    .missing-warning {
+        background: rgba(198, 40, 40, 0.15); /* Keep partially transparent red */
+        border: 1px solid var(--danger-color);
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+    }
+
+        .missing-warning h4 {
+            margin: 0 0 5px 0;
+            color: var(--danger-color);
+            font-size: 1em;
+        }
+
+        .missing-warning p {
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+            color: var(--text-muted);
+        }
+
+    .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    .tag-pill {
+        background: var(--surface-bg);
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.9em;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        user-select: none;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.1s;
+    }
+
+        .tag-pill:hover {
+            background: var(--border-color);
+        }
+
+        .tag-pill .remove {
+            margin-left: 5px;
+            color: var(--danger-color);
+            font-weight: bold;
+        }
+
+        .tag-pill.add {
+            background: transparent;
+            border-style: dashed;
+            opacity: 0.8;
+        }
+
+            .tag-pill.add:hover {
+                background: var(--surface-bg);
+                border-style: solid;
+                opacity: 1;
+            }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public required FileEntry File { get; set; }
+    [Parameter] public List<Tag> AssignedTags { get; set; } = [];
+    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
+
+    private bool IsImage => CheckExtension([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
+    private bool IsVideo => CheckExtension([".mp4", ".webm", ".mov", ".mkv"]);
+
+    private bool CheckExtension(string[] exts)
+    {
+        string ext = Path.GetExtension(File.Path);
+        return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void AddTag(long tagId)
+    {
+        Library.AddTagToFile(File.Id, tagId);
+    }
+
+    private void RemoveTag(long tagId)
+    {
+        Library.RemoveTagFromFile(File.Id, tagId);
+    }
+
+    private void OpenFile()
+    {
+        Launcher.OpenFile(File.Path);
+    }
+
+    private void ShowInExplorer()
+    {
+        Launcher.ShowInExplorer(File.Path);
+    }
+
+    private void RemoveFile()
+    {
+        Library.RemoveFile(File.Id);
+        AppState.ClearSelection();
+    }
+
+    private void RelocateFile()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files != null && files.Length > 0)
+        {
+            var result = Library.RelocateFile(File.Id, files[0]);
+
+            if (result.Status == RelocateResultStatus.Duplicate && result.ConflictingFile != null)
+            {
+                ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
+            }
+        }
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Data
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject LibraryIntegrityService IntegrityService
+@inject DataExportService ExportService
+@inject DatabaseMergeService MergeService
+@inject DatabaseManager DbManager
+@inject FileDialogService FileDialog
+@inject ModalService ModalService
+@inject ToastService Toast
+
+<div class="data-tools">
+    <div class="section">
+        <h4>Integrity</h4>
+        <p class="desc">Scan for files missing from disk.</p>
+        <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
+        @if (ScanResult != null)
+        {
+            <div class="result-box">
+                Scanned: @ScanResult.FilesScanned <br />
+                Missing: @ScanResult.NewlyMissing <br />
+                Found: @ScanResult.NewlyFound
+            </div>
+        }
+        <button class="btn btn-danger" @onclick="PurgeMissing" disabled="@(Library.GetFiles(null, true).Count == 0)">Purge Missing Files</button>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Export</h4>
+        <div class="btn-row">
+            <button class="btn" @onclick="ExportJson">Export JSON</button>
+            <button class="btn" @onclick="ExportCsv">Export CSV</button>
+            <button class="btn" @onclick="BackupDb">Backup DB</button>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Merge & Restore</h4>
+        <p class="desc">Import data from another Tagium DB, or restore a backup.</p>
+        <div class="btn-row">
+            <button class="btn" @onclick="MergeDb">Merge...</button>
+            <button class="btn btn-danger" @onclick="RestoreDb">Restore...</button>
+        </div>
+        @if (MergeResult != null)
+        {
+            <div class="result-box">
+                New Files: @MergeResult.NewFiles <br />
+                New Tags: @MergeResult.NewTags <br />
+                Associations: @MergeResult.NewAssociations
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .data-tools {
+        padding: 5px;
+    }
+
+    .section {
+        margin-bottom: 15px;
+    }
+
+    h4 {
+        margin: 0 0 5px 0;
+        color: #eee;
+    }
+
+    .desc {
+        font-size: 0.9em;
+        color: #aaa;
+        margin: 0 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        border: 1px solid #555;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+    .btn-danger {
+        background: #c62828;
+        border-color: #b71c1c;
+    }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+    .btn-row {
+        display: flex;
+        gap: 10px;
+    }
+
+    .result-box {
+        margin-top: 10px;
+        padding: 8px;
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 4px;
+        font-size: 0.9em;
+        color: #ccc;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 15px 0;
+    }
+</style>
+
+@code {
+    private IntegrityScanResult? ScanResult;
+    private MergeResult? MergeResult;
+
+    private async Task ScanIntegrity()
+    {
+        ScanResult = null;
+        ScanResult = await IntegrityService.ScanAsync();
+        Library.Refresh();
+    }
+
+    private void PurgeMissing()
+    {
+        IntegrityService.PurgeMissing();
+        Library.Refresh();
+        ScanResult = null;
+        Toast.Show("Missing files purged.", ToastType.Success);
+    }
+
+    private async Task ExportJson()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
+        await ExportService.ExportJsonAsync(path);
+        Toast.Show($"Exported to {path}", ToastType.Success);
+    }
+
+    private async Task ExportCsv()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
+        await ExportService.ExportCsvAsync(path);
+        Toast.Show($"Exported to {path}", ToastType.Success);
+    }
+
+    private void BackupDb()
+    {
+        string source = DbManager.ConnectionString.Replace("Data Source=", "");
+        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
+        File.Copy(source, dest, true);
+        Toast.Show($"Backup saved to {dest}", ToastType.Success);
+    }
+
+    private void MergeDb()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files != null && files.Length > 0)
+        {
+            MergeResult = MergeService.Merge(files[0]);
+            Library.Refresh();
+            Toast.Show("Merge complete.", ToastType.Success);
+        }
+    }
+
+    private void RestoreDb()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files != null && files.Length > 0)
+        {
+            string source = files[0];
+            string dest = DbManager.ConnectionString.Replace("Data Source=", "");
+
+            try
+            {
+                // This is a risky operation while the app is running, but standard for this simple app type.
+                // SQLite usually allows it if no write transaction is active.
+                File.Copy(source, dest, true);
+                Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
+            }
+            catch (Exception ex)
+            {
+                Toast.Show($"Restore failed: {ex.Message}", ToastType.Error);
+            }
+        }
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="duplicate-modal">
+    <p>A file with the same content already exists in your library:</p>
+
+    <div class="file-path">@ExistingFile.Path</div>
+
+    <div class="footer">
+        <button class="btn btn-primary" @onclick="ShowExisting">Show Existing File</button>
+        <button class="btn" @onclick="Close">Close</button>
+    </div>
+</div>
+
+<style>
+    .duplicate-modal p {
+        color: #eee;
+        margin-top: 0;
+    }
+
+    .file-path {
+        background: #222;
+        padding: 10px;
+        border: 1px solid #444;
+        border-radius: 4px;
+        font-family: monospace;
+        word-break: break-all;
+        margin: 15px 0;
+        color: #aaa;
+    }
+
+    .footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 20px;
+    }
+
+    .btn {
+        padding: 6px 15px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        background: #444;
+        color: white;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+    .btn-primary {
+        background: #42a5f5;
+    }
+
+        .btn-primary:hover {
+            background: #1e88e5;
+        }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public required FileEntry ExistingFile { get; set; }
+
+    private void ShowExisting()
+    {
+        // Clear filters to ensure the file is visible
+        AppState.SetSearch("");
+        AppState.SetMissingOnly(false);
+
+        // Select the file
+        AppState.SelectFile(ExistingFile.Id, false, false);
+
+        ModalService.Close();
+    }
+
+    private void Close()
+    {
+        ModalService.Close();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject SettingsManager Settings
+@inject ModalService ModalService
+
+<div class="modal-header">Preferences</div>
+<div class="modal-body">
+
+    <h4>Emoji Set</h4>
+    <p class="hint">Requires restart to fully apply font changes.</p>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.SystemDefault)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.SystemDefault))" />
+            System Default (Windows)
+        </label>
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.Apple)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.Apple))" />
+            Apple Color Emoji
+        </label>
+    </div>
+
+</div>
+<div class="modal-footer">
+    <button class="btn" @onclick="Close">Close</button>
+</div>
+
+<style>
+    .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+    .hint {
+        font-size: 0.85em;
+        color: #888;
+        margin: -5px 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+</style>
+
+@code {
+    private void UpdateEmojiSet(EmojiSet set)
+    {
+        Settings.Update(s => s.EmojiPreference = set);
+    }
+
+    private void Close()
+    {
+        ModalService.Close();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Models
+
+@if (!string.IsNullOrWhiteSpace(Tag.Emoji))
+{
+    <span class="tag-emoji">@Tag.Emoji</span>
+}
+else
+{
+    <span class="tag-color" style="background-color: @Tag.ColorHex"></span>
+}
+
+<style>
+    .tag-emoji {
+        display: inline-block;
+        width: 1.2em;
+        text-align: center;
+        margin-right: 6px;
+        line-height: 1;
+        font-size: 1.1em;
+    }
+
+    .tag-color {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+        flex-shrink: 0;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public required Tag Tag { get; set; }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\TagManagerView.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@inject LibraryService Library
+
+<div class="tag-manager-view">
+    <div class="header-row">
+        <h3>Manage Tags</h3>
+        <div class="add-row">
+            <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
+            <button class="btn-primary" @onclick="AddTag">Add</button>
+        </div>
+    </div>
+
+    <div class="tag-list">
+        @foreach (var tag in Tags)
+        {
+            <div class="tag-row">
+                <!-- Color Picker -->
+                <div class="color-picker-wrapper">
+                    <button class="color-circle"
+                            style="background-color: @tag.ColorHex"
+                            @onclick="() => ToggleColorPicker(tag.Id)"></button>
+
+                    @if (ActiveColorPickerId == tag.Id)
+                    {
+                        <div class="color-popup" @onclick:stopPropagation="true">
+                            <div class="color-grid">
+                                @foreach (var color in Palette)
+                                {
+                                    <div class="swatch"
+                                         style="background-color: @color"
+                                         @onclick="() => UpdateTagColor(tag, color)"></div>
+                                }
+                            </div>
+                            <div class="overlay" @onclick="() => ActiveColorPickerId = null"></div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Emoji Input -->
+                <input type="text" class="emoji-input"
+                       value="@tag.Emoji"
+                       @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
+                       maxlength="2" />
+
+                <!-- Name Input -->
+                <input type="text" class="name-input"
+                       value="@tag.Name"
+                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
+
+                <span class="count">@tag.FileCount files</span>
+
+                <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .tag-manager-view {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        background: var(--bg-color);
+        color: var(--text-color);
+    }
+
+    .header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 15px;
+    }
+
+        .header-row h3 {
+            margin: 0;
+            color: var(--text-color);
+        }
+
+    .add-row {
+        display: flex;
+        gap: 10px;
+    }
+
+        .add-row input {
+            padding: 8px;
+            background: var(--surface-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 4px;
+            width: 250px;
+        }
+
+            .add-row input:focus {
+                outline: none;
+                border-color: var(--primary-color);
+            }
+
+    .btn-primary {
+        background: var(--primary-color);
+        border: none;
+        color: white;
+        padding: 0 15px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+    .tag-list {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .tag-row {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        background: var(--surface-bg);
+        border-radius: 4px;
+        gap: 15px;
+        transition: background 0.1s;
+    }
+
+        .tag-row:hover {
+            background: var(--panel-bg);
+        }
+
+    .color-picker-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .color-circle {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border: 2px solid var(--border-color);
+        cursor: pointer;
+        display: block;
+    }
+
+    .color-popup {
+        position: absolute;
+        top: 35px;
+        left: 0;
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        padding: 8px;
+        z-index: 1000;
+        border-radius: 6px;
+        width: 160px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    .color-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        position: relative;
+        z-index: 2;
+    }
+
+    .swatch {
+        width: 20px;
+        height: 20px;
+        border-radius: 3px;
+        cursor: pointer;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+
+        .swatch:hover {
+            border-color: white;
+            transform: scale(1.1);
+        }
+
+    .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 1;
+    }
+
+    .emoji-input {
+        width: 30px;
+        text-align: center;
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        border-radius: 4px;
+        padding: 5px;
+        font-size: 1.2em;
+    }
+
+        .emoji-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+    .name-input {
+        flex: 1;
+        background: transparent;
+        border: 1px solid transparent;
+        color: var(--text-color);
+        padding: 5px;
+        border-radius: 4px;
+        font-size: 1em;
+    }
+
+        .name-input:focus {
+            background: var(--bg-color);
+            border-color: var(--border-color);
+        }
+
+    .count {
+        color: var(--text-muted);
+        font-size: 0.9em;
+        width: 80px;
+        text-align: right;
+    }
+
+    .btn-icon.delete {
+        background: none;
+        border: none;
+        color: #e57373;
+        font-size: 1.5em;
+        cursor: pointer;
+        padding: 0 10px;
+        line-height: 1;
+    }
+
+        .btn-icon.delete:hover {
+            color: #d32f2f;
+        }
+</style>
+
+@code {
+    private List<Tag> Tags = [];
+    private string NewTagName = "";
+    private long? ActiveColorPickerId = null;
+
+    private static readonly List<string> Palette = new()
+    {
+        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
+        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
+        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
+        "#546e7a", "#FFFFFF", "#000000"
+    };
+
+    protected override void OnInitialized()
+    {
+        RefreshTags();
+        Library.LibraryChanged += RefreshTags;
+    }
+
+    private void RefreshTags()
+    {
+        Tags = Library.GetTags();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddTag();
+    }
+
+    private void AddTag()
+    {
+        if (!string.IsNullOrWhiteSpace(NewTagName))
+        {
+            Library.AddTag(NewTagName);
+            NewTagName = "";
+        }
+    }
+
+    private void DeleteTag(long id)
+    {
+        Library.DeleteTag(id);
+    }
+
+    private void UpdateTagName(Tag tag, string? newName)
+    {
+        if (!string.IsNullOrWhiteSpace(newName) && newName != tag.Name)
+        {
+            tag.Name = newName;
+            Library.UpdateTag(tag);
+        }
+    }
+
+    private void UpdateTagEmoji(Tag tag, string? newEmoji)
+    {
+        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji;
+        Library.UpdateTag(tag);
+    }
+
+    private void ToggleColorPicker(long id)
+    {
+        ActiveColorPickerId = (ActiveColorPickerId == id) ? null : id;
+    }
+
+    private void UpdateTagColor(Tag tag, string color)
+    {
+        tag.ColorHex = color;
+        Library.UpdateTag(tag);
+        ActiveColorPickerId = null;
+    }
+
+    public void Dispose()
+    {
+        Library.LibraryChanged -= RefreshTags;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\css\app.css`
+
+```css
+@font-face {
+    font-family: 'Apple Emoji';
+    src: url('../fonts/AppleColorEmoji.ttf');
+}
+
+/* Base body style uses default font */
+body {
+    font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
+}
+
+/* When this class is applied to the root layout, override font family */
+.use-apple-emojis,
+.use-apple-emojis * {
+    font-family: 'Apple Emoji', 'Segoe UI', sans-serif !important;
+}
 ```
 
 ---
@@ -3440,6 +4741,176 @@ window.dragDrop = {
 
         // We do NOT handle the data transfer here.
         // The C# Native Window Handler catches the files before JS sees them.
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\grid.js`
+
+```javascript
+window.gridInteractions = {
+    dotNetRef: null,
+    containerId: '',
+    selectionBox: null,
+    isSelecting: false,
+    startX: 0,
+    startY: 0,
+
+    init: function (dotNetRef, containerId) {
+        this.dotNetRef = dotNetRef;
+        this.containerId = containerId;
+        
+        // Create selection box element if it doesn't exist
+        if (!document.getElementById('selection-box')) {
+            this.selectionBox = document.createElement('div');
+            this.selectionBox.id = 'selection-box';
+            this.selectionBox.style.position = 'absolute';
+            this.selectionBox.style.border = '1px solid #42a5f5';
+            this.selectionBox.style.backgroundColor = 'rgba(66, 165, 245, 0.2)';
+            this.selectionBox.style.display = 'none';
+            this.selectionBox.style.zIndex = '9999';
+            this.selectionBox.style.pointerEvents = 'none';
+            document.body.appendChild(this.selectionBox);
+        } else {
+            this.selectionBox = document.getElementById('selection-box');
+        }
+
+        // Attach global events
+        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+        
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        }
+    },
+
+    handleKeyDown: function (e) {
+        // Ignore if focus is in an input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+        if (e.key === 'Delete') {
+            this.dotNetRef.invokeMethodAsync('OnDeleteKey');
+        } else if (e.key === 'Enter') {
+            this.dotNetRef.invokeMethodAsync('OnEnterKey');
+        } else if (e.key.startsWith('Arrow')) {
+            e.preventDefault();
+            this.navigate(e.key);
+        } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            this.dotNetRef.invokeMethodAsync('SelectAll');
+        }
+    },
+
+    navigate: function (direction) {
+        const items = Array.from(document.querySelectorAll('.file-card'));
+        if (items.length === 0) return;
+
+        const selected = document.querySelector('.file-card.selected');
+        let index = selected ? items.indexOf(selected) : -1;
+
+        if (index === -1) {
+            index = 0; // Default to first
+        } else {
+            const containerWidth = document.getElementById(this.containerId).clientWidth;
+            const itemWidth = items[0].getBoundingClientRect().width + 10; // + gap
+            const cols = Math.floor(containerWidth / itemWidth) || 1;
+
+            if (direction === 'ArrowRight') index++;
+            else if (direction === 'ArrowLeft') index--;
+            else if (direction === 'ArrowDown') index += cols;
+            else if (direction === 'ArrowUp') index -= cols;
+        }
+
+        // Clamp
+        if (index < 0) index = 0;
+        if (index >= items.length) index = items.length - 1;
+
+        // Get ID
+        const id = items[index].getAttribute('data-id');
+        items[index].scrollIntoView({ block: 'nearest' });
+        
+        this.dotNetRef.invokeMethodAsync('SelectFile', parseInt(id));
+    },
+
+    handleMouseDown: function (e) {
+        // Ignore clicks on items (handled by Blazor onclick)
+        if (e.target.closest('.file-card')) return;
+
+        e.preventDefault();
+        this.isSelecting = true;
+        this.startX = e.pageX;
+        this.startY = e.pageY;
+
+        this.selectionBox.style.display = 'block';
+        this.updateBox(e.pageX, e.pageY);
+
+        document.addEventListener('mousemove', this.boundMouseMove = this.handleMouseMove.bind(this));
+        document.addEventListener('mouseup', this.boundMouseUp = this.handleMouseUp.bind(this));
+    },
+
+    handleMouseMove: function (e) {
+        if (!this.isSelecting) return;
+        this.updateBox(e.pageX, e.pageY);
+    },
+
+    updateBox: function (currentX, currentY) {
+        const left = Math.min(this.startX, currentX);
+        const top = Math.min(this.startY, currentY);
+        const width = Math.abs(currentX - this.startX);
+        const height = Math.abs(currentY - this.startY);
+
+        this.selectionBox.style.left = left + 'px';
+        this.selectionBox.style.top = top + 'px';
+        this.selectionBox.style.width = width + 'px';
+        this.selectionBox.style.height = height + 'px';
+    },
+
+    handleMouseUp: function (e) {
+        this.isSelecting = false;
+        this.selectionBox.style.display = 'none';
+        
+        document.removeEventListener('mousemove', this.boundMouseMove);
+        document.removeEventListener('mouseup', this.boundMouseUp);
+
+        // Calculate intersection
+        const boxRect = {
+            left: Math.min(this.startX, e.pageX),
+            top: Math.min(this.startY, e.pageY),
+            right: Math.max(this.startX, e.pageX),
+            bottom: Math.max(this.startY, e.pageY)
+        };
+
+        const ids = [];
+        document.querySelectorAll('.file-card').forEach(item => {
+            const rect = item.getBoundingClientRect();
+            // Offset scroll position because getBoundingClientRect is relative to viewport,
+            // but mouse coordinates include scroll. Wait, simple intersection logic:
+            
+            // Adjust rect to page coordinates
+            const pageRect = {
+                left: rect.left + window.scrollX,
+                top: rect.top + window.scrollY,
+                right: rect.right + window.scrollX,
+                bottom: rect.bottom + window.scrollY
+            };
+
+            const intersect = !(boxRect.right < pageRect.left || 
+                              boxRect.left > pageRect.right || 
+                              boxRect.bottom < pageRect.top || 
+                              boxRect.top > pageRect.bottom);
+
+            if (intersect) {
+                ids.push(parseInt(item.getAttribute('data-id')));
+            }
+        });
+
+        if (ids.length > 0) {
+            this.dotNetRef.invokeMethodAsync('SelectFiles', ids);
+        } else {
+            this.dotNetRef.invokeMethodAsync('ClearSelection');
+        }
     }
 };
 ```

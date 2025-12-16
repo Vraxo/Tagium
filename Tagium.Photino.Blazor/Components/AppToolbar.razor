@@ -77,9 +77,52 @@
             border-radius: 4px;
         }
 
+    /* Range Slider Styling */
+    input[type=range] {
+        -webkit-appearance: none;
+        width: 120px;
+        background: transparent;
+        margin: 0 5px;
+        height: 20px;
+        vertical-align: middle;
+        cursor: pointer;
+    }
+
+        input[type=range]:focus {
+            outline: none;
+        }
+
+        /* Track */
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px; /* Increased slightly to accommodate border */
+            cursor: pointer;
+            background: var(--bg-color); /* Darker background */
+            border: 1px solid var(--border-color); /* Border to match buttons */
+            border-radius: 3px;
+        }
+
+        /* Thumb */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            margin-top: -6px; /* (6px height - 2px border) - 16px / 2 approx -5 to -6 alignment */
+            cursor: pointer;
+            border: 2px solid var(--surface-bg);
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+        }
+
+            input[type=range]::-webkit-slider-thumb:hover {
+                transform: scale(1.1);
+            }
+
     .btn {
         background: var(--bg-color);
-        border: 1px solid var(--border-color); /* Added border for better contrast */
+        border: 1px solid var(--border-color);
         color: var(--text-color);
         padding: 6px 12px;
         border-radius: 4px;
