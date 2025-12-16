@@ -12,7 +12,7 @@ public static class SchemeHandlers
         // Format: tagium://thumbnail/{fileId}
         if (!uri.Host.Equals("thumbnail", StringComparison.OrdinalIgnoreCase))
         {
-            return Stream.Null; // 404 equivalent in some handlers, or use exception
+            return Stream.Null;
         }
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
@@ -22,19 +22,18 @@ public static class SchemeHandlers
             return Stream.Null;
         }
 
-        // Use AppDataHelper to find the path directly without instantiating the service
         string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
         string path = Path.Combine(cacheDir, $"{fileId}.png");
 
         if (!File.Exists(path))
         {
-            // IMPORTANT: Returning null or throwing exception signals 404/Error to WebView2
+            // Returning null here signals a "Not Found" to WebView2 in some contexts,
+            // or we can return a 404 stream if the wrapper supports it. 
+            // Photino: returning null usually results in an empty response or 404.
             return null!;
         }
 
         contentType = "image/png";
-        // File.OpenRead throws if locked, but for thumbnails it's usually fine. 
-        // Shared Read is safer.
         return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
     }
 }

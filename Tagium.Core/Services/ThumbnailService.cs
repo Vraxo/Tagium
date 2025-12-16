@@ -75,20 +75,17 @@ public class ThumbnailService
                     }
                     else
                     {
-                        // Fallback: Generate a text placeholder "VIDEO"
                         GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
                     }
                 }
                 else
                 {
-                    // Fallback for unknown/other types
                     GeneratePlaceholder(destPath, size, ext.TrimStart('.').ToUpper(), SKColors.Gray);
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Thumbnail] Error for {file.Path}: {ex.Message}");
-                // Generate error placeholder so we don't retry forever or show broken image
                 GeneratePlaceholder(destPath, size, "ERR", SKColors.DarkRed);
             }
         });
@@ -115,7 +112,6 @@ public class ThumbnailService
 
             string tempFrame = Path.GetTempFileName() + ".png";
 
-            // Snapshot
             _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new System.Drawing.Size(size, size), captureTime);
 
             if (File.Exists(tempFrame))
@@ -131,7 +127,6 @@ public class ThumbnailService
         catch (Exception ex)
         {
             Console.WriteLine($"[Thumbnail] FFMpeg error: {ex.Message}");
-            // Fallback to placeholder if FFmpeg fails specifically
             GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
         }
     }
@@ -152,7 +147,6 @@ public class ThumbnailService
             TextAlign = SKTextAlign.Center
         };
 
-        // Center text
         float x = size / 2;
         float y = (size / 2) + (textPaint.TextSize / 2) - 5;
 

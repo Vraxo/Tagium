@@ -22,6 +22,9 @@
             
             <div class="spacer"></div>
             
+            <!-- Status Message Area -->
+            <span class="status-msg">@StatusMessage</span>
+            
             <div class="control-group">
                 <label>Sort:</label>
                 <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
@@ -115,6 +118,16 @@
         gap: 15px;
     }
     
+    .status-msg {
+        font-size: 0.85em;
+        color: #888;
+        margin-right: 15px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+    
     .spacer { flex: 1; }
     
     .control-group {
@@ -146,18 +159,19 @@
 
 @code {
     private DotNetObjectReference<MainLayout>? _objRef;
+    private string StatusMessage = "";
 
     protected override async Task OnInitializedAsync()
     {
         Settings.SettingsChanged += StateHasChanged;
+        Library.ImportCompleted += ShowImportStatus;
         
-        // Initialize Drag Drop
         _objRef = DotNetObjectReference.Create(this);
         try 
         {
             await JS.InvokeVoidAsync("dragDrop.init", _objRef);
         }
-        catch { /* Ignore JS errors during prerender or if script missing */ }
+        catch { /* Ignore JS errors */ }
     }
 
     private void ImportFiles()
@@ -165,40 +179,22 @@
         var paths = FileDialog.OpenFiles();
         if (paths != null && paths.Length > 0)
         {
-            ProcessFiles(paths);
+            Library.ImportBatch(paths);
         }
     }
     
-    [JSInvokable]
-    public void OnFilesDropped(string[] files)
+    private void ShowImportStatus(int added, int duplicates)
     {
-        ProcessFiles(files);
-    }
-    
-    private void ProcessFiles(string[] paths)
-    {
-        int added = 0;
-        int duplicates = 0;
-
-        foreach (var path in paths)
+        // Event comes from non-UI thread (native handler), invoke on UI thread
+        InvokeAsync(async () =>
         {
-            if (Library.AddFile(path))
-            {
-                added++;
-            }
-            else
-            {
-                duplicates++;
-            }
-        }
-        
-        // Basic feedback
-        if (duplicates > 0)
-        {
-            // Ideally use a Toast service. For now, we rely on the grid updating.
-            // Future: ModalService.Show("Import Report", @<p>Imported: @added. Skipped (Dupes): @duplicates</p>);
-            Console.WriteLine($"Imported {added}, Skipped {duplicates} duplicates.");
-        }
+            StatusMessage = $"Added: {added}, Dupes: {duplicates}";
+            StateHasChanged();
+            
+            await Task.Delay(3000);
+            StatusMessage = "";
+            StateHasChanged();
+        });
     }
     
     private void OpenDataTools()
@@ -233,6 +229,7 @@
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
+        Library.ImportCompleted -= ShowImportStatus;
         _objRef?.Dispose();
     }
 }

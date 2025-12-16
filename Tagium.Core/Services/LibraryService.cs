@@ -15,6 +15,7 @@ public class LibraryService
     private readonly SettingsManager _settingsManager;
 
     public event Action? LibraryChanged;
+    public event Action<int, int>? ImportCompleted; // added, duplicates
 
     public LibraryService(
         FileRepository fileRepo,
@@ -72,6 +73,33 @@ public class LibraryService
         return false; // Duplicate or Error
     }
 
+    /// <summary>
+    /// Imports multiple files and fires the ImportCompleted event with statistics.
+    /// </summary>
+    public void ImportBatch(string[] paths)
+    {
+        int added = 0;
+        int duplicates = 0;
+
+        foreach (string path in paths)
+        {
+            // Basic validation to ensure it's a file
+            if (File.Exists(path))
+            {
+                if (AddFile(path))
+                {
+                    added++;
+                }
+                else
+                {
+                    duplicates++;
+                }
+            }
+        }
+
+        ImportCompleted?.Invoke(added, duplicates);
+    }
+
     public void RemoveFile(long fileId)
     {
         _fileRepo.Remove(fileId);
@@ -124,7 +152,6 @@ public class LibraryService
 
     // --- Thumbnails ---
 
-    [Obsolete]
     public void EnsureThumbnails(IEnumerable<FileEntry> files)
     {
         foreach (FileEntry file in files)
