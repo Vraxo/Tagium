@@ -18,7 +18,10 @@ public class Program
 
         var app = appBuilder.Build();
 
-        // Custom Scheme for Thumbnails
+        // Pass ServiceProvider to static SchemeHandler
+        SchemeHandlers.ServiceProvider = app.Services;
+
+        // Custom Scheme for Thumbnails and Previews
         _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
 
         _ = app.MainWindow

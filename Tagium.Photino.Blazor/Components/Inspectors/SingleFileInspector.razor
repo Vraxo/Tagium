@@ -9,6 +9,28 @@
 @inject AppState AppState
 @inject ModalService ModalService
 
+<div class="preview-container">
+    @if (!File.IsMissing)
+    {
+        @if (IsImage)
+        {
+            <img src="tagium://preview/@File.Id" class="preview-media" />
+        }
+        else if (IsVideo)
+        {
+            <video src="tagium://preview/@File.Id" class="preview-media" controls autoplay muted loop></video>
+        }
+        else
+        {
+            <div class="preview-placeholder">📄</div>
+        }
+    }
+    else
+    {
+        <div class="preview-placeholder error">❓</div>
+    }
+</div>
+
 <h3>File Details</h3>
 
 @if (File.IsMissing)
@@ -60,6 +82,34 @@
 </div>
 
 <style>
+    .preview-container {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        background: #222;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border: 1px solid #333;
+    }
+
+    .preview-media {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+
+    .preview-placeholder {
+        font-size: 3em;
+        color: #444;
+    }
+
+        .preview-placeholder.error {
+            color: #c62828;
+        }
+
     .prop-row {
         margin-bottom: 10px;
     }
@@ -187,6 +237,15 @@
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
     [Parameter] public List<Tag> AssignedTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
+
+    private bool IsImage => CheckExtension([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
+    private bool IsVideo => CheckExtension([".mp4", ".webm", ".mov", ".mkv"]);
+
+    private bool CheckExtension(string[] exts)
+    {
+        string ext = Path.GetExtension(File.Path);
+        return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
+    }
 
     private void AddTag(long tagId)
     {
