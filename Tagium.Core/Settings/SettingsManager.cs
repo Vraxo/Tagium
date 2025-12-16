@@ -7,6 +7,9 @@ namespace Tagium.Core.Settings;
 public class SettingsManager
 {
     private readonly string _settingsPath;
+
+    public event Action? SettingsChanged;
+
     private static readonly JsonSerializerOptions _serializerOptions = new()
     {
         WriteIndented = true,
@@ -22,6 +25,13 @@ public class SettingsManager
     }
 
     public TagiumSettings Current { get; }
+
+    public void Update(Action<TagiumSettings> updateAction)
+    {
+        updateAction(Current);
+        Save();
+        SettingsChanged?.Invoke();
+    }
 
     public void Save()
     {

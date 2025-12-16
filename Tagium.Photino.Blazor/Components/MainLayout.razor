@@ -1,9 +1,11 @@
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
+@using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
 @inject FileDialogService FileDialog
 @inject LibraryService Library
+@inject SettingsManager Settings
 
 <div class="app-layout">
     <aside class="left-panel">
@@ -13,8 +15,30 @@
     <main class="center-panel">
         <div class="toolbar">
             <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
+            
             <div class="spacer"></div>
-            <!-- Settings or View Options can go here -->
+            
+            <div class="control-group">
+                <label>Sort:</label>
+                <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
+                    <option value="@SortBy.DateAdded">Date Added</option>
+                    <option value="@SortBy.Name">Name</option>
+                    <option value="@SortBy.Path">Path</option>
+                </select>
+                <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
+                    <option value="@SortDirection.Asc">Asc</option>
+                    <option value="@SortDirection.Desc">Desc</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Size:</label>
+                <input type="range" min="64" max="256" step="16" 
+                       value="@Settings.Current.ThumbnailSize" 
+                       @onchange="OnThumbSizeChange" />
+            </div>
+            
+            <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
         </div>
         <div class="content-area">
             <FileGrid />
@@ -84,10 +108,22 @@
         align-items: center;
         padding: 0 15px;
         background: #2a2a2a;
-        gap: 10px;
+        gap: 15px;
     }
     
     .spacer { flex: 1; }
+    
+    .control-group {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.9em;
+        color: #bbb;
+    }
+    
+    .control-group select {
+        background: #444; border: 1px solid #555; color: white; padding: 4px; border-radius: 4px;
+    }
     
     .content-area {
         flex: 1;
@@ -105,6 +141,11 @@
 </style>
 
 @code {
+    protected override void OnInitialized()
+    {
+        Settings.SettingsChanged += StateHasChanged;
+    }
+
     private void ImportFiles()
     {
         var paths = FileDialog.OpenFiles();
@@ -115,5 +156,35 @@
                 Library.AddFile(path);
             }
         }
+    }
+    
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortBy = result);
+            // No need to manually invoke refresh; Grid subscribes to SettingsChanged
+        }
+    }
+    
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortDirection = result);
+        }
+    }
+    
+    private void OnThumbSizeChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            Settings.Update(s => s.ThumbnailSize = val);
+        }
+    }
+    
+    public void Dispose()
+    {
+        Settings.SettingsChanged -= StateHasChanged;
     }
 }

@@ -58,6 +58,16 @@ public class FileRepository
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore duplicates */ }
     }
 
+    public void Remove(long id)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Files WHERE Id = @Id";
+        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.ExecuteNonQuery();
+    }
+
     private static FileEntry ReadFile(SqliteDataReader reader)
     {
         return new FileEntry

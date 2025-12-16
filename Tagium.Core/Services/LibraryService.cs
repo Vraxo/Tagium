@@ -31,6 +31,14 @@ public class LibraryService
         _settingsManager = settingsManager;
     }
 
+    /// <summary>
+    /// Manually triggers the LibraryChanged event to refresh the UI.
+    /// </summary>
+    public void Refresh()
+    {
+        LibraryChanged?.Invoke();
+    }
+
     // --- Files ---
 
     public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
@@ -49,8 +57,14 @@ public class LibraryService
 
     public void AddFile(string path)
     {
-        string hash = Guid.NewGuid().ToString(); // Placeholder for real hashing
+        string hash = Guid.NewGuid().ToString();
         _fileRepo.Add(path, hash);
+        LibraryChanged?.Invoke();
+    }
+
+    public void RemoveFile(long fileId)
+    {
+        _fileRepo.Remove(fileId);
         LibraryChanged?.Invoke();
     }
 
