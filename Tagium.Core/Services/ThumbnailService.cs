@@ -1,4 +1,5 @@
-﻿using SkiaSharp;
+﻿using FFMpegCore;
+using SkiaSharp;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
@@ -7,10 +8,30 @@ namespace Tagium.Core.Services;
 public class ThumbnailService
 {
     private readonly string _cacheDir;
+    private readonly bool _hasFFmpeg;
+    private readonly HashSet<string> _imageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
+    private readonly HashSet<string> _videoExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm" };
 
     public ThumbnailService()
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+
+        // Check for FFmpeg binaries
+        string ffmpegPath = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+        string ffprobePath = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
+
+        _hasFFmpeg = File.Exists(ffmpegPath) && File.Exists(ffprobePath);
+
+        if (_hasFFmpeg)
+        {
+            GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
+        }
+        else
+        {
+            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails will use placeholders.");
+        }
     }
 
     public string GetThumbnailPath(long fileId)
@@ -23,7 +44,6 @@ public class ThumbnailService
         return File.Exists(GetThumbnailPath(fileId));
     }
 
-    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -32,42 +52,135 @@ public class ThumbnailService
             return;
         }
 
-        // Run on thread pool to avoid blocking UI
-        await Task.Run(() =>
+        if (!File.Exists(file.Path))
+        {
+            return;
+        }
+
+        string ext = Path.GetExtension(file.Path);
+
+        await Task.Run(async () =>
         {
             try
             {
-                if (!File.Exists(file.Path))
+                if (_imageExtensions.Contains(ext))
                 {
-                    return;
+                    GenerateImageThumbnail(file.Path, destPath, size);
                 }
-
-                using SKBitmap? original = SKBitmap.Decode(file.Path);
-
-                if (original is null)
+                else if (_videoExtensions.Contains(ext))
                 {
-                    return;
+                    if (_hasFFmpeg)
+                    {
+                        await GenerateVideoThumbnailAsync(file.Path, destPath, size);
+                    }
+                    else
+                    {
+                        // Fallback: Generate a text placeholder "VIDEO"
+                        GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
+                    }
                 }
-
-                // Resize
-                SKImageInfo info = new(size, size);
-                using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
-
-                if (resized is null)
+                else
                 {
-                    return;
+                    // Fallback for unknown/other types
+                    GeneratePlaceholder(destPath, size, ext.TrimStart('.').ToUpper(), SKColors.Gray);
                 }
-
-                using SKImage image = SKImage.FromBitmap(resized);
-                using SKData data = image.Encode(SKEncodedImageFormat.Png, 90);
-
-                using FileStream stream = File.OpenWrite(destPath);
-                data.SaveTo(stream);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
+                Console.WriteLine($"[Thumbnail] Error for {file.Path}: {ex.Message}");
+                // Generate error placeholder so we don't retry forever or show broken image
+                GeneratePlaceholder(destPath, size, "ERR", SKColors.DarkRed);
             }
         });
+    }
+
+    private static void GenerateImageThumbnail(string sourcePath, string destPath, int size)
+    {
+        using SKBitmap? original = SKBitmap.Decode(sourcePath);
+        if (original is null)
+        {
+            return;
+        }
+
+        SaveResized(original, destPath, size);
+    }
+
+    private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
+    {
+        try
+        {
+            var analysis = await FFProbe.AnalyseAsync(sourcePath);
+            var duration = analysis.Duration;
+            var captureTime = duration.TotalSeconds > 10 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(duration.TotalSeconds * 0.1);
+
+            string tempFrame = Path.GetTempFileName() + ".png";
+
+            // Snapshot
+            _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new System.Drawing.Size(size, size), captureTime);
+
+            if (File.Exists(tempFrame))
+            {
+                using SKBitmap? original = SKBitmap.Decode(tempFrame);
+                if (original != null)
+                {
+                    SaveResized(original, destPath, size);
+                }
+                File.Delete(tempFrame);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Thumbnail] FFMpeg error: {ex.Message}");
+            // Fallback to placeholder if FFmpeg fails specifically
+            GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
+        }
+    }
+
+    [Obsolete]
+    private static void GeneratePlaceholder(string destPath, int size, string text, SKColor color)
+    {
+        using SKBitmap bitmap = new(size, size);
+        using SKCanvas canvas = new(bitmap);
+
+        canvas.Clear(color);
+
+        using SKPaint textPaint = new()
+        {
+            Color = SKColors.White,
+            TextSize = size / 4,
+            IsAntialias = true,
+            TextAlign = SKTextAlign.Center
+        };
+
+        // Center text
+        float x = size / 2;
+        float y = (size / 2) + (textPaint.TextSize / 2) - 5;
+
+        canvas.DrawText(text, x, y, textPaint);
+
+        using SKImage image = SKImage.FromBitmap(bitmap);
+        using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
+        using FileStream stream = File.OpenWrite(destPath);
+        data.SaveTo(stream);
+    }
+
+    [Obsolete]
+    private static void SaveResized(SKBitmap original, string destPath, int size)
+    {
+        float ratio = (float)Math.Min((double)size / original.Width, (double)size / original.Height);
+        int w = (int)(original.Width * ratio);
+        int h = (int)(original.Height * ratio);
+
+        SKImageInfo info = new(w, h);
+        using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
+        if (resized is null)
+        {
+            return;
+        }
+
+        using SKImage image = SKImage.FromBitmap(resized);
+        using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
+        using FileStream stream = File.OpenWrite(destPath);
+        data.SaveTo(stream);
     }
 }

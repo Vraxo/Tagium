@@ -8,6 +8,7 @@
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
+@inject IJSRuntime JS
 
 <div class="app-layout">
     <aside class="left-panel">
@@ -144,9 +145,19 @@
 </style>
 
 @code {
-    protected override void OnInitialized()
+    private DotNetObjectReference<MainLayout>? _objRef;
+
+    protected override async Task OnInitializedAsync()
     {
         Settings.SettingsChanged += StateHasChanged;
+        
+        // Initialize Drag Drop
+        _objRef = DotNetObjectReference.Create(this);
+        try 
+        {
+            await JS.InvokeVoidAsync("dragDrop.init", _objRef);
+        }
+        catch { /* Ignore JS errors during prerender or if script missing */ }
     }
 
     private void ImportFiles()
@@ -154,10 +165,39 @@
         var paths = FileDialog.OpenFiles();
         if (paths != null && paths.Length > 0)
         {
-            foreach (var path in paths)
+            ProcessFiles(paths);
+        }
+    }
+    
+    [JSInvokable]
+    public void OnFilesDropped(string[] files)
+    {
+        ProcessFiles(files);
+    }
+    
+    private void ProcessFiles(string[] paths)
+    {
+        int added = 0;
+        int duplicates = 0;
+
+        foreach (var path in paths)
+        {
+            if (Library.AddFile(path))
             {
-                Library.AddFile(path);
+                added++;
             }
+            else
+            {
+                duplicates++;
+            }
+        }
+        
+        // Basic feedback
+        if (duplicates > 0)
+        {
+            // Ideally use a Toast service. For now, we rely on the grid updating.
+            // Future: ModalService.Show("Import Report", @<p>Imported: @added. Skipped (Dupes): @duplicates</p>);
+            Console.WriteLine($"Imported {added}, Skipped {duplicates} duplicates.");
         }
     }
     
@@ -193,5 +233,6 @@
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
+        _objRef?.Dispose();
     }
 }

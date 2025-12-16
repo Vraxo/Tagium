@@ -1,4 +1,4 @@
-﻿using Tagium.Core.Services;
+﻿using Tagium.Core.Helpers;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -12,32 +12,29 @@ public static class SchemeHandlers
         // Format: tagium://thumbnail/{fileId}
         if (!uri.Host.Equals("thumbnail", StringComparison.OrdinalIgnoreCase))
         {
-            return new MemoryStream();
+            return Stream.Null; // 404 equivalent in some handlers, or use exception
         }
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
 
         if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
         {
-            return new MemoryStream();
+            return Stream.Null;
         }
-        // We need to resolve the service from the app container. 
-        // Since this handler is static and outside DI scope, we rely on the fact 
-        // that Photino doesn't easily expose the provider here. 
-        // However, we can access singleton services if we store the provider in Program. 
-        // For simplified migration, we will instantiate a new ThumbnailService helper or 
-        // assume the cache path logic is static/safe.
 
-        // Better approach: Re-instantiate the path helper since it's stateless file IO.
-        ThumbnailService thumbnailService = new();
-        string path = thumbnailService.GetThumbnailPath(fileId);
+        // Use AppDataHelper to find the path directly without instantiating the service
+        string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+        string path = Path.Combine(cacheDir, $"{fileId}.png");
 
         if (!File.Exists(path))
         {
-            return new MemoryStream();
+            // IMPORTANT: Returning null or throwing exception signals 404/Error to WebView2
+            return null!;
         }
 
         contentType = "image/png";
-        return File.OpenRead(path);
+        // File.OpenRead throws if locked, but for thumbnails it's usually fine. 
+        // Shared Read is safer.
+        return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
     }
 }
