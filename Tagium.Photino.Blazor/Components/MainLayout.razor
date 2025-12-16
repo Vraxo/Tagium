@@ -2,6 +2,7 @@
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
+@using Tagium.Core.Data
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
 @using System.IO
@@ -9,6 +10,7 @@
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
+@inject ToastService Toast
 @inject IJSRuntime JS
 
 <div class="app-layout" @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
@@ -38,9 +40,6 @@
             <button class="btn" @onclick="OpenDataTools">Data Tools</button>
             
             <div class="spacer"></div>
-            
-            <!-- Status Message Area -->
-            <span class="status-msg">@StatusMessage</span>
             
             <div class="control-group">
                 <label>Sort:</label>
@@ -74,6 +73,7 @@
     </aside>
     
     <ModalHost />
+    <ToastContainer />
 </div>
 
 <style>
@@ -173,16 +173,6 @@
         gap: 15px;
     }
     
-    .status-msg {
-        font-size: 0.85em;
-        color: #888;
-        margin-right: 15px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 200px;
-    }
-    
     .spacer { flex: 1; }
     
     .control-group {
@@ -213,7 +203,6 @@
 </style>
 
 @code {
-    private string StatusMessage = "";
     private bool _isDragging = false;
     private int _dragCounter = 0;
 
@@ -228,6 +217,7 @@
         var paths = FileDialog.OpenFiles();
         if (paths != null && paths.Length > 0)
         {
+            // Always use batch mode for consistency
             Library.ImportBatch(paths);
         }
     }
@@ -256,8 +246,6 @@
         var files = e.GetMultipleFiles(100);
         int count = 0;
         
-        // Tagium indexes file paths. Since browser drag-and-drop only gives streams,
-        // we must save the file to a local "Imports" folder to index it.
         string importDir = Path.Combine(Tagium.Core.Helpers.AppDataHelper.GetBaseDirectory(), "Imports");
         if (!Directory.Exists(importDir)) Directory.CreateDirectory(importDir);
 
@@ -267,14 +255,12 @@
         {
             try 
             {
-                // Create unique filename to prevent collisions
                 string safeName = Path.GetFileNameWithoutExtension(file.Name) 
                                   + "_" + Guid.NewGuid().ToString().Substring(0, 8) 
                                   + Path.GetExtension(file.Name);
                 
                 string localPath = Path.Combine(importDir, safeName);
 
-                // Stream max size: 500MB
                 using var stream = file.OpenReadStream(500 * 1024 * 1024); 
                 using var fs = File.Create(localPath);
                 await stream.CopyToAsync(fs);
@@ -296,15 +282,26 @@
     
     private void ShowImportStatus(int added, int duplicates)
     {
-        InvokeAsync(async () =>
+        // Standardized Toast feedback for all imports
+        if (added > 0)
         {
-            StatusMessage = $"Added: {added}, Dupes: {duplicates}";
-            StateHasChanged();
-            
-            await Task.Delay(3000);
-            StatusMessage = "";
-            StateHasChanged();
-        });
+            string msg = duplicates > 0 
+                ? $"Added {added} files. {duplicates} duplicates skipped." 
+                : $"Added {added} files.";
+            Toast.Show(msg, ToastType.Success);
+        }
+        else if (duplicates > 0)
+        {
+            // If we only tried to add 1 and it failed, we can be more specific
+            string msg = duplicates == 1 
+                ? "File already exists in library." 
+                : $"All {duplicates} files were duplicates.";
+            Toast.Show(msg, ToastType.Info);
+        }
+        else 
+        {
+            Toast.Show("No valid files found to import.", ToastType.Error);
+        }
     }
     
     private void OpenDataTools()

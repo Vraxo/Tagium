@@ -1,0 +1,92 @@
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@inject ToastService ToastService
+
+<div class="toast-container">
+    @foreach (var toast in ToastService.Toasts)
+    {
+        <div class="toast @GetClass(toast)" @onclick="() => Remove(toast)">
+            @toast.Message
+        </div>
+    }
+</div>
+
+<style>
+    .toast-container {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 9999;
+        pointer-events: none; /* Let clicks pass through the container area */
+    }
+
+    .toast {
+        background: #333;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        font-size: 0.9em;
+        min-width: 200px;
+        pointer-events: auto; /* Re-enable clicks for toasts */
+        cursor: pointer;
+        animation: slideIn 0.3s ease-out;
+        border-left: 4px solid transparent;
+        opacity: 0.95;
+    }
+
+        .toast:hover {
+            opacity: 1;
+        }
+
+        .toast.info {
+            border-left-color: #42a5f5;
+        }
+
+        .toast.success {
+            border-left-color: #66bb6a;
+        }
+
+        .toast.error {
+            border-left-color: #ef5350;
+        }
+
+    @@keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateX(0);
+            opacity: 0.95;
+        }
+    }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        ToastService.OnChange += StateHasChanged;
+    }
+
+    private string GetClass(Toast toast) => toast.Type switch
+    {
+        ToastType.Success => "success",
+        ToastType.Error => "error",
+        _ => "info"
+    };
+
+    private void Remove(Toast toast)
+    {
+        ToastService.Remove(toast);
+    }
+
+    public void Dispose()
+    {
+        ToastService.OnChange -= StateHasChanged;
+    }
+}

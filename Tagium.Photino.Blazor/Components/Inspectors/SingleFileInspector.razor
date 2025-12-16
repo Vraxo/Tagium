@@ -2,10 +2,12 @@
 @using Tagium.Core.Models
 @using Tagium.Core.Services
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
 @inject LibraryService Library
 @inject SystemLauncherService Launcher
 @inject FileDialogService FileDialog
 @inject AppState AppState
+@inject ModalService ModalService
 
 <h3>File Details</h3>
 
@@ -217,7 +219,12 @@
         var files = FileDialog.OpenFiles();
         if (files != null && files.Length > 0)
         {
-            Library.RelocateFile(File.Id, files[0]);
+            var result = Library.RelocateFile(File.Id, files[0]);
+
+            if (result.Status == RelocateResultStatus.Duplicate && result.ConflictingFile != null)
+            {
+                ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
+            }
         }
     }
 }

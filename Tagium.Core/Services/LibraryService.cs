@@ -5,6 +5,20 @@ using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
 
+public enum RelocateResultStatus { Success, Duplicate, Error, NotFound }
+
+public class RelocateResult
+{
+    public RelocateResultStatus Status { get; set; }
+    public FileEntry? ConflictingFile { get; set; }
+}
+
+public class AddFileDetailedResult
+{
+    public AddFileResult Status { get; set; }
+    public FileEntry? Entry { get; set; }
+}
+
 public class LibraryService
 {
     private readonly FileRepository _fileRepo;
@@ -56,10 +70,22 @@ public class LibraryService
 
     public bool AddFile(string path)
     {
+        return AddFileDetailed(path).Status == AddFileResult.Success;
+    }
+
+    public AddFileDetailedResult AddFileDetailed(string path)
+    {
         string? hash = FileHasher.ComputeSha256(path);
         if (hash == null)
         {
-            return false; // File read error
+            return new AddFileDetailedResult { Status = AddFileResult.Error };
+        }
+
+        // Check for existing by hash first to return the entry
+        FileEntry? existing = _fileRepo.GetByHash(hash);
+        if (existing != null)
+        {
+            return new AddFileDetailedResult { Status = AddFileResult.Duplicate, Entry = existing };
         }
 
         AddFileResult result = _fileRepo.Add(path, hash);
@@ -67,10 +93,12 @@ public class LibraryService
         if (result == AddFileResult.Success)
         {
             LibraryChanged?.Invoke();
-            return true;
+            // Fetch the newly added entry
+            FileEntry? newEntry = _fileRepo.GetByHash(hash);
+            return new AddFileDetailedResult { Status = AddFileResult.Success, Entry = newEntry };
         }
 
-        return false; // Duplicate or Error
+        return new AddFileDetailedResult { Status = result };
     }
 
     /// <summary>
@@ -83,7 +111,6 @@ public class LibraryService
 
         foreach (string path in paths)
         {
-            // Basic validation to ensure it's a file
             if (File.Exists(path))
             {
                 if (AddFile(path))
@@ -100,30 +127,30 @@ public class LibraryService
         ImportCompleted?.Invoke(added, duplicates);
     }
 
-    public bool RelocateFile(long fileId, string newPath)
+    public RelocateResult RelocateFile(long fileId, string newPath)
     {
         if (!File.Exists(newPath))
         {
-            return false;
+            return new RelocateResult { Status = RelocateResultStatus.NotFound };
         }
 
         string? newHash = FileHasher.ComputeSha256(newPath);
         if (newHash == null)
         {
-            return false;
+            return new RelocateResult { Status = RelocateResultStatus.Error };
         }
 
         // Check if the new file is already in the database
         FileEntry? existing = _fileRepo.GetByHash(newHash);
         if (existing != null && existing.Id != fileId)
         {
-            return false; // Duplicate: The file at newPath is already tracked
+            return new RelocateResult { Status = RelocateResultStatus.Duplicate, ConflictingFile = existing };
         }
 
         FileEntry? file = _fileRepo.GetById(fileId);
         if (file == null)
         {
-            return false;
+            return new RelocateResult { Status = RelocateResultStatus.Error };
         }
 
         file.Path = newPath;
@@ -137,7 +164,7 @@ public class LibraryService
         _ = _thumbnailService.GenerateThumbnailAsync(file);
 
         LibraryChanged?.Invoke();
-        return true;
+        return new RelocateResult { Status = RelocateResultStatus.Success };
     }
 
     public void RemoveFile(long fileId)
