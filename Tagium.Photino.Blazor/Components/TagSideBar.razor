@@ -12,17 +12,15 @@
         <input type="text" placeholder="Search..." @onchange="OnSearchInput" value="@AppState.SearchText" />
     </div>
 
-    <div class="actions">
-        <button class="btn-manage" @onclick="OpenTagManager">Manage Tags</button>
-    </div>
+    <!-- Removed "Manage Tags" button here since it's now in the Top Toolbar -->
 
     <div class="tag-list">
-        <div class="tag-item @(string.IsNullOrEmpty(AppState.SearchText) && !AppState.IsMissingOnly ? "active" : "")"
+        <div class="tag-item @(IsAllFilesActive ? "active" : "")"
              @onclick="() => SetSearch(string.Empty)">
             <span class="icon">📁</span> All Files
         </div>
 
-        <div class="tag-item @(AppState.IsMissingOnly ? "active" : "")"
+        <div class="tag-item @(IsMissingActive ? "active" : "")"
              @onclick="() => AppState.SetMissingOnly(true)">
             <span class="icon">⚠️</span> Missing Files
         </div>
@@ -31,7 +29,10 @@
 
         @foreach (var tag in Tags)
         {
-            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase);
+            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase)
+            && !AppState.IsMissingOnly
+            && AppState.CurrentView == AppView.Files;
+
             <div class="tag-item @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
                 <span class="tag-color" style="background-color: @tag.ColorHex"></span>
                 <span class="name">@tag.Name</span>
@@ -59,25 +60,6 @@
             border: 1px solid #555;
             color: #fff;
             border-radius: 4px;
-        }
-
-    .actions {
-        padding-bottom: 10px;
-    }
-
-    .btn-manage {
-        width: 100%;
-        background: #3a3a3a;
-        color: #ccc;
-        border: 1px solid #555;
-        padding: 4px;
-        cursor: pointer;
-        border-radius: 4px;
-    }
-
-        .btn-manage:hover {
-            background: #4a4a4a;
-            color: white;
         }
 
     .tag-list {
@@ -133,6 +115,13 @@
 @code {
     private List<Tag> Tags = [];
 
+    // Helper properties to keep logic clean in Razor
+    private bool IsAllFilesActive => string.IsNullOrEmpty(AppState.SearchText)
+                                     && !AppState.IsMissingOnly
+                                     && AppState.CurrentView == AppView.Files;
+
+    private bool IsMissingActive => AppState.IsMissingOnly && AppState.CurrentView == AppView.Files;
+
     protected override void OnInitialized()
     {
         Tags = Library.GetTags();
@@ -154,11 +143,7 @@
     private void SetSearch(string text)
     {
         AppState.SetSearch(text);
-    }
-
-    private void OpenTagManager()
-    {
-        ModalService.Show("Manage Tags", @<TagManagerModal />);
+        // AppState automatically switches view to Files in SetSearch
     }
 
     public void Dispose()

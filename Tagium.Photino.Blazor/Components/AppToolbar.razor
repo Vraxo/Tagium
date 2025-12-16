@@ -7,33 +7,44 @@
 @inject SettingsManager Settings
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
+@inject AppState AppState
 
 <div class="toolbar">
     <button class="btn btn-primary" @onclick="ImportFiles">Add Files...</button>
-    <button class="btn" @onclick="OpenTags">Tags</button>
+
+    <!-- View Switcher Button -->
+    <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
+            @onclick="ToggleTagView">
+        Tags
+    </button>
+
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
     <div class="spacer"></div>
 
-    <div class="control-group">
-        <label>Sort:</label>
-        <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
-            <option value="@SortBy.DateAdded">Date Added</option>
-            <option value="@SortBy.Name">Name</option>
-            <option value="@SortBy.Path">Path</option>
-        </select>
-        <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
-            <option value="@SortDirection.Asc">Asc</option>
-            <option value="@SortDirection.Desc">Desc</option>
-        </select>
-    </div>
+    <!-- Only show file controls in Files View -->
+    @if (AppState.CurrentView == AppView.Files)
+    {
+        <div class="control-group">
+            <label>Sort:</label>
+            <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
+                <option value="@SortBy.DateAdded">Date Added</option>
+                <option value="@SortBy.Name">Name</option>
+                <option value="@SortBy.Path">Path</option>
+            </select>
+            <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
+                <option value="@SortDirection.Asc">Asc</option>
+                <option value="@SortDirection.Desc">Desc</option>
+            </select>
+        </div>
 
-    <div class="control-group">
-        <label>Size:</label>
-        <input type="range" min="64" max="256" step="16"
-               value="@Settings.Current.ThumbnailSize"
-               @onchange="OnThumbSizeChange" />
-    </div>
+        <div class="control-group">
+            <label>Size:</label>
+            <input type="range" min="64" max="256" step="16"
+                   value="@Settings.Current.ThumbnailSize"
+                   @onchange="OnThumbSizeChange" />
+        </div>
+    }
 
     <button class="btn" @onclick="OpenPreferences" title="Settings">⚙</button>
     <button class="btn" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
@@ -47,7 +58,7 @@
         align-items: center;
         padding: 0 15px;
         background: #2a2a2a;
-        gap: 10px; /* Reduced slightly to fit new button */
+        gap: 10px;
     }
 
     .spacer {
@@ -83,6 +94,11 @@
             background: #555;
         }
 
+        .btn.active {
+            background: #555;
+            border: 1px solid #777;
+        }
+
     .btn-primary {
         background: #42a5f5;
         color: white;
@@ -98,6 +114,7 @@
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
+        AppState.OnChange += StateHasChanged;
     }
 
     private void ImportFiles()
@@ -109,9 +126,12 @@
         }
     }
 
-    private void OpenTags()
+    private void ToggleTagView()
     {
-        ModalService.Show("Manage Tags", @<TagManagerModal />);
+        if (AppState.CurrentView == AppView.Tags)
+            AppState.SwitchView(AppView.Files);
+        else
+            AppState.SwitchView(AppView.Tags);
     }
 
     private void OpenDataTools()
@@ -151,5 +171,6 @@
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
+        AppState.OnChange -= StateHasChanged;
     }
 }

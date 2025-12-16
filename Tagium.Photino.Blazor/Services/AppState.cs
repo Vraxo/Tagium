@@ -1,8 +1,11 @@
 ﻿namespace Tagium.Photino.Blazor.Services;
 
+public enum AppView { Files, Tags }
+
 public class AppState
 {
     // State
+    public AppView CurrentView { get; private set; } = AppView.Files;
     public string SearchText { get; private set; } = "";
     public bool IsMissingOnly { get; private set; }
     public HashSet<long> SelectedFileIds { get; private set; } = [];
@@ -11,6 +14,15 @@ public class AppState
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
+    public void SwitchView(AppView view)
+    {
+        if (CurrentView != view)
+        {
+            CurrentView = view;
+            NotifyStateChanged();
+        }
+    }
+
     public void SetSearch(string text)
     {
         if (SearchText != text)
@@ -18,6 +30,12 @@ public class AppState
             SearchText = text;
             IsMissingOnly = false;
             SelectedFileIds.Clear();
+            // Searching implies looking for files
+            if (CurrentView != AppView.Files)
+            {
+                CurrentView = AppView.Files;
+            }
+
             NotifyStateChanged();
         }
     }
@@ -29,13 +47,18 @@ public class AppState
             IsMissingOnly = isMissing;
             SearchText = "";
             SelectedFileIds.Clear();
+            // Filter implies looking for files
+            if (CurrentView != AppView.Files)
+            {
+                CurrentView = AppView.Files;
+            }
+
             NotifyStateChanged();
         }
     }
 
     public void SelectFile(long id, bool multiSelect, bool rangeSelect)
     {
-        // Simple single/multi logic for now. Range select requires list knowledge.
         if (!multiSelect)
         {
             SelectedFileIds.Clear();
@@ -46,10 +69,6 @@ public class AppState
         NotifySelectionChanged();
     }
 
-    /// <summary>
-    /// Replaces the current selection with a specific set of IDs.
-    /// Used for marquee selection to avoid N re-renders.
-    /// </summary>
     public void SetSelection(IEnumerable<long> ids)
     {
         SelectedFileIds.Clear();
@@ -77,6 +96,6 @@ public class AppState
     private void NotifySelectionChanged()
     {
         OnSelectionChange?.Invoke();
-        OnChange?.Invoke(); // Selection is part of state
+        OnChange?.Invoke();
     }
 }

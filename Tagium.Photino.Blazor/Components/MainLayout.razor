@@ -5,6 +5,7 @@
 @using Tagium.Core.Data
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Views
 @using System.IO
 @inject FileDialogService FileDialog
 @inject LibraryService Library
@@ -12,8 +13,8 @@
 @inject ModalService ModalService
 @inject ToastService Toast
 @inject FileImportService FileImportService
+@inject AppState AppState
 
-<!-- Apply emoji preference class dynamically -->
 <div class="app-layout @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
      @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
     
@@ -37,7 +38,14 @@
     <main class="center-panel">
         <AppToolbar />
         <div class="content-area">
-            <FileGrid />
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <FileGrid />
+            }
+            else if (AppState.CurrentView == AppView.Tags)
+            {
+                <TagManagerView />
+            }
         </div>
     </main>
     
@@ -114,6 +122,7 @@
     
     .content-area {
         flex: 1; overflow: hidden;
+        position: relative;
     }
 </style>
 
@@ -126,6 +135,7 @@
     {
         Settings.SettingsChanged += StateHasChanged;
         Library.ImportCompleted += ShowImportStatus;
+        AppState.OnChange += StateHasChanged;
     }
 
     private void OnDragEnter(DragEventArgs e)
@@ -188,5 +198,6 @@
     {
         Settings.SettingsChanged -= StateHasChanged;
         Library.ImportCompleted -= ShowImportStatus;
+        AppState.OnChange -= StateHasChanged;
     }
 }

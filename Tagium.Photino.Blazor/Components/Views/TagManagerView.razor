@@ -1,21 +1,22 @@
-﻿@namespace Tagium.Photino.Blazor.Components.Modals
+﻿@namespace Tagium.Photino.Blazor.Components.Views
 @using Tagium.Core.Services
 @using Tagium.Core.Models
 @inject LibraryService Library
 
-<div class="tag-manager">
-    <div class="add-row">
-        <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
-        <button class="btn-primary" @onclick="AddTag">Add</button>
+<div class="tag-manager-view">
+    <div class="header-row">
+        <h3>Manage Tags</h3>
+        <div class="add-row">
+            <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
+            <button class="btn-primary" @onclick="AddTag">Add</button>
+        </div>
     </div>
-
-    <hr />
 
     <div class="tag-list">
         @foreach (var tag in Tags)
         {
             <div class="tag-row">
-                <!-- Color Picker Dropdown Trigger -->
+                <!-- Color Picker -->
                 <div class="color-picker-wrapper">
                     <button class="color-circle"
                             style="background-color: @tag.ColorHex"
@@ -32,6 +33,8 @@
                                          @onclick="() => UpdateTagColor(tag, color)"></div>
                                 }
                             </div>
+                            <!-- Close overlay -->
+                            <div class="overlay" @onclick="() => ActiveColorPickerId = null"></div>
                         </div>
                     }
                 </div>
@@ -47,7 +50,7 @@
                        value="@tag.Name"
                        @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
 
-                <span class="count">(@tag.FileCount)</span>
+                <span class="count">@tag.FileCount files</span>
 
                 <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
             </div>
@@ -56,19 +59,41 @@
 </div>
 
 <style>
+    .tag-manager-view {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        background: #252525;
+        color: #e0e0e0;
+    }
+
+    .header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        border-bottom: 1px solid #444;
+        padding-bottom: 15px;
+    }
+
+        .header-row h3 {
+            margin: 0;
+            color: #eee;
+        }
+
     .add-row {
         display: flex;
         gap: 10px;
-        margin-bottom: 15px;
     }
 
         .add-row input {
-            flex: 1;
             padding: 8px;
             background: #444;
             border: 1px solid #555;
             color: white;
             border-radius: 4px;
+            width: 250px;
         }
 
     .btn-primary {
@@ -85,17 +110,21 @@
         }
 
     .tag-list {
-        max-height: 400px;
+        flex: 1;
         overflow-y: auto;
-        padding-bottom: 50px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
     }
-    /* Padding for popup space */
+
     .tag-row {
         display: flex;
         align-items: center;
-        padding: 5px 8px;
-        border-bottom: 1px solid #444;
-        gap: 8px;
+        padding: 8px 12px;
+        background: #313131;
+        border-radius: 4px;
+        gap: 15px;
+        transition: background 0.1s;
     }
 
         .tag-row:hover {
@@ -104,39 +133,44 @@
 
     .color-picker-wrapper {
         position: relative;
+        display: flex;
+        align-items: center;
     }
 
     .color-circle {
-        width: 16px;
-        height: 16px;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
-        border: 1px solid #555;
+        border: 2px solid #555;
         cursor: pointer;
         display: block;
     }
 
     .color-popup {
         position: absolute;
-        top: 20px;
+        top: 35px;
         left: 0;
         background: #252525;
         border: 1px solid #555;
-        padding: 5px;
-        z-index: 100;
-        border-radius: 4px;
-        width: 140px;
+        padding: 8px;
+        z-index: 1000;
+        border-radius: 6px;
+        width: 160px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     }
 
     .color-grid {
         display: flex;
         flex-wrap: wrap;
-        gap: 3px;
+        gap: 4px;
+        position: relative;
+        z-index: 2;
     }
 
     .swatch {
-        width: 15px;
-        height: 15px;
-        border-radius: 2px;
+        width: 20px;
+        height: 20px;
+        border-radius: 3px;
         cursor: pointer;
         border: 1px solid rgba(255,255,255,0.1);
     }
@@ -146,14 +180,25 @@
             transform: scale(1.1);
         }
 
+    /* Invisible overlay to catch clicks outside */
+    .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 1;
+    }
+
     .emoji-input {
-        width: 30px;
+        width: 40px;
         text-align: center;
         background: #444;
         border: 1px solid #555;
         color: white;
         border-radius: 4px;
-        padding: 4px;
+        padding: 5px;
+        font-size: 1.2em;
     }
 
     .name-input {
@@ -161,8 +206,9 @@
         background: transparent;
         border: 1px solid transparent;
         color: white;
-        padding: 4px;
+        padding: 5px;
         border-radius: 4px;
+        font-size: 1em;
     }
 
         .name-input:focus {
@@ -173,25 +219,23 @@
     .count {
         color: #888;
         font-size: 0.9em;
+        width: 80px;
+        text-align: right;
     }
 
     .btn-icon.delete {
         background: none;
         border: none;
         color: #e57373;
-        font-size: 1.2em;
+        font-size: 1.5em;
         cursor: pointer;
+        padding: 0 10px;
+        line-height: 1;
     }
 
         .btn-icon.delete:hover {
             color: #d32f2f;
         }
-
-    hr {
-        border: 0;
-        border-top: 1px solid #444;
-        margin: 10px 0;
-    }
 </style>
 
 @code {
@@ -210,13 +254,13 @@
     protected override void OnInitialized()
     {
         RefreshTags();
-        // Close color picker if clicking elsewhere (handled by ModalHost click propagation ideally,
-        // but for now we rely on explicit toggles or clicking another picker)
+        Library.LibraryChanged += RefreshTags;
     }
 
     private void RefreshTags()
     {
         Tags = Library.GetTags();
+        InvokeAsync(StateHasChanged);
     }
 
     private void HandleKeyUp(KeyboardEventArgs e)
@@ -230,14 +274,15 @@
         {
             Library.AddTag(NewTagName);
             NewTagName = "";
-            RefreshTags();
         }
     }
 
     private void DeleteTag(long id)
     {
+        // For a full view, we might want a confirmation modal,
+        // but for now immediate delete matches the "power user" feel.
+        // We can add a confirmation later if needed.
         Library.DeleteTag(id);
-        RefreshTags();
     }
 
     private void UpdateTagName(Tag tag, string? newName)
@@ -267,6 +312,11 @@
     {
         tag.ColorHex = color;
         Library.UpdateTag(tag);
-        ActiveColorPickerId = null; // Close picker
+        ActiveColorPickerId = null;
+    }
+
+    public void Dispose()
+    {
+        Library.LibraryChanged -= RefreshTags;
     }
 }
