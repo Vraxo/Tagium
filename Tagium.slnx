@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Tagium.Core/Tagium.Core.csproj" />
+  <Project Path="Tagium.Photino.Blazor/Tagium.Photino.Blazor.csproj" Id="88b25bd4-65a9-467f-b1d4-bc2db10bf45f" />
+</Solution>
