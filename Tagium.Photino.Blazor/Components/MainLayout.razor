@@ -21,11 +21,11 @@
             <div style="font-size: 3em; color: #42a5f5; margin-bottom: 20px;">
                 📂
             </div>
-            <h2>Drop files to import</h2>
+            <h2>@(_isProcessing ? "Processing..." : "Drop files to import")</h2>
         </div>
-        @if (_isDragging)
+        @if (_isDragging || _isProcessing)
         {
-            <!-- InputFile captures the drop event -->
+            <!-- InputFile must stay alive while processing streams -->
             <InputFile OnChange="HandleFileDrop" multiple class="drag-input" />
         }
     </div>
@@ -204,6 +204,7 @@
 
 @code {
     private bool _isDragging = false;
+    private bool _isProcessing = false;
     private int _dragCounter = 0;
 
     protected override void OnInitialized()
@@ -212,13 +213,12 @@
         Library.ImportCompleted += ShowImportStatus;
     }
 
-    private void ImportFiles()
+    private async Task ImportFiles()
     {
         var paths = FileDialog.OpenFiles();
         if (paths != null && paths.Length > 0)
         {
-            // Always use batch mode for consistency
-            Library.ImportBatch(paths);
+            await Library.ImportBatchAsync(paths);
         }
     }
 
@@ -240,11 +240,11 @@
 
     private async Task HandleFileDrop(InputFileChangeEventArgs e)
     {
-        _dragCounter = 0;
-        _isDragging = false;
+        // Don't hide overlay immediately, switch to processing mode
+        _isProcessing = true;
+        StateHasChanged(); // Force render so "Processing..." appears
 
-        var files = e.GetMultipleFiles(100);
-        int count = 0;
+        var files = e.GetMultipleFiles(500); // Increased limit
         
         string importDir = Path.Combine(Tagium.Core.Helpers.AppDataHelper.GetBaseDirectory(), "Imports");
         if (!Directory.Exists(importDir)) Directory.CreateDirectory(importDir);
@@ -266,7 +266,6 @@
                 await stream.CopyToAsync(fs);
                 
                 importedPaths.Add(localPath);
-                count++;
             }
             catch (Exception ex)
             {
@@ -274,34 +273,40 @@
             }
         }
 
+        // Processing done, reset state
+        _dragCounter = 0;
+        _isDragging = false;
+        _isProcessing = false;
+        StateHasChanged();
+
         if (importedPaths.Count > 0)
         {
-            Library.ImportBatch(importedPaths.ToArray());
+            await Library.ImportBatchAsync(importedPaths.ToArray());
         }
     }
     
-    private void ShowImportStatus(int added, int duplicates)
+    private void ShowImportStatus(int added, int duplicates, int errors)
     {
-        // Standardized Toast feedback for all imports
-        if (added > 0)
-        {
-            string msg = duplicates > 0 
-                ? $"Added {added} files. {duplicates} duplicates skipped." 
-                : $"Added {added} files.";
-            Toast.Show(msg, ToastType.Success);
-        }
-        else if (duplicates > 0)
-        {
-            // If we only tried to add 1 and it failed, we can be more specific
-            string msg = duplicates == 1 
-                ? "File already exists in library." 
-                : $"All {duplicates} files were duplicates.";
-            Toast.Show(msg, ToastType.Info);
-        }
-        else 
-        {
-            Toast.Show("No valid files found to import.", ToastType.Error);
-        }
+        int total = added + duplicates + errors;
+        if (total == 0) return;
+
+        List<string> parts = [];
+        
+        // Explicitly list all non-zero outcomes
+        if (added > 0) parts.Add($"{added} added");
+        if (duplicates > 0) parts.Add($"{duplicates} duplicate{(duplicates == 1 ? "" : "s")}");
+        if (errors > 0) parts.Add($"{errors} failed");
+
+        string details = string.Join(", ", parts);
+        string message = $"Import: {details}";
+
+        // Color logic
+        ToastType type;
+        if (errors > 0) type = ToastType.Error;
+        else if (added > 0) type = ToastType.Success;
+        else type = ToastType.Info;
+
+        Toast.Show(message, type);
     }
     
     private void OpenDataTools()

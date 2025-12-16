@@ -20,7 +20,7 @@
         flex-direction: column;
         gap: 10px;
         z-index: 9999;
-        pointer-events: none; /* Let clicks pass through the container area */
+        pointer-events: none;
     }
 
     .toast {
@@ -31,7 +31,7 @@
         box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         font-size: 0.9em;
         min-width: 200px;
-        pointer-events: auto; /* Re-enable clicks for toasts */
+        pointer-events: auto;
         cursor: pointer;
         animation: slideIn 0.3s ease-out;
         border-left: 4px solid transparent;
@@ -70,7 +70,13 @@
 @code {
     protected override void OnInitialized()
     {
-        ToastService.OnChange += StateHasChanged;
+        ToastService.OnChange += HandleToastChange;
+    }
+
+    private async void HandleToastChange()
+    {
+        // Marshals the update to the UI thread to prevent cross-thread exceptions/silence
+        await InvokeAsync(StateHasChanged);
     }
 
     private string GetClass(Toast toast) => toast.Type switch
@@ -87,6 +93,6 @@
 
     public void Dispose()
     {
-        ToastService.OnChange -= StateHasChanged;
+        ToastService.OnChange -= HandleToastChange;
     }
 }

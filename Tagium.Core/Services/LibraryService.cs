@@ -29,7 +29,7 @@ public class LibraryService
     private readonly SettingsManager _settingsManager;
 
     public event Action? LibraryChanged;
-    public event Action<int, int>? ImportCompleted; // added, duplicates
+    public event Action<int, int, int>? ImportCompleted; // added, duplicates, errors
 
     public LibraryService(
         FileRepository fileRepo,
@@ -73,7 +73,7 @@ public class LibraryService
         return AddFileDetailed(path).Status == AddFileResult.Success;
     }
 
-    public AddFileDetailedResult AddFileDetailed(string path)
+    public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
     {
         string? hash = FileHasher.ComputeSha256(path);
         if (hash == null)
@@ -92,7 +92,10 @@ public class LibraryService
 
         if (result == AddFileResult.Success)
         {
-            LibraryChanged?.Invoke();
+            if (!suppressNotification)
+            {
+                LibraryChanged?.Invoke();
+            }
             // Fetch the newly added entry
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
             return new AddFileDetailedResult { Status = AddFileResult.Success, Entry = newEntry };
@@ -102,29 +105,50 @@ public class LibraryService
     }
 
     /// <summary>
-    /// Imports multiple files and fires the ImportCompleted event with statistics.
+    /// Imports multiple files asynchronously and fires the ImportCompleted event with detailed statistics.
     /// </summary>
-    public void ImportBatch(string[] paths)
+    public async Task ImportBatchAsync(string[] paths)
     {
-        int added = 0;
-        int duplicates = 0;
-
-        foreach (string path in paths)
+        await Task.Run(() =>
         {
-            if (File.Exists(path))
+            int added = 0;
+            int duplicates = 0;
+            int errors = 0;
+
+            foreach (string path in paths)
             {
-                if (AddFile(path))
+                if (File.Exists(path))
                 {
-                    added++;
-                }
-                else
-                {
-                    duplicates++;
+                    // Suppress individual refresh events for performance
+                    var result = AddFileDetailed(path, suppressNotification: true);
+                    switch (result.Status)
+                    {
+                        case AddFileResult.Success:
+                            added++;
+                            break;
+                        case AddFileResult.Duplicate:
+                            duplicates++;
+                            break;
+                        case AddFileResult.Error:
+                            errors++;
+                            break;
+                    }
                 }
             }
-        }
 
-        ImportCompleted?.Invoke(added, duplicates);
+            if (added > 0)
+            {
+                LibraryChanged?.Invoke();
+            }
+
+            ImportCompleted?.Invoke(added, duplicates, errors);
+        });
+    }
+
+    // Kept for backward compatibility if needed, but redirects to async
+    public void ImportBatch(string[] paths)
+    {
+        _ = ImportBatchAsync(paths);
     }
 
     public RelocateResult RelocateFile(long fileId, string newPath)
