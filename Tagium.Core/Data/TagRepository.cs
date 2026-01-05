@@ -27,6 +27,7 @@ public class TagRepository
             ORDER BY T.Name";
 
         using SqliteDataReader reader = cmd.ExecuteReader();
+
         while (reader.Read())
         {
             tags.Add(new Tag
@@ -38,6 +39,7 @@ public class TagRepository
                 FileCount = reader.GetInt32(4)
             });
         }
+
         return tags;
     }
 

@@ -16,7 +16,7 @@
 @inject AppState AppState
 @inject IJSRuntime JS
 
-<div class="app-layout @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
+<div class="app-window @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
      @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
     
     <div class="drag-overlay @(_isDragging ? "active" : "")">
@@ -32,31 +32,36 @@
         }
     </div>
 
-    <aside id="sidebar-panel" class="left-panel">
-        <TagSidebar />
-    </aside>
-    
-    <div id="splitter-left" class="splitter"></div>
+    <!-- Top Menu Bar -->
+    <AppToolbar />
 
-    <main class="center-panel">
-        <AppToolbar />
-        <div class="content-area">
-            @if (AppState.CurrentView == AppView.Files)
-            {
-                <FileGrid />
-            }
-            else if (AppState.CurrentView == AppView.Tags)
-            {
-                <TagManagerView />
-            }
-        </div>
-    </main>
-    
-    <div id="splitter-right" class="splitter"></div>
-    
-    <aside id="inspector-panel" class="right-panel">
-        <FileInspector />
-    </aside>
+    <!-- Main Workspace (Sidebars + Content) -->
+    <div class="workspace-layout">
+        <aside id="sidebar-panel" class="left-panel">
+            <TagSidebar />
+        </aside>
+        
+        <div id="splitter-left" class="splitter"></div>
+
+        <main class="center-panel">
+            <div class="content-area">
+                @if (AppState.CurrentView == AppView.Files)
+                {
+                    <FileGrid />
+                }
+                else if (AppState.CurrentView == AppView.Tags)
+                {
+                    <TagManagerView />
+                }
+            </div>
+        </main>
+        
+        <div id="splitter-right" class="splitter"></div>
+        
+        <aside id="inspector-panel" class="right-panel">
+            <FileInspector />
+        </aside>
+    </div>
     
     <ModalHost />
     <ToastContainer />
@@ -84,10 +89,21 @@
         font-family: 'Segoe UI', sans-serif;
     }
 
-    .app-layout {
+    /* Main Window Shell (Column: Toolbar | Workspace) */
+    .app-window {
         display: flex;
+        flex-direction: column;
         height: 100vh;
         width: 100vw;
+        overflow: hidden;
+        position: relative;
+    }
+
+    /* Workspace Row (Sidebar | Content | Inspector) */
+    .workspace-layout {
+        display: flex;
+        flex: 1; /* Fills remaining height after Toolbar */
+        flex-direction: row;
         overflow: hidden;
         position: relative;
     }
@@ -118,7 +134,7 @@
         background: var(--panel-bg);
         display: flex; flex-direction: column;
         padding: 10px; flex-shrink: 0;
-        /* Border removed, handled by splitter visual or just background contrast */
+        border-right: 1px solid var(--border-color);
     }
 
     .center-panel {
@@ -130,6 +146,7 @@
         width: 300px; 
         background: var(--panel-bg);
         padding: 0; flex-shrink: 0;
+        border-left: 1px solid var(--border-color);
     }
     
     .content-area {
@@ -146,17 +163,13 @@
         position: relative;
         z-index: 10;
         transition: background 0.2s;
+        margin-left: -2px; /* Slight overlap for easier grabbing */
+        margin-right: -2px;
     }
 
     .splitter:hover, .splitter.active {
         background: var(--primary-color);
     }
-    
-    /* Ensure border line exists visually via the panel or splitter */
-    .left-panel { border-right: 1px solid var(--border-color); }
-    .right-panel { border-left: 1px solid var(--border-color); }
-    
-    /* When splitter is active or hovered, it covers the border */
 </style>
 
 @code {
