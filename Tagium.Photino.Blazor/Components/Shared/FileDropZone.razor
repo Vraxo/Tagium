@@ -1,0 +1,129 @@
+﻿@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Services
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject FileImportService FileImportService
+@inject SettingsManager Settings
+
+<div class="drop-zone-wrapper @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")"
+     @ondragenter="OnDragEnter"
+     @ondragleave="OnDragLeave">
+
+    @ChildContent
+
+    <div class="drag-overlay @(_isDragging ? "active" : "")">
+        <div class="drag-message">
+            <div class="drag-icon">📂</div>
+            <h2>@(_isProcessing ? "Processing..." : "Drop files to import")</h2>
+        </div>
+        @if (_isDragging || _isProcessing)
+        {
+            <InputFile OnChange="HandleFileDrop" multiple class="drag-input" />
+        }
+    </div>
+</div>
+
+<style>
+    .drop-zone-wrapper {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .drag-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+    }
+
+        .drag-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+    .drag-input {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: copy;
+    }
+
+    .drag-message {
+        text-align: center;
+        color: white;
+    }
+
+    .drag-icon {
+        font-size: 3em;
+        color: var(--primary-color);
+        margin-bottom: 20px;
+    }
+</style>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _isDragging = false;
+    private bool _isProcessing = false;
+    private int _dragCounter = 0;
+
+    protected override void OnInitialized()
+    {
+        Settings.SettingsChanged += StateHasChanged;
+    }
+
+    private void OnDragEnter(DragEventArgs e)
+    {
+        _dragCounter++;
+        if (_dragCounter == 1) _isDragging = true;
+    }
+
+    private void OnDragLeave(DragEventArgs e)
+    {
+        _dragCounter--;
+        if (_dragCounter <= 0)
+        {
+            _dragCounter = 0;
+            _isDragging = false;
+        }
+    }
+
+    private async Task HandleFileDrop(InputFileChangeEventArgs e)
+    {
+        _isProcessing = true;
+        StateHasChanged();
+
+        var files = e.GetMultipleFiles(500);
+        string[] importedPaths = await FileImportService.SaveDroppedFilesAsync(files);
+
+        _dragCounter = 0;
+        _isDragging = false;
+        _isProcessing = false;
+        StateHasChanged();
+
+        if (importedPaths.Length > 0)
+        {
+            await Library.ImportBatchAsync(importedPaths);
+        }
+    }
+
+    public void Dispose()
+    {
+        Settings.SettingsChanged -= StateHasChanged;
+    }
+}

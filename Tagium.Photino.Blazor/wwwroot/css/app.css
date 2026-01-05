@@ -1,3 +1,17 @@
+:root {
+    /* Global Color Palette */
+    --bg-color: #181818;
+    --panel-bg: #202020;
+    --surface-bg: #2D2D2D;
+    --border-color: #383838;
+    --text-color: #E0E0E0;
+    --text-muted: #9E9E9E;
+    --primary-color: #42a5f5;
+    --primary-hover: #1e88e5;
+    --danger-color: #e57373;
+    --danger-hover: #ef5350;
+}
+
 /* Global Reset */
 *, *::before, *::after {
     box-sizing: border-box;
@@ -11,6 +25,12 @@
 /* Base body style uses default font */
 body {
     font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden; /* Prevent body scroll, layout handles it */
 }
 
 /* Remove default focus outline to prevent lingering blue rings on clicks */

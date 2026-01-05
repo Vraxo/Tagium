@@ -2,181 +2,56 @@
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
-@using Tagium.Core.Data
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
 @using Tagium.Photino.Blazor.Components.Views
-@using System.IO
-@inject FileDialogService FileDialog
+@using Tagium.Photino.Blazor.Components.Shared
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
 @inject ToastService Toast
-@inject FileImportService FileImportService
 @inject AppState AppState
 @inject IJSRuntime JS
 
-<div class="app-window @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
-     @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
-    
-    <div class="drag-overlay @(_isDragging ? "active" : "")">
-        <div class="drag-message">
-            <div style="font-size: 3em; color: var(--primary-color); margin-bottom: 20px;">
-                📂
-            </div>
-            <h2>@(_isProcessing ? "Processing..." : "Drop files to import")</h2>
+<FileDropZone>
+    <div class="app-window">
+        <!-- Top Menu Bar -->
+        <AppToolbar />
+
+        <!-- Main Workspace (Sidebars + Content) -->
+        <div class="workspace-layout">
+            <aside id="sidebar-panel" class="left-panel">
+                <TagSidebar />
+            </aside>
+
+            <div id="splitter-left" class="splitter"></div>
+
+            <main class="center-panel">
+                <div class="content-area">
+                    @if (AppState.CurrentView == AppView.Files)
+                    {
+                        <FileGrid />
+                    }
+                    else if (AppState.CurrentView == AppView.Tags)
+                    {
+                        <TagManagerView />
+                    }
+                </div>
+            </main>
+
+            <div id="splitter-right" class="splitter"></div>
+
+            <aside id="inspector-panel" class="right-panel">
+                <FileInspector />
+            </aside>
         </div>
-        @if (_isDragging || _isProcessing)
-        {
-            <InputFile OnChange="HandleFileDrop" multiple class="drag-input" />
-        }
+
+        <ModalHost />
+        <ToastContainer />
     </div>
-
-    <!-- Top Menu Bar -->
-    <AppToolbar />
-
-    <!-- Main Workspace (Sidebars + Content) -->
-    <div class="workspace-layout">
-        <aside id="sidebar-panel" class="left-panel">
-            <TagSidebar />
-        </aside>
-        
-        <div id="splitter-left" class="splitter"></div>
-
-        <main class="center-panel">
-            <div class="content-area">
-                @if (AppState.CurrentView == AppView.Files)
-                {
-                    <FileGrid />
-                }
-                else if (AppState.CurrentView == AppView.Tags)
-                {
-                    <TagManagerView />
-                }
-            </div>
-        </main>
-        
-        <div id="splitter-right" class="splitter"></div>
-        
-        <aside id="inspector-panel" class="right-panel">
-            <FileInspector />
-        </aside>
-    </div>
-    
-    <ModalHost />
-    <ToastContainer />
-</div>
-
-<style>
-    :root {
-        /* Revised Palette for "32,32,32" Request */
-        --bg-color: #181818; 
-        --panel-bg: #202020; 
-        --surface-bg: #2D2D2D; 
-        --border-color: #383838;
-        --text-color: #E0E0E0;
-        --text-muted: #9E9E9E;
-        --primary-color: #42a5f5;
-        --primary-hover: #1e88e5;
-        --danger-color: #e57373;
-        --danger-hover: #ef5350;
-    }
-
-    body, html {
-        margin: 0; padding: 0; height: 100%;
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        font-family: 'Segoe UI', sans-serif;
-    }
-
-    /* Main Window Shell (Column: Toolbar | Workspace) */
-    .app-window {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        width: 100vw;
-        overflow: hidden;
-        position: relative;
-    }
-
-    /* Workspace Row (Sidebar | Content | Inspector) */
-    .workspace-layout {
-        display: flex;
-        flex: 1; /* Fills remaining height after Toolbar */
-        flex-direction: row;
-        overflow: hidden;
-        position: relative;
-    }
-
-    .drag-overlay {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.85);
-        z-index: 9999;
-        display: flex; justify-content: center; align-items: center;
-        opacity: 0; pointer-events: none;
-        transition: opacity 0.2s;
-    }
-
-    .drag-overlay.active {
-        opacity: 1; pointer-events: auto;
-    }
-
-    .drag-input {
-        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        opacity: 0; cursor: copy;
-    }
-
-    .drag-message { text-align: center; color: white; }
-
-    .left-panel {
-        width: 250px; 
-        background: var(--panel-bg);
-        display: flex; flex-direction: column;
-        padding: 10px; flex-shrink: 0;
-        border-right: 1px solid var(--border-color);
-    }
-
-    .center-panel {
-        flex: 1; display: flex; flex-direction: column;
-        background: var(--bg-color); min-width: 0;
-    }
-
-    .right-panel {
-        width: 300px; 
-        background: var(--panel-bg);
-        padding: 0; flex-shrink: 0;
-        border-left: 1px solid var(--border-color);
-    }
-    
-    .content-area {
-        flex: 1; overflow: hidden;
-        position: relative;
-    }
-
-    /* Splitter Styles */
-    .splitter {
-        width: 4px;
-        background: var(--bg-color); /* Defaults to bg, visible on hover */
-        cursor: col-resize;
-        flex-shrink: 0;
-        position: relative;
-        z-index: 10;
-        transition: background 0.2s;
-        margin-left: -2px; /* Slight overlap for easier grabbing */
-        margin-right: -2px;
-    }
-
-    .splitter:hover, .splitter.active {
-        background: var(--primary-color);
-    }
-</style>
+</FileDropZone>
 
 @code {
-    private bool _isDragging = false;
-    private bool _isProcessing = false;
-    private int _dragCounter = 0;
-
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
@@ -192,48 +67,13 @@
         }
     }
 
-    private void OnDragEnter(DragEventArgs e)
-    {
-        _dragCounter++;
-        if (_dragCounter == 1) _isDragging = true;
-    }
-
-    private void OnDragLeave(DragEventArgs e)
-    {
-        _dragCounter--;
-        if (_dragCounter <= 0)
-        {
-            _dragCounter = 0;
-            _isDragging = false;
-        }
-    }
-
-    private async Task HandleFileDrop(InputFileChangeEventArgs e)
-    {
-        _isProcessing = true;
-        StateHasChanged(); 
-
-        var files = e.GetMultipleFiles(500);
-        string[] importedPaths = await FileImportService.SaveDroppedFilesAsync(files);
-
-        _dragCounter = 0;
-        _isDragging = false;
-        _isProcessing = false;
-        StateHasChanged();
-
-        if (importedPaths.Length > 0)
-        {
-            await Library.ImportBatchAsync(importedPaths);
-        }
-    }
-    
     private void ShowImportStatus(int added, int duplicates, int errors)
     {
         int total = added + duplicates + errors;
         if (total == 0) return;
 
         List<string> parts = [];
-        
+
         if (added > 0) parts.Add($"{added} added");
         if (duplicates > 0) parts.Add($"{duplicates} duplicate{(duplicates == 1 ? "" : "s")}");
         if (errors > 0) parts.Add($"{errors} failed");
@@ -247,7 +87,7 @@
 
         Toast.Show(message, type);
     }
-    
+
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
