@@ -11,7 +11,10 @@ public class AppState
     public HashSet<long> SelectedFileIds { get; private set; } = [];
 
     // Events
+    // Fired when data-impacting state changes (Search, View, Filter) -> Requires DB Reload
     public event Action? OnChange;
+
+    // Fired when selection changes -> Requires UI Update only (No DB Reload)
     public event Action? OnSelectionChange;
 
     public void SwitchView(AppView view)
@@ -30,7 +33,7 @@ public class AppState
             SearchText = text;
             IsMissingOnly = false;
             SelectedFileIds.Clear();
-            // Searching implies looking for files
+
             if (CurrentView != AppView.Files)
             {
                 CurrentView = AppView.Files;
@@ -47,7 +50,7 @@ public class AppState
             IsMissingOnly = isMissing;
             SearchText = "";
             SelectedFileIds.Clear();
-            // Filter implies looking for files
+
             if (CurrentView != AppView.Files)
             {
                 CurrentView = AppView.Files;
@@ -96,6 +99,5 @@ public class AppState
     private void NotifySelectionChanged()
     {
         OnSelectionChange?.Invoke();
-        OnChange?.Invoke();
     }
 }

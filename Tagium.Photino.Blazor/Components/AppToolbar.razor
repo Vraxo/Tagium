@@ -3,11 +3,13 @@
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
+@using System.Timers
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
 @inject AppState AppState
+@implements IDisposable
 
 <div class="toolbar">
     <div class="app-title">Tagium</div>
@@ -21,6 +23,8 @@
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
     <div class="search-container">
+        <!-- value is bound one-way to AppState to restore state on navigation,
+             but updates are handled manually via oninput + debounce -->
         <input type="text"
                class="search-input"
                placeholder="Search files..."
@@ -47,8 +51,6 @@
 
         <div class="control-group">
             <span class="label">Size</span>
-            <!-- @oninput fires continuously while dragging (Update only) -->
-            <!-- @onchange fires when released (Save to disk) -->
             <input type="range" min="64" max="256" step="16"
                    value="@Settings.Current.ThumbnailSize"
                    @oninput="OnThumbSizeInput"
@@ -65,10 +67,16 @@
 </div>
 
 @code {
+    private Timer _debounceTimer = new(300); // Wait 300ms after typing stops
+    private string _pendingSearchText = "";
+
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
         AppState.OnChange += StateHasChanged;
+
+        _debounceTimer.AutoReset = false;
+        _debounceTimer.Elapsed += OnDebounceElapsed;
     }
 
     private void ImportFiles()
@@ -90,8 +98,21 @@
 
     private void OnSearchInput(ChangeEventArgs e)
     {
-        string text = e.Value?.ToString() ?? "";
-        AppState.SetSearch(text);
+        // 1. Capture text immediately so UI doesn't lag
+        _pendingSearchText = e.Value?.ToString() ?? "";
+
+        // 2. Reset timer (stop if running, start fresh)
+        _debounceTimer.Stop();
+        _debounceTimer.Start();
+    }
+
+    private void OnDebounceElapsed(object? sender, ElapsedEventArgs e)
+    {
+        // 3. Timer finished, push to AppState on UI thread
+        InvokeAsync(() =>
+        {
+            AppState.SetSearch(_pendingSearchText);
+        });
     }
 
     private void OpenDataTools()
@@ -124,14 +145,12 @@
     {
         if (int.TryParse(e.Value?.ToString(), out int val))
         {
-            // Update UI live, but do NOT save to disk yet (prevent IO thrashing)
             Settings.Update(s => s.ThumbnailSize = val, save: false);
         }
     }
 
     private void OnThumbSizeCommit(ChangeEventArgs e)
     {
-        // User released the slider, persist to disk
         Settings.Save();
     }
 
@@ -139,5 +158,8 @@
     {
         Settings.SettingsChanged -= StateHasChanged;
         AppState.OnChange -= StateHasChanged;
+
+        _debounceTimer.Elapsed -= OnDebounceElapsed;
+        _debounceTimer.Dispose();
     }
 }

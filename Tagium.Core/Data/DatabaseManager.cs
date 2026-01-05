@@ -19,10 +19,17 @@ public class DatabaseManager
         using SqliteConnection connection = new(ConnectionString);
         connection.Open();
 
+        // Enable Write-Ahead Logging for better concurrency and performance
+        using (SqliteCommand walCmd = connection.CreateCommand())
+        {
+            walCmd.CommandText = "PRAGMA journal_mode = WAL;";
+            _ = walCmd.ExecuteNonQuery();
+        }
+
         string schema = @"
             CREATE TABLE IF NOT EXISTS Tags (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                Name TEXT NOT NULL UNIQUE,
+                Name TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 ColorHex TEXT NOT NULL DEFAULT '#757575',
                 Emoji TEXT NULL
             );

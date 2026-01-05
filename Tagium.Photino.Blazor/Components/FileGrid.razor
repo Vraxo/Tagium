@@ -3,13 +3,13 @@
 @using Tagium.Core.Models
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
+@implements IDisposable
 @inject LibraryService Library
 @inject AppState AppState
 @inject SettingsManager Settings
 @inject SystemLauncherService Launcher
 @inject IJSRuntime JS
 
-<!-- Apply size to container; CSS variables cascade to children efficiently -->
 <div id="file-grid-container"
      class="grid-container"
      style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
@@ -40,12 +40,13 @@
     private List<FileEntry> Files = [];
     private DotNetObjectReference<FileGrid>? _objRef;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         LoadFiles();
-        AppState.OnChange += RefreshView;
-        Library.LibraryChanged += LoadFiles;
-        Settings.SettingsChanged += RefreshView;
+        AppState.OnChange += ReloadData;
+        AppState.OnSelectionChange += RefreshSelection;
+        Library.LibraryChanged += ReloadData;
+        Settings.SettingsChanged += ReloadData;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -57,11 +58,14 @@
         }
     }
 
-    private void RefreshView()
+    private void ReloadData()
     {
-        // If only thumbnail size changed, we still need to re-render to update the --thumb-size style attribute
-        // But because child elements rely on CSS variables, the browser handles the heavy lifting.
-        if (Files.Count == 0) LoadFiles();
+        LoadFiles();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshSelection()
+    {
         InvokeAsync(StateHasChanged);
     }
 
@@ -69,7 +73,6 @@
     {
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
         Library.EnsureThumbnails(Files);
-        InvokeAsync(StateHasChanged);
     }
 
     private void OnCardClick(MouseEventArgs e, long id)
@@ -135,9 +138,10 @@
 
     public void Dispose()
     {
-        AppState.OnChange -= RefreshView;
-        Library.LibraryChanged -= LoadFiles;
-        Settings.SettingsChanged -= RefreshView;
+        AppState.OnChange -= ReloadData;
+        AppState.OnSelectionChange -= RefreshSelection;
+        Library.LibraryChanged -= ReloadData;
+        Settings.SettingsChanged -= ReloadData;
         _objRef?.Dispose();
     }
 }

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
+using System.Text;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
@@ -8,13 +9,6 @@ public class FileSearchRepository
 {
     private readonly DatabaseManager _db;
 
-    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "and",
-        "or",
-        "not"
-    };
-
     public FileSearchRepository(DatabaseManager db)
     {
         _db = db;
@@ -22,12 +16,30 @@ public class FileSearchRepository
 
     public List<FileEntry> Search(string searchText, SortBy sortBy, SortDirection sortDirection)
     {
-        string[] tokens = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return [];
+        }
 
-        List<string> includedTags = [.. tokens.Where(t => !t.StartsWith('-') && !_searchStopWords.Contains(t)).Distinct()];
-        List<string> excludedTags = [.. tokens.Where(t => t.StartsWith('-') && t.Length > 1).Select(t => t[1..]).Distinct()];
+        // Split tokens and separate into positive (include) and negative (exclude) terms
+        string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        if (!includedTags.Any() && !excludedTags.Any())
+        List<string> includeTerms = [];
+        List<string> excludeTerms = [];
+
+        foreach (string token in tokens)
+        {
+            if (token.StartsWith('-') && token.Length > 1)
+            {
+                excludeTerms.Add(token[1..]);
+            }
+            else
+            {
+                includeTerms.Add(token);
+            }
+        }
+
+        if (includeTerms.Count == 0 && excludeTerms.Count == 0)
         {
             return [];
         }
@@ -36,97 +48,74 @@ public class FileSearchRepository
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
 
-        string orderBy = GetOrderByClause(sortBy, sortDirection);
-        string query;
+        // Dynamic SQL Construction
+        // We want files that match ALL include terms (AND) and match NO exclude terms (NOT OR).
+        // A match is defined as: Name matches OR Path matches OR Any Tag Name matches.
 
-        // Dynamic SQL construction is necessary for variable tag counts.
-        // Parameters are safely parameterized.
+        StringBuilder query = new();
+        _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing");
+        _ = query.AppendLine("FROM Files F");
+        _ = query.AppendLine("WHERE 1=1");
 
-        if (includedTags.Count != 0 && excludedTags.Any())
+        // 1. Process Includes (AND logic)
+        for (int i = 0; i < includeTerms.Count; i++)
         {
-            AddParams(cmd, "@in", includedTags);
-            AddParams(cmd, "@ex", excludedTags);
+            string paramName = $"@in{i}";
+            string termPattern = $"%{includeTerms[i]}%";
 
-            string inParams = string.Join(",", includedTags.Select((_, i) => $"@in{i}"));
-            string exParams = string.Join(",", excludedTags.Select((_, i) => $"@ex{i}"));
+            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
 
-            query = $@"
-                SELECT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing FROM Files F 
-                WHERE F.Id IN (
-                    SELECT FT.FileId FROM FileTags FT
-                    INNER JOIN Tags T ON FT.TagId = T.Id
-                    WHERE T.Name IN ({inParams})
-                    GROUP BY FT.FileId
-                    HAVING COUNT(DISTINCT T.Id) = {includedTags.Count}
-                ) 
-                AND F.Id NOT IN (
-                    SELECT FT.FileId FROM FileTags FT
-                    INNER JOIN Tags T ON FT.TagId = T.Id
-                    WHERE T.Name IN ({exParams})
-                )
-                {orderBy}";
-        }
-        else if (includedTags.Count != 0)
-        {
-            AddParams(cmd, "@tag", includedTags);
-            string tagParams = string.Join(",", includedTags.Select((_, i) => $"@tag{i}"));
+            // "Exists a tag matching term" subquery
+            string tagSubQuery = $@"
+                EXISTS (
+                    SELECT 1 FROM FileTags FT 
+                    JOIN Tags T ON FT.TagId = T.Id 
+                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
+                )";
 
-            query = $@"
-                SELECT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing
-                FROM Files F
-                INNER JOIN FileTags FT ON F.Id = FT.FileId
-                INNER JOIN Tags T ON FT.TagId = T.Id
-                WHERE T.Name IN ({tagParams})
-                GROUP BY F.Id
-                HAVING COUNT(DISTINCT T.Id) = {includedTags.Count}
-                {orderBy}";
-        }
-        else // Only excluded tags
-        {
-            AddParams(cmd, "@tag", excludedTags);
-            string tagParams = string.Join(",", excludedTags.Select((_, i) => $"@tag{i}"));
-
-            query = $@"
-                SELECT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing
-                FROM Files F
-                WHERE F.Id NOT IN (
-                    SELECT FT.FileId FROM FileTags FT
-                    INNER JOIN Tags T ON FT.TagId = T.Id
-                    WHERE T.Name IN ({tagParams})
-                )
-                {orderBy}";
+            _ = query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
         }
 
-        cmd.CommandText = query;
+        // 2. Process Excludes (NOT logic)
+        for (int i = 0; i < excludeTerms.Count; i++)
+        {
+            string paramName = $"@ex{i}";
+            string termPattern = $"%{excludeTerms[i]}%";
+
+            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
+
+            string tagSubQuery = $@"
+                EXISTS (
+                    SELECT 1 FROM FileTags FT 
+                    JOIN Tags T ON FT.TagId = T.Id 
+                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
+                )";
+
+            _ = query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
+        }
+
+        // 3. Sorting
+        _ = query.AppendLine(GetOrderByClause(sortBy, sortDirection));
+
+        cmd.CommandText = query.ToString();
+
         List<FileEntry> files = [];
         using SqliteDataReader reader = cmd.ExecuteReader();
 
         while (reader.Read())
         {
-            files.Add(new()
+            files.Add(new FileEntry
             {
                 Id = reader.GetInt64(0),
                 Path = reader.GetString(1),
                 Name = reader.GetString(2),
-
-                Hash = reader.IsDBNull(3)
-                    ? null
-                    : reader.GetString(3),
-
+                Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
                 DateAdded = reader.GetInt64(4),
                 IsMissing = reader.GetBoolean(5)
             });
         }
 
         return files;
-    }
-
-    private static void AddParams(SqliteCommand cmd, string prefix, List<string> values)
-    {
-        for (int i = 0; i < values.Count; i++)
-        {
-            _ = cmd.Parameters.AddWithValue($"{prefix}{i}", values[i]);
-        }
     }
 
     private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
@@ -138,11 +127,7 @@ public class FileSearchRepository
             _ => "F.Path"
         };
 
-        string dir = direction == SortDirection.Desc
-            ? "DESC"
-            : "ASC";
-
-        // Secondary sort by path for stability
+        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
         return $"ORDER BY {col} {dir}, F.Path ASC";
     }
 }

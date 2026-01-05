@@ -68,6 +68,11 @@ public class LibraryService
         return string.IsNullOrWhiteSpace(searchText) ? _fileRepo.GetAll(sort, dir) : _searchRepo.Search(searchText, sort, dir);
     }
 
+    public FileEntry? GetFileById(long id)
+    {
+        return _fileRepo.GetById(id);
+    }
+
     public bool AddFile(string path)
     {
         return AddFileDetailed(path).Status == AddFileResult.Success;

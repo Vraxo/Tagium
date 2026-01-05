@@ -1,8 +1,9 @@
-﻿@namespace Tagium.Photino.Blazor.Components
+﻿@namespace Tagium.Photino.Blazor.Components.Inspectors
 @using Tagium.Core.Services
 @using Tagium.Core.Models
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Inspectors
+@implements IDisposable
 @inject LibraryService Library
 @inject AppState AppState
 
@@ -10,6 +11,13 @@
     @if (SelectionMode == InspectorMode.None)
     {
         <div class="empty-state">Select a file to view details.</div>
+    }
+    else if (SelectionMode == InspectorMode.Error)
+    {
+        <div class="empty-state error">
+            <p>Error loading details.</p>
+            <button class="btn" @onclick="UpdateView">Retry</button>
+        </div>
     }
     else if (SelectionMode == InspectorMode.Single && SelectedFile != null)
     {
@@ -37,10 +45,24 @@
         text-align: center;
         margin-top: 50px;
     }
+
+        .empty-state.error {
+            color: var(--danger-color);
+        }
+
+    .btn {
+        background: var(--surface-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
 </style>
 
 @code {
-    private enum InspectorMode { None, Single, Multi }
+    private enum InspectorMode { None, Single, Multi, Error }
 
     private InspectorMode SelectionMode = InspectorMode.None;
     private FileEntry? SelectedFile;
@@ -54,54 +76,73 @@
 
     protected override void OnInitialized()
     {
-        AppState.OnSelectionChange += UpdateView;
-        Library.LibraryChanged += UpdateView;
+        AppState.OnSelectionChange += OnSelectionChanged;
+        Library.LibraryChanged += OnLibraryChanged;
     }
+
+    private void OnSelectionChanged() => InvokeAsync(UpdateView);
+    private void OnLibraryChanged() => InvokeAsync(UpdateView);
 
     private void UpdateView()
     {
-        int count = AppState.SelectedFileIds.Count;
-
-        if (count == 0)
+        try
         {
-            SelectionMode = InspectorMode.None;
-            SelectedFile = null;
-        }
-        else if (count == 1)
-        {
-            SelectionMode = InspectorMode.Single;
-            long id = AppState.SelectedFileIds.First();
+            int count = AppState.SelectedFileIds.Count;
 
-            var files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
-            SelectedFile = files.FirstOrDefault(f => f.Id == id);
-
-            if (SelectedFile != null)
+            if (count == 0)
             {
-                AssignedTags = Library.GetTagsForFile(id);
-                var allTags = Library.GetTags();
-                AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+                SelectionMode = InspectorMode.None;
+                SelectedFile = null;
+            }
+            else if (count == 1)
+            {
+                long id = AppState.SelectedFileIds.First();
+
+                // Robust fetch
+                SelectedFile = Library.GetFileById(id);
+
+                if (SelectedFile != null)
+                {
+                    SelectionMode = InspectorMode.Single;
+                    AssignedTags = Library.GetTagsForFile(id);
+
+                    var allTags = Library.GetTags();
+                    // Exclude assigned tags from available list
+                    AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+                }
+                else
+                {
+                    // ID exists in selection but not DB? Clear selection to be safe or show None
+                    SelectionMode = InspectorMode.None;
+                }
             }
             else
             {
-                SelectionMode = InspectorMode.None;
+                SelectionMode = InspectorMode.Multi;
+                SelectedFile = null;
+
+                CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
+                var allTags = Library.GetTags();
+                // Available tags are those NOT in common tags?
+                // Or those that can be added? Logic: Tag is available if it's not common?
+                // Actually, for multi-edit, we usually show tags that can be added (not already present in ALL).
+                // Existing logic: tags not in CommonTags.
+                AvailableTags = allTags.Where(t => !CommonTags.Any(ct => ct.Id == t.Id)).ToList();
             }
+
+            StateHasChanged();
         }
-        else
+        catch (Exception ex)
         {
-            SelectionMode = InspectorMode.Multi;
-            SelectedFile = null;
-
-            CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
-            var allTags = Library.GetTags();
-            AvailableTags = allTags.Where(t => !CommonTags.Any(ct => ct.Id == t.Id)).ToList();
+            Console.WriteLine($"[Inspector] Error updating view: {ex.Message}");
+            SelectionMode = InspectorMode.Error;
+            StateHasChanged();
         }
-
-        InvokeAsync(StateHasChanged);
     }
 
     public void Dispose()
     {
-        AppState.OnSelectionChange -= UpdateView;
-        Library.LibraryChanged -= UpdateView;
+        AppState.OnSelectionChange -= OnSelectionChanged;
+        Library.LibraryChanged -= OnLibraryChanged;
     }
 }
