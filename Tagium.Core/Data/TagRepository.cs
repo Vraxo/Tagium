@@ -50,6 +50,7 @@ public class TagRepository
         _ = cmd.Parameters.AddWithValue("@Name", name);
         _ = cmd.Parameters.AddWithValue("@Color", colorHex);
         _ = cmd.Parameters.AddWithValue("@Emoji", (object?)emoji ?? DBNull.Value);
+
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore duplicates */ }
     }
 

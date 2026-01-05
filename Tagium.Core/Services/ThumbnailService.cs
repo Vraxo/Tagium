@@ -1,5 +1,6 @@
 ﻿using FFMpegCore;
 using SkiaSharp;
+using System.Drawing;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
@@ -9,10 +10,26 @@ public class ThumbnailService
 {
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
+
     private readonly HashSet<string> _imageExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp",
+        ".gif",
+        ".webp"
+    };
+
     private readonly HashSet<string> _videoExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm" };
+    {
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".wmv",
+        ".webm"
+    };
 
     public ThumbnailService()
     {
@@ -24,14 +41,15 @@ public class ThumbnailService
 
         _hasFFmpeg = File.Exists(ffmpegPath) && File.Exists(ffprobePath);
 
-        if (_hasFFmpeg)
+        if (!_hasFFmpeg)
         {
-            GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
+            Console.WriteLine(
+                "[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found." +
+                "Video thumbnails will use placeholders.");
+            return;
         }
-        else
-        {
-            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails will use placeholders.");
-        }
+
+        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
     }
 
     public string GetThumbnailPath(long fileId)
@@ -44,6 +62,7 @@ public class ThumbnailService
         return File.Exists(GetThumbnailPath(fileId));
     }
 
+    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -91,6 +110,7 @@ public class ThumbnailService
         });
     }
 
+    [Obsolete]
     private static void GenerateImageThumbnail(string sourcePath, string destPath, int size)
     {
         using SKBitmap? original = SKBitmap.Decode(sourcePath);
@@ -102,27 +122,35 @@ public class ThumbnailService
         SaveResized(original, destPath, size);
     }
 
+    [Obsolete]
     private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
     {
         try
         {
-            var analysis = await FFProbe.AnalyseAsync(sourcePath);
-            var duration = analysis.Duration;
-            var captureTime = duration.TotalSeconds > 10 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(duration.TotalSeconds * 0.1);
+            IMediaAnalysis analysis = await FFProbe.AnalyseAsync(sourcePath);
+            TimeSpan duration = analysis.Duration;
+
+            TimeSpan captureTime = duration.TotalSeconds > 10
+                ? TimeSpan.FromSeconds(5)
+                : TimeSpan.FromSeconds(duration.TotalSeconds * 0.1);
 
             string tempFrame = Path.GetTempFileName() + ".png";
 
-            _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new System.Drawing.Size(size, size), captureTime);
+            _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new Size(size, size), captureTime);
 
-            if (File.Exists(tempFrame))
+            if (!File.Exists(tempFrame))
             {
-                using SKBitmap? original = SKBitmap.Decode(tempFrame);
-                if (original != null)
-                {
-                    SaveResized(original, destPath, size);
-                }
-                File.Delete(tempFrame);
+                return;
             }
+
+            using SKBitmap? original = SKBitmap.Decode(tempFrame);
+
+            if (original != null)
+            {
+                SaveResized(original, destPath, size);
+            }
+
+            File.Delete(tempFrame);
         }
         catch (Exception ex)
         {
@@ -167,6 +195,7 @@ public class ThumbnailService
 
         SKImageInfo info = new(w, h);
         using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
+
         if (resized is null)
         {
             return;
@@ -175,6 +204,7 @@ public class ThumbnailService
         using SKImage image = SKImage.FromBitmap(resized);
         using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
         using FileStream stream = File.OpenWrite(destPath);
+
         data.SaveTo(stream);
     }
 }

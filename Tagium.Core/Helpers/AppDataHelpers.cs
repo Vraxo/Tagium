@@ -24,10 +24,12 @@ public static class AppDataHelper
     public static string GetThumbnailCacheDirectory()
     {
         string path = Path.Combine(GetBaseDirectory(), "Thumbnails");
+
         if (!Directory.Exists(path))
         {
             _ = Directory.CreateDirectory(path);
         }
+
         return path;
     }
 }

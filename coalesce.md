@@ -283,7 +283,13 @@ namespace Tagium.Core.Data;
 public class FileSearchRepository
 {
     private readonly DatabaseManager _db;
-    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase) { "and", "or", "not" };
+
+    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "and",
+        "or",
+        "not"
+    };
 
     public FileSearchRepository(DatabaseManager db)
     {
@@ -294,8 +300,8 @@ public class FileSearchRepository
     {
         string[] tokens = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        List<string> includedTags = tokens.Where(t => !t.StartsWith("-") && !_searchStopWords.Contains(t)).Distinct().ToList();
-        List<string> excludedTags = tokens.Where(t => t.StartsWith("-") && t.Length > 1).Select(t => t[1..]).Distinct().ToList();
+        List<string> includedTags = [.. tokens.Where(t => !t.StartsWith('-') && !_searchStopWords.Contains(t)).Distinct()];
+        List<string> excludedTags = [.. tokens.Where(t => t.StartsWith('-') && t.Length > 1).Select(t => t[1..]).Distinct()];
 
         if (!includedTags.Any() && !excludedTags.Any())
         {
@@ -312,7 +318,7 @@ public class FileSearchRepository
         // Dynamic SQL construction is necessary for variable tag counts.
         // Parameters are safely parameterized.
 
-        if (includedTags.Any() && excludedTags.Any())
+        if (includedTags.Count != 0 && excludedTags.Any())
         {
             AddParams(cmd, "@in", includedTags);
             AddParams(cmd, "@ex", excludedTags);
@@ -336,7 +342,7 @@ public class FileSearchRepository
                 )
                 {orderBy}";
         }
-        else if (includedTags.Any())
+        else if (includedTags.Count != 0)
         {
             AddParams(cmd, "@tag", includedTags);
             string tagParams = string.Join(",", includedTags.Select((_, i) => $"@tag{i}"));
@@ -370,18 +376,24 @@ public class FileSearchRepository
         cmd.CommandText = query;
         List<FileEntry> files = [];
         using SqliteDataReader reader = cmd.ExecuteReader();
+
         while (reader.Read())
         {
-            files.Add(new FileEntry
+            files.Add(new()
             {
                 Id = reader.GetInt64(0),
                 Path = reader.GetString(1),
                 Name = reader.GetString(2),
-                Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
+
+                Hash = reader.IsDBNull(3)
+                    ? null
+                    : reader.GetString(3),
+
                 DateAdded = reader.GetInt64(4),
                 IsMissing = reader.GetBoolean(5)
             });
         }
+
         return files;
     }
 
@@ -401,7 +413,11 @@ public class FileSearchRepository
             SortBy.DateAdded => "F.DateAdded",
             _ => "F.Path"
         };
-        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
+
+        string dir = direction == SortDirection.Desc
+            ? "DESC"
+            : "ASC";
+
         // Secondary sort by path for stability
         return $"ORDER BY {col} {dir}, F.Path ASC";
     }
@@ -588,10 +604,12 @@ public static class AppDataHelper
     public static string GetThumbnailCacheDirectory()
     {
         string path = Path.Combine(GetBaseDirectory(), "Thumbnails");
+
         if (!Directory.Exists(path))
         {
             _ = Directory.CreateDirectory(path);
         }
+
         return path;
     }
 }
@@ -620,7 +638,8 @@ public static class FileHasher
             using SHA256 sha256 = SHA256.Create();
             using FileStream stream = File.OpenRead(filePath);
             byte[] hash = sha256.ComputeHash(stream);
-            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+
+            return Convert.ToHexStringLower(hash);
         }
         catch (Exception ex)
         {
@@ -672,105 +691,6 @@ public class Tag
     public override string ToString()
     {
         return Name;
-    }
-}
-```
-
----
-
-### `Tagium.Core\Services\DataExportService.cs`
-
-```csharp
-using System.Text;
-using System.Text.Json;
-using Tagium.Core.Data;
-using Tagium.Core.Models;
-using Tagium.Core.Settings;
-
-namespace Tagium.Core.Services;
-
-public class DatabaseExport
-{
-    public List<Tag> Tags { get; set; } = [];
-    public List<FileExportData> Files { get; set; } = [];
-}
-
-public class FileExportData
-{
-    public long Id { get; set; }
-    public required string Path { get; set; }
-    public required string Name { get; set; }
-    public string? Hash { get; set; }
-    public long DateAdded { get; set; }
-    public bool IsMissing { get; set; }
-    public List<long> TagIds { get; set; } = [];
-}
-
-public class DataExportService
-{
-    private readonly FileRepository _fileRepo;
-    private readonly TagRepository _tagRepo;
-    private readonly FileTagRepository _fileTagRepo;
-
-    public DataExportService(FileRepository fileRepo, TagRepository tagRepo, FileTagRepository fileTagRepo)
-    {
-        _fileRepo = fileRepo;
-        _tagRepo = tagRepo;
-        _fileTagRepo = fileTagRepo;
-    }
-
-    public async Task ExportJsonAsync(string path)
-    {
-        DatabaseExport data = BuildExportData();
-        string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(path, json);
-    }
-
-    public async Task ExportCsvAsync(string path)
-    {
-        DatabaseExport data = BuildExportData();
-        Dictionary<long, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
-        StringBuilder sb = new();
-
-        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,Tags");
-
-        foreach (var file in data.Files)
-        {
-            string tags = string.Join(";", file.TagIds.Select(id => tagLookup.GetValueOrDefault(id, "unknown")));
-            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},\"{Escape(tags)}\"";
-            _ = sb.AppendLine(line);
-        }
-
-        await File.WriteAllTextAsync(path, sb.ToString());
-    }
-
-    private DatabaseExport BuildExportData()
-    {
-        List<FileEntry> files = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
-        List<Tag> tags = _tagRepo.GetAll();
-
-        DatabaseExport export = new() { Tags = tags };
-
-        foreach (FileEntry f in files)
-        {
-            List<long> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
-            export.Files.Add(new FileExportData
-            {
-                Id = f.Id,
-                Path = f.Path,
-                Name = f.Name,
-                Hash = f.Hash,
-                DateAdded = f.DateAdded,
-                IsMissing = f.IsMissing,
-                TagIds = tagIds
-            });
-        }
-        return export;
-    }
-
-    private static string Escape(string s)
-    {
-        return s.Replace("\"", "\"\"");
     }
 }
 ```
@@ -885,19 +805,22 @@ public class DatabaseMergeService
             }
 
             // Merge Associations
-            if (sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
+            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
             {
-                foreach (long sTagId in sTagIds)
+                continue;
+            }
+
+            foreach (long sTagId in sTagIds)
+            {
+                if (!tagIdMap.TryGetValue(sTagId, out long targetTagId))
                 {
-                    if (tagIdMap.TryGetValue(sTagId, out long targetTagId))
-                    {
-                        // Repository handles "INSERT OR IGNORE"
-                        _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
-                        // We assume success, hard to count actual "new" without checking first.
-                        // We'll just increment. Real logic would check existence.
-                        result.NewAssociations++;
-                    }
+                    continue;
                 }
+                // Repository handles "INSERT OR IGNORE"
+                _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
+                // We assume success, hard to count actual "new" without checking first.
+                // We'll just increment. Real logic would check existence.
+                result.NewAssociations++;
             }
         }
 
@@ -910,10 +833,21 @@ public class DatabaseMergeService
         List<Tag> list = [];
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags";
+
         using SqliteDataReader r = cmd.ExecuteReader();
+
         while (r.Read())
         {
-            list.Add(new Tag { Id = r.GetInt64(0), Name = r.GetString(1), ColorHex = r.GetString(2), Emoji = r.IsDBNull(3) ? null : r.GetString(3) });
+            list.Add(new Tag
+            {
+                Id = r.GetInt64(0),
+                Name = r.GetString(1),
+                ColorHex = r.GetString(2),
+
+                Emoji = r.IsDBNull(3)
+                    ? null
+                    : r.GetString(3)
+            });
         }
 
         return list;
@@ -922,9 +856,12 @@ public class DatabaseMergeService
     private static List<FileEntry> LoadFiles(SqliteConnection conn)
     {
         List<FileEntry> list = [];
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files";
+
         using SqliteDataReader r = cmd.ExecuteReader();
+
         while (r.Read())
         {
             list.Add(new FileEntry
@@ -951,12 +888,14 @@ public class DatabaseMergeService
         {
             long fid = r.GetInt64(0);
             long tid = r.GetInt64(1);
-            if (!map.ContainsKey(fid))
+
+            if (!map.TryGetValue(fid, out List<long>? value))
             {
-                map[fid] = [];
+                value = [];
+                map[fid] = value;
             }
 
-            map[fid].Add(tid);
+            value.Add(tid);
         }
         return map;
     }
@@ -1196,6 +1135,7 @@ public class LibraryService
         _ = ImportBatchAsync(paths);
     }
 
+    [Obsolete]
     public RelocateResult RelocateFile(long fileId, string newPath)
     {
         if (!File.Exists(newPath))
@@ -1358,14 +1298,17 @@ public class LibraryService
 
     // --- Thumbnails ---
 
+    [Obsolete]
     public void EnsureThumbnails(IEnumerable<FileEntry> files)
     {
         foreach (FileEntry file in files)
         {
-            if (!_thumbnailService.HasThumbnail(file.Id))
+            if (_thumbnailService.HasThumbnail(file.Id))
             {
-                _ = _thumbnailService.GenerateThumbnailAsync(file);
+                continue;
             }
+
+            _ = _thumbnailService.GenerateThumbnailAsync(file);
         }
     }
 }
@@ -1378,6 +1321,7 @@ public class LibraryService
 ```csharp
 using FFMpegCore;
 using SkiaSharp;
+using System.Drawing;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
@@ -1388,9 +1332,24 @@ public class ThumbnailService
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
     private readonly HashSet<string> _imageExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp",
+        ".gif",
+        ".webp"
+    };
+
     private readonly HashSet<string> _videoExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm" };
+    {
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".wmv",
+        ".webm"
+    };
 
     public ThumbnailService()
     {
@@ -1422,6 +1381,7 @@ public class ThumbnailService
         return File.Exists(GetThumbnailPath(fileId));
     }
 
+    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -1469,6 +1429,7 @@ public class ThumbnailService
         });
     }
 
+    [Obsolete]
     private static void GenerateImageThumbnail(string sourcePath, string destPath, int size)
     {
         using SKBitmap? original = SKBitmap.Decode(sourcePath);
@@ -1480,27 +1441,35 @@ public class ThumbnailService
         SaveResized(original, destPath, size);
     }
 
+    [Obsolete]
     private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
     {
         try
         {
-            var analysis = await FFProbe.AnalyseAsync(sourcePath);
-            var duration = analysis.Duration;
-            var captureTime = duration.TotalSeconds > 10 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(duration.TotalSeconds * 0.1);
+            IMediaAnalysis analysis = await FFProbe.AnalyseAsync(sourcePath);
+            TimeSpan duration = analysis.Duration;
+
+            TimeSpan captureTime = duration.TotalSeconds > 10
+                ? TimeSpan.FromSeconds(5)
+                : TimeSpan.FromSeconds(duration.TotalSeconds * 0.1);
 
             string tempFrame = Path.GetTempFileName() + ".png";
 
-            _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new System.Drawing.Size(size, size), captureTime);
+            _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new Size(size, size), captureTime);
 
-            if (File.Exists(tempFrame))
+            if (!File.Exists(tempFrame))
             {
-                using SKBitmap? original = SKBitmap.Decode(tempFrame);
-                if (original != null)
-                {
-                    SaveResized(original, destPath, size);
-                }
-                File.Delete(tempFrame);
+                return;
             }
+
+            using SKBitmap? original = SKBitmap.Decode(tempFrame);
+
+            if (original != null)
+            {
+                SaveResized(original, destPath, size);
+            }
+
+            File.Delete(tempFrame);
         }
         catch (Exception ex)
         {
@@ -1545,6 +1514,7 @@ public class ThumbnailService
 
         SKImageInfo info = new(w, h);
         using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
+
         if (resized is null)
         {
             return;
@@ -1553,6 +1523,7 @@ public class ThumbnailService
         using SKImage image = SKImage.FromBitmap(resized);
         using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
         using FileStream stream = File.OpenWrite(destPath);
+
         data.SaveTo(stream);
     }
 }
@@ -1686,6 +1657,124 @@ public class TagiumSettings
     public int ThumbnailSize { get; set; } = 120;
     public SortBy FileSortBy { get; set; } = SortBy.DateAdded;
     public SortDirection FileSortDirection { get; set; } = SortDirection.Desc;
+}
+```
+
+---
+
+### `Tagium.Core\Services\DataExport\DatabaseExport.cs`
+
+```csharp
+using Tagium.Core.Models;
+
+namespace Tagium.Core.Services.DataExport;
+
+public class DatabaseExport
+{
+    public List<Tag> Tags { get; set; } = [];
+    public List<FileExportData> Files { get; set; } = [];
+}
+```
+
+---
+
+### `Tagium.Core\Services\DataExport\DataExportService.cs`
+
+```csharp
+using System.Text;
+using System.Text.Json;
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Services.DataExport;
+
+public class DataExportService
+{
+    private readonly FileRepository _fileRepo;
+    private readonly TagRepository _tagRepo;
+    private readonly FileTagRepository _fileTagRepo;
+
+    public DataExportService(FileRepository fileRepo, TagRepository tagRepo, FileTagRepository fileTagRepo)
+    {
+        _fileRepo = fileRepo;
+        _tagRepo = tagRepo;
+        _fileTagRepo = fileTagRepo;
+    }
+
+    public async Task ExportJsonAsync(string path)
+    {
+        DatabaseExport data = BuildExportData();
+        string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(path, json);
+    }
+
+    public async Task ExportCsvAsync(string path)
+    {
+        DatabaseExport data = BuildExportData();
+        Dictionary<long, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
+        StringBuilder sb = new();
+
+        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,Tags");
+
+        foreach (var file in data.Files)
+        {
+            string tags = string.Join(";", file.TagIds.Select(id => tagLookup.GetValueOrDefault(id, "unknown")));
+            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},\"{Escape(tags)}\"";
+            _ = sb.AppendLine(line);
+        }
+
+        await File.WriteAllTextAsync(path, sb.ToString());
+    }
+
+    private DatabaseExport BuildExportData()
+    {
+        List<FileEntry> files = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
+        List<Tag> tags = _tagRepo.GetAll();
+
+        DatabaseExport export = new() { Tags = tags };
+
+        foreach (FileEntry f in files)
+        {
+            List<long> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
+
+            export.Files.Add(new FileExportData
+            {
+                Id = f.Id,
+                Path = f.Path,
+                Name = f.Name,
+                Hash = f.Hash,
+                DateAdded = f.DateAdded,
+                IsMissing = f.IsMissing,
+                TagIds = tagIds
+            });
+        }
+        return export;
+    }
+
+    private static string Escape(string s)
+    {
+        return s.Replace("\"", "\"\"");
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\DataExport\FileExportData.cs`
+
+```csharp
+namespace Tagium.Core.Services.DataExport;
+
+public class FileExportData
+{
+    public long Id { get; set; }
+    public required string Path { get; set; }
+    public required string Name { get; set; }
+    public string? Hash { get; set; }
+    public long DateAdded { get; set; }
+    public bool IsMissing { get; set; }
+    public List<long> TagIds { get; set; } = [];
 }
 ```
 
@@ -1877,9 +1966,52 @@ public class Program
             border-radius: 4px;
         }
 
+    /* Range Slider Styling */
+    input[type=range] {
+        -webkit-appearance: none;
+        width: 120px;
+        background: transparent;
+        margin: 0 5px;
+        height: 20px;
+        vertical-align: middle;
+        cursor: pointer;
+    }
+
+        input[type=range]:focus {
+            outline: none;
+        }
+
+        /* Track */
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px; /* Increased slightly to accommodate border */
+            cursor: pointer;
+            background: var(--bg-color); /* Darker background */
+            border: 1px solid var(--border-color); /* Border to match buttons */
+            border-radius: 3px;
+        }
+
+        /* Thumb */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            margin-top: -6px; /* (6px height - 2px border) - 16px / 2 approx -5 to -6 alignment */
+            cursor: pointer;
+            border: 2px solid var(--surface-bg);
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+        }
+
+            input[type=range]::-webkit-slider-thumb:hover {
+                transform: scale(1.1);
+            }
+
     .btn {
         background: var(--bg-color);
-        border: 1px solid var(--border-color); /* Added border for better contrast */
+        border: 1px solid var(--border-color);
         color: var(--text-color);
         padding: 6px 12px;
         border-radius: 4px;
@@ -2218,6 +2350,7 @@ public class Program
 @inject ToastService Toast
 @inject FileImportService FileImportService
 @inject AppState AppState
+@inject IJSRuntime JS
 
 <div class="app-layout @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")" 
      @ondragenter="OnDragEnter" @ondragleave="OnDragLeave">
@@ -2235,10 +2368,12 @@ public class Program
         }
     </div>
 
-    <aside class="left-panel">
+    <aside id="sidebar-panel" class="left-panel">
         <TagSidebar />
     </aside>
     
+    <div id="splitter-left" class="splitter"></div>
+
     <main class="center-panel">
         <AppToolbar />
         <div class="content-area">
@@ -2253,7 +2388,9 @@ public class Program
         </div>
     </main>
     
-    <aside class="right-panel">
+    <div id="splitter-right" class="splitter"></div>
+    
+    <aside id="inspector-panel" class="right-panel">
         <FileInspector />
     </aside>
     
@@ -2264,27 +2401,15 @@ public class Program
 <style>
     :root {
         /* Revised Palette for "32,32,32" Request */
-        
-        /* The main content area (Grid) is slightly darker to create depth */
         --bg-color: #181818; 
-        
-        /* The Sidebars/Panels use the requested 32,32,32 (#202020) */
         --panel-bg: #202020; 
-        
-        /* Inputs, Cards, and Toolbar use a slightly lighter surface for contrast */
         --surface-bg: #2D2D2D; 
-        
-        /* Subtle borders */
         --border-color: #383838;
-        
-        /* Text Colors */
         --text-color: #E0E0E0;
         --text-muted: #9E9E9E;
-        
-        /* Accents */
         --primary-color: #42a5f5;
         --primary-hover: #1e88e5;
-        --danger-color: #e57373; /* Softer red for dark mode */
+        --danger-color: #e57373;
         --danger-hover: #ef5350;
     }
 
@@ -2327,9 +2452,9 @@ public class Program
     .left-panel {
         width: 250px; 
         background: var(--panel-bg);
-        border-right: 1px solid var(--border-color);
         display: flex; flex-direction: column;
         padding: 10px; flex-shrink: 0;
+        /* Border removed, handled by splitter visual or just background contrast */
     }
 
     .center-panel {
@@ -2340,7 +2465,6 @@ public class Program
     .right-panel {
         width: 300px; 
         background: var(--panel-bg);
-        border-left: 1px solid var(--border-color);
         padding: 0; flex-shrink: 0;
     }
     
@@ -2348,6 +2472,27 @@ public class Program
         flex: 1; overflow: hidden;
         position: relative;
     }
+
+    /* Splitter Styles */
+    .splitter {
+        width: 4px;
+        background: var(--bg-color); /* Defaults to bg, visible on hover */
+        cursor: col-resize;
+        flex-shrink: 0;
+        position: relative;
+        z-index: 10;
+        transition: background 0.2s;
+    }
+
+    .splitter:hover, .splitter.active {
+        background: var(--primary-color);
+    }
+    
+    /* Ensure border line exists visually via the panel or splitter */
+    .left-panel { border-right: 1px solid var(--border-color); }
+    .right-panel { border-left: 1px solid var(--border-color); }
+    
+    /* When splitter is active or hovered, it covers the border */
 </style>
 
 @code {
@@ -2360,6 +2505,14 @@ public class Program
         Settings.SettingsChanged += StateHasChanged;
         Library.ImportCompleted += ShowImportStatus;
         AppState.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("layoutResizer.init", "sidebar-panel", "splitter-left", "inspector-panel", "splitter-right");
+        }
     }
 
     private void OnDragEnter(DragEventArgs e)
@@ -3241,6 +3394,7 @@ public static class SchemeHandlers
 using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
 using Tagium.Core.Services;
+using Tagium.Core.Services.DataExport;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Services;
 
@@ -3321,6 +3475,11 @@ public static class ServiceRegistrar
             pointer-events: none;
             box-sizing: border-box;
         }
+
+        /* Utility class used by layout.js during drag */
+        .no-select {
+            user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -3328,6 +3487,7 @@ public static class ServiceRegistrar
     <script src="_framework/blazor.webview.js"></script>
     <script src="js/dragdrop.js"></script>
     <script src="js/grid.js"></script>
+    <script src="js/layout.js"></script>
 </body>
 </html>
 ```
@@ -4694,6 +4854,11 @@ else
 ### `Tagium.Photino.Blazor\wwwroot\css\app.css`
 
 ```css
+/* Global Reset */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
 @font-face {
     font-family: 'Apple Emoji';
     src: url('../fonts/AppleColorEmoji.ttf');
@@ -4702,6 +4867,45 @@ else
 /* Base body style uses default font */
 body {
     font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
+}
+
+/* Remove default focus outline to prevent lingering blue rings on clicks */
+*:focus {
+    outline: none;
+}
+
+/* Custom Text Selection Styling */
+::selection {
+    background: rgba(66, 165, 245, 0.4); /* Matches primary-color with transparency */
+    color: white;
+}
+
+/* Global Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-color, #181818);
+}
+
+::-webkit-scrollbar-thumb {
+    background: #383838; /* Matches --border-color */
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 5px;
+}
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #484848;
+    }
+
+/* Sidebar and Panel specific track colors for better blending */
+.left-panel ::-webkit-scrollbar-track,
+.right-panel ::-webkit-scrollbar-track,
+.modal-container ::-webkit-scrollbar-track {
+    background: var(--panel-bg, #202020);
 }
 
 /* When this class is applied to the root layout, override font family */
@@ -4761,7 +4965,7 @@ window.gridInteractions = {
     init: function (dotNetRef, containerId) {
         this.dotNetRef = dotNetRef;
         this.containerId = containerId;
-        
+
         // Create selection box element if it doesn't exist
         if (!document.getElementById('selection-box')) {
             this.selectionBox = document.createElement('div');
@@ -4779,7 +4983,7 @@ window.gridInteractions = {
 
         // Attach global events
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
-        
+
         const container = document.getElementById(containerId);
         if (container) {
             container.addEventListener('mousedown', this.handleMouseDown.bind(this));
@@ -4830,13 +5034,25 @@ window.gridInteractions = {
         // Get ID
         const id = items[index].getAttribute('data-id');
         items[index].scrollIntoView({ block: 'nearest' });
-        
+
         this.dotNetRef.invokeMethodAsync('SelectFile', parseInt(id));
     },
 
     handleMouseDown: function (e) {
         // Ignore clicks on items (handled by Blazor onclick)
         if (e.target.closest('.file-card')) return;
+
+        // Detect if click is on scrollbar
+        // If the target is the container itself, check if click is outside client area
+        if (e.target.id === this.containerId) {
+            const rect = e.target.getBoundingClientRect();
+            const isVerticalScrollbar = e.clientX > rect.left + e.target.clientWidth;
+            const isHorizontalScrollbar = e.clientY > rect.top + e.target.clientHeight;
+
+            if (isVerticalScrollbar || isHorizontalScrollbar) {
+                return;
+            }
+        }
 
         e.preventDefault();
         this.isSelecting = true;
@@ -4870,7 +5086,7 @@ window.gridInteractions = {
     handleMouseUp: function (e) {
         this.isSelecting = false;
         this.selectionBox.style.display = 'none';
-        
+
         document.removeEventListener('mousemove', this.boundMouseMove);
         document.removeEventListener('mouseup', this.boundMouseUp);
 
@@ -4885,9 +5101,6 @@ window.gridInteractions = {
         const ids = [];
         document.querySelectorAll('.file-card').forEach(item => {
             const rect = item.getBoundingClientRect();
-            // Offset scroll position because getBoundingClientRect is relative to viewport,
-            // but mouse coordinates include scroll. Wait, simple intersection logic:
-            
             // Adjust rect to page coordinates
             const pageRect = {
                 left: rect.left + window.scrollX,
@@ -4896,10 +5109,10 @@ window.gridInteractions = {
                 bottom: rect.bottom + window.scrollY
             };
 
-            const intersect = !(boxRect.right < pageRect.left || 
-                              boxRect.left > pageRect.right || 
-                              boxRect.bottom < pageRect.top || 
-                              boxRect.top > pageRect.bottom);
+            const intersect = !(boxRect.right < pageRect.left ||
+                boxRect.left > pageRect.right ||
+                boxRect.bottom < pageRect.top ||
+                boxRect.top > pageRect.bottom);
 
             if (intersect) {
                 ids.push(parseInt(item.getAttribute('data-id')));
@@ -4910,6 +5123,66 @@ window.gridInteractions = {
             this.dotNetRef.invokeMethodAsync('SelectFiles', ids);
         } else {
             this.dotNetRef.invokeMethodAsync('ClearSelection');
+        }
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\layout.js`
+
+```javascript
+window.layoutResizer = {
+    init: function (leftPanelId, leftSplitterId, rightPanelId, rightSplitterId) {
+        const leftPanel = document.getElementById(leftPanelId);
+        const rightPanel = document.getElementById(rightPanelId);
+        const leftSplitter = document.getElementById(leftSplitterId);
+        const rightSplitter = document.getElementById(rightSplitterId);
+
+        if (leftSplitter && leftPanel) {
+            setupResizer(leftSplitter, leftPanel, 'left');
+        }
+
+        if (rightSplitter && rightPanel) {
+            setupResizer(rightSplitter, rightPanel, 'right');
+        }
+
+        function setupResizer(splitter, panel, side) {
+            splitter.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                
+                // Add active class for styling
+                splitter.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                document.body.classList.add('no-select'); // Prevent text selection during drag
+
+                function onMouseMove(e) {
+                    if (side === 'left') {
+                        // Left panel width is simply mouse X
+                        // Clamp between 150px and 500px
+                        const newWidth = Math.min(Math.max(e.clientX, 150), 600);
+                        panel.style.width = newWidth + 'px';
+                    } else {
+                        // Right panel width is Window Width - Mouse X
+                        // Clamp between 200px and 600px
+                        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 200), 800);
+                        panel.style.width = newWidth + 'px';
+                    }
+                }
+
+                function onMouseUp() {
+                    splitter.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.classList.remove('no-select');
+                    
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
         }
     }
 };

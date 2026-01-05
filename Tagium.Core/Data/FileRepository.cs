@@ -4,8 +4,6 @@ using Tagium.Core.Settings;
 
 namespace Tagium.Core.Data;
 
-public enum AddFileResult { Success, Duplicate, Error }
-
 public class FileRepository
 {
     private readonly DatabaseManager _db;
@@ -59,6 +57,7 @@ public class FileRepository
 
     public AddFileResult Add(string path, string hash)
     {
+        // Optimization: Checking hash first avoids expensive INSERT attempt if logic dictates hash uniqueness
         if (GetByHash(hash) != null)
         {
             return AddFileResult.Duplicate;
@@ -66,16 +65,6 @@ public class FileRepository
 
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
-
-        using (SqliteCommand checkCmd = conn.CreateCommand())
-        {
-            checkCmd.CommandText = "SELECT COUNT(1) FROM Files WHERE Path = @Path";
-            _ = checkCmd.Parameters.AddWithValue("@Path", path);
-            if (Convert.ToInt64(checkCmd.ExecuteScalar()) > 0)
-            {
-                return AddFileResult.Duplicate;
-            }
-        }
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -90,6 +79,11 @@ public class FileRepository
         {
             _ = cmd.ExecuteNonQuery();
             return AddFileResult.Success;
+        }
+        catch (SqliteException)
+        {
+            // UNIQUE constraint violation on Path returns duplicate/error
+            return AddFileResult.Duplicate;
         }
         catch
         {

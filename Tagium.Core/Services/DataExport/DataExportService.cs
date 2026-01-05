@@ -4,24 +4,7 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
-namespace Tagium.Core.Services;
-
-public class DatabaseExport
-{
-    public List<Tag> Tags { get; set; } = [];
-    public List<FileExportData> Files { get; set; } = [];
-}
-
-public class FileExportData
-{
-    public long Id { get; set; }
-    public required string Path { get; set; }
-    public required string Name { get; set; }
-    public string? Hash { get; set; }
-    public long DateAdded { get; set; }
-    public bool IsMissing { get; set; }
-    public List<long> TagIds { get; set; } = [];
-}
+namespace Tagium.Core.Services.DataExport;
 
 public class DataExportService
 {
@@ -71,6 +54,7 @@ public class DataExportService
         foreach (FileEntry f in files)
         {
             List<long> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
+
             export.Files.Add(new FileExportData
             {
                 Id = f.Id,

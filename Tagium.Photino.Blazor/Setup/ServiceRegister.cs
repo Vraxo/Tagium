@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
 using Tagium.Core.Services;
+using Tagium.Core.Services.DataExport;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Services;
 

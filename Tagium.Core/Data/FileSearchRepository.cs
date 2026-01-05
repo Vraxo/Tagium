@@ -7,7 +7,13 @@ namespace Tagium.Core.Data;
 public class FileSearchRepository
 {
     private readonly DatabaseManager _db;
-    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase) { "and", "or", "not" };
+
+    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "and",
+        "or",
+        "not"
+    };
 
     public FileSearchRepository(DatabaseManager db)
     {
@@ -18,8 +24,8 @@ public class FileSearchRepository
     {
         string[] tokens = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        List<string> includedTags = tokens.Where(t => !t.StartsWith("-") && !_searchStopWords.Contains(t)).Distinct().ToList();
-        List<string> excludedTags = tokens.Where(t => t.StartsWith("-") && t.Length > 1).Select(t => t[1..]).Distinct().ToList();
+        List<string> includedTags = [.. tokens.Where(t => !t.StartsWith('-') && !_searchStopWords.Contains(t)).Distinct()];
+        List<string> excludedTags = [.. tokens.Where(t => t.StartsWith('-') && t.Length > 1).Select(t => t[1..]).Distinct()];
 
         if (!includedTags.Any() && !excludedTags.Any())
         {
@@ -36,7 +42,7 @@ public class FileSearchRepository
         // Dynamic SQL construction is necessary for variable tag counts.
         // Parameters are safely parameterized.
 
-        if (includedTags.Any() && excludedTags.Any())
+        if (includedTags.Count != 0 && excludedTags.Any())
         {
             AddParams(cmd, "@in", includedTags);
             AddParams(cmd, "@ex", excludedTags);
@@ -60,7 +66,7 @@ public class FileSearchRepository
                 )
                 {orderBy}";
         }
-        else if (includedTags.Any())
+        else if (includedTags.Count != 0)
         {
             AddParams(cmd, "@tag", includedTags);
             string tagParams = string.Join(",", includedTags.Select((_, i) => $"@tag{i}"));
@@ -94,18 +100,24 @@ public class FileSearchRepository
         cmd.CommandText = query;
         List<FileEntry> files = [];
         using SqliteDataReader reader = cmd.ExecuteReader();
+
         while (reader.Read())
         {
-            files.Add(new FileEntry
+            files.Add(new()
             {
                 Id = reader.GetInt64(0),
                 Path = reader.GetString(1),
                 Name = reader.GetString(2),
-                Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
+
+                Hash = reader.IsDBNull(3)
+                    ? null
+                    : reader.GetString(3),
+
                 DateAdded = reader.GetInt64(4),
                 IsMissing = reader.GetBoolean(5)
             });
         }
+
         return files;
     }
 
@@ -125,7 +137,11 @@ public class FileSearchRepository
             SortBy.DateAdded => "F.DateAdded",
             _ => "F.Path"
         };
-        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
+
+        string dir = direction == SortDirection.Desc
+            ? "DESC"
+            : "ASC";
+
         // Secondary sort by path for stability
         return $"ORDER BY {col} {dir}, F.Path ASC";
     }

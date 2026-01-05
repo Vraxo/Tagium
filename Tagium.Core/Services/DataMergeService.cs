@@ -103,19 +103,22 @@ public class DatabaseMergeService
             }
 
             // Merge Associations
-            if (sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
+            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
             {
-                foreach (long sTagId in sTagIds)
+                continue;
+            }
+
+            foreach (long sTagId in sTagIds)
+            {
+                if (!tagIdMap.TryGetValue(sTagId, out long targetTagId))
                 {
-                    if (tagIdMap.TryGetValue(sTagId, out long targetTagId))
-                    {
-                        // Repository handles "INSERT OR IGNORE"
-                        _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
-                        // We assume success, hard to count actual "new" without checking first.
-                        // We'll just increment. Real logic would check existence.
-                        result.NewAssociations++;
-                    }
+                    continue;
                 }
+                // Repository handles "INSERT OR IGNORE"
+                _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
+                // We assume success, hard to count actual "new" without checking first.
+                // We'll just increment. Real logic would check existence.
+                result.NewAssociations++;
             }
         }
 
@@ -128,10 +131,21 @@ public class DatabaseMergeService
         List<Tag> list = [];
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags";
+
         using SqliteDataReader r = cmd.ExecuteReader();
+
         while (r.Read())
         {
-            list.Add(new Tag { Id = r.GetInt64(0), Name = r.GetString(1), ColorHex = r.GetString(2), Emoji = r.IsDBNull(3) ? null : r.GetString(3) });
+            list.Add(new Tag
+            {
+                Id = r.GetInt64(0),
+                Name = r.GetString(1),
+                ColorHex = r.GetString(2),
+
+                Emoji = r.IsDBNull(3)
+                    ? null
+                    : r.GetString(3)
+            });
         }
 
         return list;
@@ -140,9 +154,12 @@ public class DatabaseMergeService
     private static List<FileEntry> LoadFiles(SqliteConnection conn)
     {
         List<FileEntry> list = [];
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files";
+
         using SqliteDataReader r = cmd.ExecuteReader();
+
         while (r.Read())
         {
             list.Add(new FileEntry
@@ -169,12 +186,14 @@ public class DatabaseMergeService
         {
             long fid = r.GetInt64(0);
             long tid = r.GetInt64(1);
-            if (!map.ContainsKey(fid))
+
+            if (!map.TryGetValue(fid, out List<long>? value))
             {
-                map[fid] = [];
+                value = [];
+                map[fid] = value;
             }
 
-            map[fid].Add(tid);
+            value.Add(tid);
         }
         return map;
     }

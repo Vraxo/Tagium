@@ -151,6 +151,7 @@ public class LibraryService
         _ = ImportBatchAsync(paths);
     }
 
+    [Obsolete]
     public RelocateResult RelocateFile(long fileId, string newPath)
     {
         if (!File.Exists(newPath))
@@ -313,14 +314,17 @@ public class LibraryService
 
     // --- Thumbnails ---
 
+    [Obsolete]
     public void EnsureThumbnails(IEnumerable<FileEntry> files)
     {
         foreach (FileEntry file in files)
         {
-            if (!_thumbnailService.HasThumbnail(file.Id))
+            if (_thumbnailService.HasThumbnail(file.Id))
             {
-                _ = _thumbnailService.GenerateThumbnailAsync(file);
+                continue;
             }
+
+            _ = _thumbnailService.GenerateThumbnailAsync(file);
         }
     }
 }
