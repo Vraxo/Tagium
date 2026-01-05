@@ -26,10 +26,15 @@ public class SettingsManager
 
     public TagiumSettings Current { get; }
 
-    public void Update(Action<TagiumSettings> updateAction)
+    public void Update(Action<TagiumSettings> updateAction, bool save = true)
     {
         updateAction(Current);
-        Save();
+
+        if (save)
+        {
+            Save();
+        }
+
         SettingsChanged?.Invoke();
     }
 
