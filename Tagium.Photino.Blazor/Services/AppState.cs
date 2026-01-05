@@ -11,10 +11,7 @@ public class AppState
     public HashSet<long> SelectedFileIds { get; private set; } = [];
 
     // Events
-    // Fired when data-impacting state changes (Search, View, Filter) -> Requires DB Reload
     public event Action? OnChange;
-
-    // Fired when selection changes -> Requires UI Update only (No DB Reload)
     public event Action? OnSelectionChange;
 
     public void SwitchView(AppView view)
@@ -62,12 +59,19 @@ public class AppState
 
     public void SelectFile(long id, bool multiSelect, bool rangeSelect)
     {
+        // Future: Handle rangeSelect (Shift) logic here if needed.
+
         if (!multiSelect)
         {
+            // Standard single selection
             SelectedFileIds.Clear();
+            _ = SelectedFileIds.Add(id);
         }
-
-        _ = SelectedFileIds.Contains(id) && multiSelect ? SelectedFileIds.Remove(id) : SelectedFileIds.Add(id);
+        else
+        {
+            // Toggle selection
+            _ = SelectedFileIds.Contains(id) ? SelectedFileIds.Remove(id) : SelectedFileIds.Add(id);
+        }
 
         NotifySelectionChanged();
     }

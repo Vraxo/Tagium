@@ -14,6 +14,7 @@
     flex-direction: row;
     overflow: hidden;
     position: relative;
+    background: var(--bg-color);
 }
 
 .left-panel {
@@ -21,7 +22,6 @@
     background: var(--panel-bg);
     display: flex;
     flex-direction: column;
-    padding: 10px;
     flex-shrink: 0;
     border-right: 1px solid var(--border-color);
 }
@@ -31,13 +31,14 @@
     display: flex;
     flex-direction: column;
     background: var(--bg-color);
-    min-width: 0;
+    min-width: 0; /* Prevents flex items from overflowing horizontally */
 }
 
 .right-panel {
     width: 300px;
     background: var(--panel-bg);
-    padding: 0;
+    display: flex; /* Ensure inner content can fill height */
+    flex-direction: column;
     flex-shrink: 0;
     border-left: 1px solid var(--border-color);
 }
@@ -46,6 +47,8 @@
     flex: 1;
     overflow: hidden;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Splitter Styles */

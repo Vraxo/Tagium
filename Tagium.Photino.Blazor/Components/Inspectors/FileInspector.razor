@@ -7,54 +7,115 @@
 @inject LibraryService Library
 @inject AppState AppState
 
-<div class="inspector">
-    @if (SelectionMode == InspectorMode.None)
-    {
-        <div class="empty-state">Select a file to view details.</div>
-    }
-    else if (SelectionMode == InspectorMode.Error)
-    {
-        <div class="empty-state error">
-            <p>Error loading details.</p>
-            <button class="btn" @onclick="UpdateView">Retry</button>
-        </div>
-    }
-    else if (SelectionMode == InspectorMode.Single && SelectedFile != null)
-    {
-        <SingleFileInspector File="SelectedFile"
-                             AssignedTags="AssignedTags"
-                             AvailableTags="AvailableTags" />
-    }
-    else if (SelectionMode == InspectorMode.Multi)
-    {
-        <MultiFileInspector CommonTags="CommonTags"
-                            AvailableTags="AvailableTags" />
-    }
+<div class="inspector-container">
+    <div class="inspector-header">
+        <span class="title">Inspector</span>
+        <span class="badge">@AppState.SelectedFileIds.Count selected</span>
+    </div>
+
+    <div class="inspector-content">
+        @if (HasRenderError)
+        {
+            <div class="state-message error">
+                <p>⚠️ Display Error</p>
+                <button class="btn" @onclick="UpdateView">Retry</button>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.None)
+        {
+            <div class="state-message">
+                <span class="icon">👆</span>
+                <p>Select a file to view details</p>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.Single && SelectedFile != null)
+        {
+            <SingleFileInspector File="SelectedFile"
+                                 AssignedTags="AssignedTags"
+                                 AvailableTags="AvailableTags" />
+        }
+        else if (SelectionMode == InspectorMode.Multi)
+        {
+            <MultiFileInspector CommonTags="CommonTags"
+                                AvailableTags="AvailableTags" />
+        }
+        else
+        {
+            <div class="state-message">
+                <p>Loading...</p>
+            </div>
+        }
+    </div>
 </div>
 
 <style>
-    .inspector {
-        padding: 10px;
+    .inspector-container {
+        display: flex;
+        flex-direction: column;
         height: 100%;
-        overflow-y: auto;
+        background-color: var(--panel-bg);
         color: var(--text-color);
+        border-left: 1px solid var(--border-color);
     }
 
-    .empty-state {
+    .inspector-header {
+        padding: 10px;
+        background: var(--surface-bg);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .badge {
+        font-size: 0.8rem;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: var(--text-muted);
+    }
+
+    .inspector-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+        position: relative;
+    }
+
+    .state-message {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
         color: var(--text-muted);
         text-align: center;
-        margin-top: 50px;
+        opacity: 0.7;
     }
 
-        .empty-state.error {
+        .state-message .icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .state-message.error {
             color: var(--danger-color);
+            opacity: 1;
         }
 
     .btn {
         background: var(--surface-bg);
         border: 1px solid var(--border-color);
         color: var(--text-color);
-        padding: 4px 8px;
+        padding: 4px 10px;
         border-radius: 4px;
         cursor: pointer;
         margin-top: 10px;
@@ -62,10 +123,11 @@
 </style>
 
 @code {
-    private enum InspectorMode { None, Single, Multi, Error }
+    private enum InspectorMode { None, Single, Multi }
 
     private InspectorMode SelectionMode = InspectorMode.None;
     private FileEntry? SelectedFile;
+    private bool HasRenderError = false;
 
     // Single Mode Data
     private List<Tag> AssignedTags = [];
@@ -78,6 +140,7 @@
     {
         AppState.OnSelectionChange += OnSelectionChanged;
         Library.LibraryChanged += OnLibraryChanged;
+        UpdateView();
     }
 
     private void OnSelectionChanged() => InvokeAsync(UpdateView);
@@ -85,6 +148,7 @@
 
     private void UpdateView()
     {
+        HasRenderError = false;
         try
         {
             int count = AppState.SelectedFileIds.Count;
@@ -97,22 +161,17 @@
             else if (count == 1)
             {
                 long id = AppState.SelectedFileIds.First();
-
-                // Robust fetch
                 SelectedFile = Library.GetFileById(id);
 
                 if (SelectedFile != null)
                 {
                     SelectionMode = InspectorMode.Single;
                     AssignedTags = Library.GetTagsForFile(id);
-
-                    var allTags = Library.GetTags();
-                    // Exclude assigned tags from available list
-                    AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+                    AvailableTags = GetAvailableTags(AssignedTags);
                 }
                 else
                 {
-                    // ID exists in selection but not DB? Clear selection to be safe or show None
+                    // Stale ID, treat as none
                     SelectionMode = InspectorMode.None;
                 }
             }
@@ -120,24 +179,25 @@
             {
                 SelectionMode = InspectorMode.Multi;
                 SelectedFile = null;
-
                 CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
-                var allTags = Library.GetTags();
-                // Available tags are those NOT in common tags?
-                // Or those that can be added? Logic: Tag is available if it's not common?
-                // Actually, for multi-edit, we usually show tags that can be added (not already present in ALL).
-                // Existing logic: tags not in CommonTags.
-                AvailableTags = allTags.Where(t => !CommonTags.Any(ct => ct.Id == t.Id)).ToList();
+                AvailableTags = GetAvailableTags(CommonTags);
             }
 
             StateHasChanged();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Inspector] Error updating view: {ex.Message}");
-            SelectionMode = InspectorMode.Error;
+            Console.WriteLine($"[Inspector] Critical Error: {ex}");
+            HasRenderError = true;
             StateHasChanged();
         }
+    }
+
+    private List<Tag> GetAvailableTags(List<Tag> existingTags)
+    {
+        var allTags = Library.GetTags();
+        var existingIds = existingTags.Select(t => t.Id).ToHashSet();
+        return allTags.Where(t => !existingIds.Contains(t.Id)).ToList();
     }
 
     public void Dispose()
