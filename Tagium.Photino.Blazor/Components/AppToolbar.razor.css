@@ -25,9 +25,35 @@
     margin: 0 4px;
 }
 
-.spacer {
+/* Flexible spacer that now contains the search bar */
+.search-container {
     flex: 1;
+    display: flex;
+    justify-content: center;
+    max-width: 400px; /* Prevent search bar from getting too wide on large screens */
+    margin: 0 auto; /* Center it */
 }
+
+.search-input {
+    width: 100%;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 4px 10px;
+    border-radius: 15px; /* Pill shape */
+    font-size: 12px;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        background: #000;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
 
 .control-group {
     display: flex;

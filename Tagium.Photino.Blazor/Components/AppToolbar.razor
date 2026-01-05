@@ -20,7 +20,13 @@
     </button>
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
-    <div class="spacer"></div>
+    <div class="search-container">
+        <input type="text"
+               class="search-input"
+               placeholder="Search files..."
+               value="@AppState.SearchText"
+               @oninput="OnSearchInput" />
+    </div>
 
     @if (AppState.CurrentView == AppView.Files)
     {
@@ -80,6 +86,12 @@
             AppState.SwitchView(AppView.Files);
         else
             AppState.SwitchView(AppView.Tags);
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        string text = e.Value?.ToString() ?? "";
+        AppState.SetSearch(text);
     }
 
     private void OpenDataTools()

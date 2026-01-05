@@ -7,10 +7,6 @@
 @inject AppState AppState
 
 <div class="sidebar-container">
-    <div class="search-box">
-        <input type="text" placeholder="Search..." @onchange="OnSearchInput" value="@AppState.SearchText" />
-    </div>
-
     <div class="tag-list">
         <div class="tag-item @(IsAllFilesActive ? "active" : "")"
              @onclick="() => SetSearch(string.Empty)">
@@ -39,82 +35,6 @@
     </div>
 </div>
 
-<style>
-    .sidebar-container {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-
-    .search-box {
-        padding-bottom: 10px;
-    }
-
-        .search-box input {
-            width: 100%;
-            padding: 5px;
-            background: var(--surface-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            border-radius: 4px;
-        }
-
-            .search-box input:focus {
-                outline: none;
-                border-color: var(--primary-color);
-            }
-
-    .tag-list {
-        flex: 1;
-        overflow-y: auto;
-    }
-
-    .tag-item {
-        padding: 6px 8px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        border-radius: 4px;
-        margin-bottom: 2px;
-        color: var(--text-color);
-    }
-
-        .tag-item:hover {
-            background: var(--surface-bg);
-        }
-
-        .tag-item.active {
-            background: var(--primary-color);
-            color: white;
-        }
-
-    .name {
-        flex: 1;
-    }
-
-    .count {
-        font-size: 0.8em;
-        color: var(--text-muted);
-    }
-
-    .tag-item.active .count {
-        color: rgba(255,255,255,0.8);
-    }
-
-    .icon {
-        margin-right: 8px;
-        display: inline-block;
-        width: 1.2em;
-        text-align: center;
-    }
-
-    hr {
-        border: 0;
-        border-top: 1px solid var(--border-color);
-        margin: 5px 0;
-    }
-</style>
-
 @code {
     private List<Tag> Tags = [];
 
@@ -135,11 +55,6 @@
     {
         Tags = Library.GetTags();
         InvokeAsync(StateHasChanged);
-    }
-
-    private void OnSearchInput(ChangeEventArgs e)
-    {
-        SetSearch(e.Value?.ToString() ?? "");
     }
 
     private void SetSearch(string text)

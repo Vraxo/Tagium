@@ -1,0 +1,61 @@
+.sidebar-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--text-color);
+}
+
+.tag-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.tag-item {
+    padding: 6px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    color: var(--text-color);
+    transition: background-color 0.1s;
+    user-select: none;
+}
+
+    .tag-item:hover {
+        background: var(--surface-bg);
+    }
+
+    .tag-item.active {
+        background: var(--primary-color);
+        color: white;
+    }
+
+.name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.count {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+.tag-item.active .count {
+    color: rgba(255,255,255,0.8);
+}
+
+.icon {
+    margin-right: 8px;
+    display: inline-block;
+    width: 1.2em;
+    text-align: center;
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: 5px 0;
+}
