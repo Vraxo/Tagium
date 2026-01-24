@@ -1970,21 +1970,17 @@ public class Program
 ```
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
-@using Tagium.Core.Settings
-@using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
-@using System.Timers
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Services
 @inject LibraryService Library
-@inject SettingsManager Settings
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
 @inject AppState AppState
+@inject SearchInput SearchInput
 @implements IDisposable
 
-<div class="toolbar">
-    <div class="app-title">Tagium</div>
-    <div class="divider-v"></div>
-
+<div class="toolbar" @onkeydown="OnKeyDown" tabindex="-1">
     <button class="btn btn-primary" @onclick="ImportFiles">Add Files</button>
     <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
             @onclick="ToggleTagView">
@@ -1992,146 +1988,53 @@ public class Program
     </button>
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
-    <div class="search-container">
-        <!-- value is bound one-way to AppState to restore state on navigation,
-             but updates are handled manually via oninput + debounce -->
-        <input type="text"
-               class="search-input"
-               placeholder="Search files..."
-               value="@AppState.SearchText"
-               @oninput="OnSearchInput" />
-    </div>
-
-    @if (AppState.CurrentView == AppView.Files)
-    {
-        <div class="control-group">
-            <span class="label">Sort</span>
-            <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
-                <option value="@SortBy.DateAdded">Date</option>
-                <option value="@SortBy.Name">Name</option>
-                <option value="@SortBy.Path">Path</option>
-            </select>
-            <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
-                <option value="@SortDirection.Asc">Asc</option>
-                <option value="@SortDirection.Desc">Desc</option>
-            </select>
-        </div>
-
-        <div class="divider-v"></div>
-
-        <div class="control-group">
-            <span class="label">Size</span>
-            <input type="range" min="64" max="256" step="16"
-                   value="@Settings.Current.ThumbnailSize"
-                   @oninput="OnThumbSizeInput"
-                   @onchange="OnThumbSizeCommit" />
-        </div>
-
-        <div class="divider-v"></div>
-    }
-
     <div class="icon-actions">
-        <button class="btn-icon" @onclick="OpenPreferences" title="Settings">⚙</button>
-        <button class="btn-icon" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
+        <IconButton Title="Settings" OnClick="OpenPreferences">⚙</IconButton>
+        <IconButton Title="Reload Data" OnClick="() => Library.Refresh()">↻</IconButton>
     </div>
 </div>
 
 @code {
-    private Timer _debounceTimer = new(300); // Wait 300ms after typing stops
-    private string _pendingSearchText = "";
-
-    protected override void OnInitialized()
+    private async void OnKeyDown(KeyboardEventArgs e)
     {
-        Settings.SettingsChanged += StateHasChanged;
-        AppState.OnChange += StateHasChanged;
-
-        _debounceTimer.AutoReset = false;
-        _debounceTimer.Elapsed += OnDebounceElapsed;
+        if (e.CtrlKey || e.MetaKey)
+        {
+            switch (e.Key.ToLower())
+            {
+                case "f":
+                    await SearchInput.FocusAsync();
+                    break;
+                case "t":
+                    ToggleTagView();
+                    break;
+                case "r":
+                    Library.Refresh();
+                    break;
+            }
+        }
     }
 
     private void ImportFiles()
     {
         var paths = FileDialog.OpenFiles();
-        if (paths is not null && paths.Length > 0)
+        if (paths is { Length: > 0 })
         {
             Library.ImportBatch(paths);
         }
     }
 
-    private void ToggleTagView()
-    {
-        if (AppState.CurrentView == AppView.Tags)
-            AppState.SwitchView(AppView.Files);
-        else
-            AppState.SwitchView(AppView.Tags);
-    }
+    private void ToggleTagView() =>
+        AppState.SwitchView(
+            AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
+        );
 
-    private void OnSearchInput(ChangeEventArgs e)
-    {
-        // 1. Capture text immediately so UI doesn't lag
-        _pendingSearchText = e.Value?.ToString() ?? "";
-
-        // 2. Reset timer (stop if running, start fresh)
-        _debounceTimer.Stop();
-        _debounceTimer.Start();
-    }
-
-    private void OnDebounceElapsed(object? sender, ElapsedEventArgs e)
-    {
-        // 3. Timer finished, push to AppState on UI thread
-        InvokeAsync(() =>
-        {
-            AppState.SetSearch(_pendingSearchText);
-        });
-    }
-
-    private void OpenDataTools()
-    {
+    private void OpenDataTools() =>
         ModalService.Show("Data Management", @<DataManagementModal />);
-    }
 
-    private void OpenPreferences()
-    {
+    private void OpenPreferences() =>
         ModalService.Show("Preferences", @<PreferencesModal />);
-    }
 
-    private void OnSortByChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortBy = result);
-        }
-    }
-
-    private void OnSortDirChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortDirection = result);
-        }
-    }
-
-    private void OnThumbSizeInput(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out int val))
-        {
-            Settings.Update(s => s.ThumbnailSize = val, save: false);
-        }
-    }
-
-    private void OnThumbSizeCommit(ChangeEventArgs e)
-    {
-        Settings.Save();
-    }
-
-    public void Dispose()
-    {
-        Settings.SettingsChanged -= StateHasChanged;
-        AppState.OnChange -= StateHasChanged;
-
-        _debounceTimer.Elapsed -= OnDebounceElapsed;
-        _debounceTimer.Dispose();
-    }
+    public void Dispose() { }
 }
 ```
 
@@ -2141,131 +2044,22 @@ public class Program
 
 ```css
 .toolbar {
-    height: 38px;
+    height: var(--toolbar-height);
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
-    padding: 0 10px;
+    padding: 0 var(--space-sm);
     background: var(--panel-bg);
-    gap: 8px;
+    gap: var(--space-xs);
     user-select: none;
     flex-shrink: 0;
 }
 
-.app-title {
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--text-color);
-    margin-right: 4px;
-    letter-spacing: 0.5px;
-}
-
-.divider-v {
-    width: 1px;
-    height: 18px;
-    background: var(--border-color);
-    margin: 0 4px;
-}
-
-/* Flexible spacer that now contains the search bar */
-.search-container {
-    flex: 1;
+.icon-actions {
     display: flex;
-    justify-content: center;
-    max-width: 400px; /* Prevent search bar from getting too wide on large screens */
-    margin: 0 auto; /* Center it */
+    gap: 2px;
+    margin-left: auto;
 }
-
-.search-input {
-    width: 100%;
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: 4px 10px;
-    border-radius: 15px; /* Pill shape */
-    font-size: 12px;
-    transition: border-color 0.2s, background-color 0.2s;
-}
-
-    .search-input:focus {
-        outline: none;
-        border-color: var(--primary-color);
-        background: #000;
-    }
-
-    .search-input::placeholder {
-        color: var(--text-muted);
-    }
-
-.control-group {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.label {
-    font-size: 11px;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    font-weight: 600;
-}
-
-select {
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: 2px 4px;
-    border-radius: 3px;
-    font-size: 12px;
-    height: 24px;
-    outline: none;
-}
-
-    select:hover {
-        border-color: #555;
-    }
-
-/* Slicker Range Slider */
-input[type=range] {
-    -webkit-appearance: none;
-    width: 100px;
-    background: transparent;
-    margin: 0;
-    height: 20px;
-    cursor: pointer;
-    vertical-align: middle;
-}
-
-    input[type=range]:focus {
-        outline: none;
-    }
-
-    /* Track */
-    input[type=range]::-webkit-slider-runnable-track {
-        width: 100%;
-        height: 4px;
-        cursor: pointer;
-        background: #444;
-        border-radius: 2px;
-    }
-
-    /* Thumb */
-    input[type=range]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        height: 12px;
-        width: 12px;
-        border-radius: 50%;
-        background: var(--primary-color);
-        margin-top: -4px;
-        cursor: pointer;
-        box-shadow: 0 0 2px rgba(0,0,0,0.5);
-        transition: transform 0.1s;
-    }
-
-        input[type=range]::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
-            background: var(--primary-hover);
-        }
 
 .btn {
     background: transparent;
@@ -2274,12 +2068,12 @@ input[type=range] {
     padding: 3px 10px;
     border-radius: 3px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     transition: background 0.1s;
 }
 
     .btn:hover {
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--surface-hover);
         border-color: var(--border-color);
     }
 
@@ -2299,30 +2093,6 @@ input[type=range] {
     .btn-primary:hover {
         background: var(--primary-hover);
         border-color: var(--primary-hover);
-    }
-
-.icon-actions {
-    display: flex;
-    gap: 2px;
-}
-
-.btn-icon {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-size: 14px;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    cursor: pointer;
-}
-
-    .btn-icon:hover {
-        color: var(--text-color);
-        background: rgba(255,255,255,0.05);
     }
 ```
 
@@ -2569,8 +2339,8 @@ input[type=range] {
 ### `Tagium.Photino.Blazor\Components\MainLayout.razor`
 
 ```
-@inherits LayoutComponentBase
 @namespace Tagium.Photino.Blazor.Components
+@inherits LayoutComponentBase
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
@@ -2578,6 +2348,7 @@ input[type=range] {
 @using Tagium.Photino.Blazor.Components.Views
 @using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Photino.Blazor.Services.Toasting
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
@@ -2599,6 +2370,11 @@ input[type=range] {
             <div id="splitter-left" class="splitter"></div>
 
             <main class="center-panel">
+                @if (AppState.CurrentView == AppView.Files)
+                {
+                    <FilesViewToolbar />
+                }
+                
                 <div class="content-area">
                     @if (AppState.CurrentView == AppView.Files)
                     {
@@ -3007,6 +2783,7 @@ hr {
 ```
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
 @inject ToastService ToastService
 
 <div class="toast-container">
@@ -3132,6 +2909,8 @@ public partial class ToastContainer
 @using Microsoft.JSInterop
 @using Tagium.Photino.Blazor
 @using Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Components.Views
 @using Tagium.Core.Models
 @using Tagium.Core.Services
 ```
@@ -3339,6 +3118,60 @@ public class FileImportService
 
 ---
 
+### `Tagium.Photino.Blazor\Services\KeyboardShortcutService.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components.Web;
+using Tagium.Core.Services;
+using Tagium.Photino.Blazor.Components.Shared;
+
+namespace Tagium.Photino.Blazor.Services;
+
+public class KeyboardShortcutService
+{
+    private readonly AppState _appState;
+    private readonly LibraryService _library;
+    private readonly SearchInput _searchInput;
+
+    public KeyboardShortcutService(AppState appState, LibraryService library, SearchInput searchInput)
+    {
+        _appState = appState;
+        _library = library;
+        _searchInput = searchInput;
+    }
+
+    public async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (!e.CtrlKey && !e.MetaKey)
+        {
+            return;
+        }
+
+        switch (e.Key.ToLower())
+        {
+            case "f":
+                await _searchInput.FocusAsync();
+                break;
+            case "t":
+                ToggleTagView();
+                break;
+            case "r":
+                _library.Refresh();
+                break;
+        }
+    }
+
+    private void ToggleTagView()
+    {
+        _appState.SwitchView(
+            _appState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
+        );
+    }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Services\ModalService.cs`
 
 ```csharp
@@ -3531,6 +3364,7 @@ using Tagium.Core.Services.DataExport;
 using Tagium.Core.Services.DataMerge;
 using Tagium.Core.Services.LibraryItengrity;
 using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Components.Shared;
 using Tagium.Photino.Blazor.Services;
 using Tagium.Photino.Blazor.Services.Toasting;
 
@@ -3557,13 +3391,17 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<DataExportService>();
         _ = services.AddSingleton<DatabaseMergeService>();
 
-        // UI Services
+        // UI - Components
+        _ = services.AddTransient<SearchInput>();
+
+        // UI - Services
         _ = services.AddSingleton<AppState>();
         _ = services.AddSingleton<ModalService>();
         _ = services.AddSingleton<FileDialogService>();
         _ = services.AddSingleton<SystemLauncherService>();
         _ = services.AddSingleton<ToastService>();
         _ = services.AddSingleton<FileImportService>();
+        _ = services.AddSingleton<KeyboardShortcutService>();
     }
 }
 ```
@@ -4350,8 +4188,8 @@ public static class ServiceRegistrar
 @using Tagium.Core.Services.DataExport
 @using Tagium.Core.Services.DataMerge
 @using Tagium.Core.Services.LibraryItengrity
-@using Tagium.Core.Services.Merge
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
 @inject LibraryService Library
 @inject LibraryIntegrityService IntegrityService
 @inject DataExportService ExportService
@@ -4886,6 +4724,159 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+
+<button class="icon-button @Class"
+        @onclick="OnClick"
+        title="@Title"
+        aria-label="@Title"
+        disabled="@Disabled">
+    @ChildContent
+</button>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string Class { get; set; } = "";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor.css`
+
+```css
+.icon-button {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    width: var(--toolbar-icon-size);
+    height: var(--toolbar-icon-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.1s, background-color 0.1s;
+}
+
+    .icon-button:hover {
+        color: var(--text-color);
+        background: var(--surface-hover);
+    }
+
+    .icon-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\SearchInput.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using System.Timers
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@implements IDisposable
+
+<input type="text"
+       class="search-input"
+       placeholder="Search files..."
+       value="@_value"
+       @oninput="OnInput"
+       @ref="_inputElement"
+       aria-label="Search files" />
+
+@code {
+    private readonly Timer _timer = new(300);
+    private string _value = "";
+    private ElementReference _inputElement;
+
+    protected override void OnInitialized()
+    {
+        _value = AppState.SearchText;
+        _timer.AutoReset = false;
+        _timer.Elapsed += OnTimerElapsed;
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _value = e.Value?.ToString() ?? "";
+        _timer.Stop();
+        _timer.Start();
+    }
+
+    private void OnTimerElapsed(object? sender, ElapsedEventArgs e)
+    {
+        InvokeAsync(() =>
+        {
+            AppState.SetSearch(_value);
+            StateHasChanged();
+        });
+    }
+
+    public async Task FocusAsync() => await _inputElement.FocusAsync();
+
+    public void Dispose()
+    {
+        _timer.Elapsed -= OnTimerElapsed;
+        _timer.Dispose();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <span class="control-label">Sort</span>
+    <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy" aria-label="Sort by">
+        <option value="@SortBy.DateAdded">Date</option>
+        <option value="@SortBy.Name">Name</option>
+        <option value="@SortBy.Path">Path</option>
+    </select>
+    <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection" aria-label="Sort direction">
+        <option value="@SortDirection.Asc">Asc</option>
+        <option value="@SortDirection.Desc">Desc</option>
+    </select>
+</div>
+
+@code {
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortBy = result);
+        }
+    }
+
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortDirection = result);
+        }
+    }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
 
 ```
@@ -4931,6 +4922,205 @@ else
         flex-shrink: 0;
         border: 1px solid rgba(255,255,255,0.1);
     }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\ThumbnailSizeSlider.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <span class="control-label">Size</span>
+    <input type="range" min="64" max="256" step="16"
+           value="@Settings.Current.ThumbnailSize"
+           @oninput="OnInput"
+           @onchange="OnCommit"
+           aria-label="Thumbnail size" />
+</div>
+
+@code {
+    private void OnInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            Settings.Update(s => s.ThumbnailSize = val, save: false);
+        }
+    }
+
+    private void OnCommit(ChangeEventArgs e) => Settings.Save();
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SearchInput SearchInput
+@inject SettingsManager Settings
+
+<div class="files-view-toolbar">
+    <div class="left-controls">
+        <SortControls />
+    </div>
+
+    <div class="search-container">
+        <SearchInput @ref="SearchInput" />
+    </div>
+
+    <div class="right-controls">
+        <ThumbnailSizeSlider />
+    </div>
+</div>
+
+@code {
+    public async Task FocusSearchAsync() => await SearchInput.FocusAsync();
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor.css`
+
+```css
+.files-view-toolbar {
+    display: grid;
+    grid-template-columns: 1fr minmax(200px, 1fr) 1fr;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    gap: var(--space-md);
+    flex-shrink: 0;
+}
+
+.left-controls {
+    justify-self: start;
+}
+
+.search-container {
+    width: 100%;
+}
+
+.right-controls {
+    justify-self: end;
+}
+
+.search-input {
+    width: 100%;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px var(--space-sm);
+    border-radius: 15px;
+    font-size: var(--font-size-sm);
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        background: #000;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.control-label {
+    font-size: var(--font-size-sm);
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+select {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: var(--font-size-sm);
+    height: 24px;
+    outline: none;
+}
+
+    select:hover {
+        border-color: #555;
+    }
+
+input[type=range] {
+    -webkit-appearance: none;
+    width: 100px;
+    background: transparent;
+    margin: 0;
+    height: 20px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+    input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 4px;
+        cursor: pointer;
+        background: #444;
+        border-radius: 2px;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 12px;
+        width: 12px;
+        border-radius: 50%;
+        background: var(--primary-color);
+        margin-top: -4px;
+        cursor: pointer;
+        box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        transition: transform 0.1s;
+    }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            background: var(--primary-hover);
+        }
+
+/* Responsive: stack vertically below 700px */
+@media (max-width: 700px) {
+    .files-view-toolbar {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
+        gap: var(--space-sm);
+        justify-items: center;
+    }
+
+    .search-container {
+        order: 1;
+        max-width: 100%;
+    }
+
+    .left-controls {
+        order: 2;
+        justify-self: center;
+    }
+
+    .right-controls {
+        order: 3;
+        justify-self: center;
+    }
+}
 ```
 
 ---
@@ -5362,6 +5552,7 @@ public enum ToastType
     --bg-color: #181818;
     --panel-bg: #202020;
     --surface-bg: #2D2D2D;
+    --surface-hover: rgba(255, 255, 255, 0.05);
     --border-color: #383838;
     --text-color: #E0E0E0;
     --text-muted: #9E9E9E;
@@ -5369,19 +5560,24 @@ public enum ToastType
     --primary-hover: #1e88e5;
     --danger-color: #e57373;
     --danger-hover: #ef5350;
+    /* Spacing & Sizing Tokens */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --toolbar-height: 38px;
+    --toolbar-icon-size: 28px;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    /* Responsive Breakpoints */
+    --breakpoint-sm: 700px;
 }
 
-/* Global Reset */
-*, *::before, *::after {
-    box-sizing: border-box;
-}
-
+/* Rest of file remains unchanged */
 @font-face {
     font-family: 'Apple Emoji';
     src: url('../fonts/AppleColorEmoji.ttf');
 }
 
-/* Base body style uses default font */
 body {
     font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
     background-color: var(--bg-color);
@@ -5389,52 +5585,35 @@ body {
     margin: 0;
     padding: 0;
     height: 100%;
-    overflow: hidden; /* Prevent body scroll, layout handles it */
+    overflow: hidden;
 }
 
-/* Remove default focus outline to prevent lingering blue rings on clicks */
-*:focus {
-    outline: none;
+#app {
+    height: 100%;
 }
 
-/* Custom Text Selection Styling */
-::selection {
-    background: rgba(66, 165, 245, 0.4); /* Matches primary-color with transparency */
+.drag-over::after {
+    content: 'Drop files to add';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(66, 165, 245, 0.3);
+    border: 4px dashed #42a5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 2em;
     color: white;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    z-index: 9999;
+    pointer-events: none;
+    box-sizing: border-box;
 }
 
-/* Global Scrollbar Styling */
-::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-}
-
-::-webkit-scrollbar-track {
-    background: var(--bg-color, #181818);
-}
-
-::-webkit-scrollbar-thumb {
-    background: #383838; /* Matches --border-color */
-    border: 2px solid transparent;
-    background-clip: padding-box;
-    border-radius: 5px;
-}
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: #484848;
-    }
-
-/* Sidebar and Panel specific track colors for better blending */
-.left-panel ::-webkit-scrollbar-track,
-.right-panel ::-webkit-scrollbar-track,
-.modal-container ::-webkit-scrollbar-track {
-    background: var(--panel-bg, #202020);
-}
-
-/* When this class is applied to the root layout, override font family */
-.use-apple-emojis,
-.use-apple-emojis * {
-    font-family: 'Apple Emoji', 'Segoe UI', sans-serif !important;
+.no-select {
+    user-select: none;
 }
 ```
 
