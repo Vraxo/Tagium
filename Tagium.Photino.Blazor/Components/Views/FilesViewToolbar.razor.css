@@ -1,20 +1,31 @@
 .files-view-toolbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: var(--space-xs) var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
     background: var(--panel-bg);
     border-bottom: 1px solid var(--border-color);
-    gap: var(--space-xs);
+    gap: var(--space-md);
     flex-shrink: 0;
-    flex-wrap: wrap;
+}
+
+.left-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    justify-self: start;
+}
+
+.right-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    justify-self: end;
 }
 
 .search-container {
-    flex: 1 1 100%;
-    display: flex;
-    justify-content: center;
-    max-width: 400px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: 600px;
 }
 
 .search-input {
@@ -22,9 +33,9 @@
     background: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 4px var(--space-sm);
+    padding: 6px var(--space-sm);
     border-radius: 15px;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     transition: border-color 0.2s, background-color 0.2s;
 }
 
@@ -45,7 +56,7 @@
 }
 
 .control-label {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     text-transform: uppercase;
     color: var(--text-muted);
     font-weight: 600;
@@ -55,9 +66,9 @@ select {
     background: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 2px 4px;
+    padding: 2px 6px;
     border-radius: 3px;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     height: 24px;
     outline: none;
 }
@@ -101,27 +112,27 @@ input[type=range] {
             background: var(--primary-hover);
         }
 
-.divider {
-    width: 1px;
-    height: 18px;
-    background: var(--border-color);
-    margin: 0 var(--space-xs);
-}
-
-/* Responsive: stack controls vertically below 700px */
+/* Responsive: stack vertically below 700px */
 @media (max-width: 700px) {
     .files-view-toolbar {
-        flex-direction: column;
-        align-items: stretch;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
         gap: var(--space-sm);
-        padding: var(--space-sm);
+        justify-items: center;
     }
 
     .search-container {
+        order: 1;
         max-width: 100%;
     }
 
-    .control-group {
-        justify-content: center;
+    .left-controls {
+        order: 2;
+        justify-self: center;
+    }
+
+    .right-controls {
+        order: 3;
+        justify-self: center;
     }
 }

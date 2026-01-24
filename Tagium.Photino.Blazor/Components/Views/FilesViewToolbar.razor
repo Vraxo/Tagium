@@ -5,13 +5,17 @@
 @inject SettingsManager Settings
 
 <div class="files-view-toolbar">
+    <div class="left-controls">
+        <SortControls />
+    </div>
+
     <div class="search-container">
         <SearchInput @ref="SearchInput" />
     </div>
 
-    <SortControls />
-    <div class="divider"></div>
-    <ThumbnailSizeSlider />
+    <div class="right-controls">
+        <ThumbnailSizeSlider />
+    </div>
 </div>
 
 @code {
