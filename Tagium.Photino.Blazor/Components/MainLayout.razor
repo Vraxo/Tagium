@@ -1,5 +1,5 @@
-﻿@inherits LayoutComponentBase
-@namespace Tagium.Photino.Blazor.Components
+﻿@namespace Tagium.Photino.Blazor.Components
+@inherits LayoutComponentBase
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
@@ -29,6 +29,11 @@
             <div id="splitter-left" class="splitter"></div>
 
             <main class="center-panel">
+                @if (AppState.CurrentView == AppView.Files)
+                {
+                    <FilesViewToolbar />
+                }
+                
                 <div class="content-area">
                     @if (AppState.CurrentView == AppView.Files)
                     {

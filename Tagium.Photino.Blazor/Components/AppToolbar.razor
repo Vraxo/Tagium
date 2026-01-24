@@ -18,18 +18,6 @@
     </button>
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
-    <div class="search-container">
-        <SearchInput @ref="SearchInput" />
-    </div>
-
-    @if (AppState.CurrentView == AppView.Files)
-    {
-        <SortControls />
-        <div class="divider"></div>
-        <ThumbnailSizeSlider />
-        <div class="divider"></div>
-    }
-
     <div class="icon-actions">
         <IconButton Title="Settings" OnClick="OpenPreferences">⚙</IconButton>
         <IconButton Title="Reload Data" OnClick="() => Library.Refresh()">↻</IconButton>

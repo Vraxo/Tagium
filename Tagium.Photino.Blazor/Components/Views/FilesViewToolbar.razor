@@ -1,0 +1,19 @@
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SearchInput SearchInput
+@inject SettingsManager Settings
+
+<div class="files-view-toolbar">
+    <div class="search-container">
+        <SearchInput @ref="SearchInput" />
+    </div>
+
+    <SortControls />
+    <div class="divider"></div>
+    <ThumbnailSizeSlider />
+</div>
+
+@code {
+    public async Task FocusSearchAsync() => await SearchInput.FocusAsync();
+}
