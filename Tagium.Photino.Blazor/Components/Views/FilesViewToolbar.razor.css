@@ -6,10 +6,11 @@
     border-bottom: 1px solid var(--border-color);
     gap: var(--space-xs);
     flex-shrink: 0;
+    flex-wrap: wrap;
 }
 
 .search-container {
-    flex: 1;
+    flex: 1 1 100%;
     display: flex;
     justify-content: center;
     max-width: 400px;
@@ -105,4 +106,22 @@ input[type=range] {
     height: 18px;
     background: var(--border-color);
     margin: 0 var(--space-xs);
+}
+
+/* Responsive: stack controls vertically below 700px */
+@media (max-width: 700px) {
+    .files-view-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-sm);
+        padding: var(--space-sm);
+    }
+
+    .search-container {
+        max-width: 100%;
+    }
+
+    .control-group {
+        justify-content: center;
+    }
 }

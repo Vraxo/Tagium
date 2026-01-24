@@ -19,6 +19,8 @@
     --toolbar-icon-size: 28px;
     --font-size-xs: 11px;
     --font-size-sm: 12px;
+    /* Responsive Breakpoints */
+    --breakpoint-sm: 700px;
 }
 
 /* Rest of file remains unchanged */
