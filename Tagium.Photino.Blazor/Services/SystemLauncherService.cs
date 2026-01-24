@@ -4,7 +4,7 @@ namespace Tagium.Photino.Blazor.Services;
 
 public class SystemLauncherService
 {
-    public void OpenFile(string path)
+    public static void OpenFile(string path)
     {
         if (!File.Exists(path))
         {
@@ -21,7 +21,7 @@ public class SystemLauncherService
         }
     }
 
-    public void ShowInExplorer(string path)
+    public static void ShowInExplorer(string path)
     {
         if (!File.Exists(path))
         {

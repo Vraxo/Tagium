@@ -1,0 +1,50 @@
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using System.Timers
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@implements IDisposable
+
+<input type="text"
+       class="search-input"
+       placeholder="Search files..."
+       value="@_value"
+       @oninput="OnInput"
+       @ref="_inputElement"
+       aria-label="Search files" />
+
+@code {
+    private readonly Timer _timer = new(300);
+    private string _value = "";
+    private ElementReference _inputElement;
+
+    protected override void OnInitialized()
+    {
+        _value = AppState.SearchText;
+        _timer.AutoReset = false;
+        _timer.Elapsed += OnTimerElapsed;
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _value = e.Value?.ToString() ?? "";
+        _timer.Stop();
+        _timer.Start();
+    }
+
+    private void OnTimerElapsed(object? sender, ElapsedEventArgs e)
+    {
+        InvokeAsync(() =>
+        {
+            AppState.SetSearch(_value);
+            StateHasChanged();
+        });
+    }
+
+    public async Task FocusAsync() => await _inputElement.FocusAsync();
+
+    public void Dispose()
+    {
+        _timer.Elapsed -= OnTimerElapsed;
+        _timer.Dispose();
+    }
+}

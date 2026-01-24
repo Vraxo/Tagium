@@ -1,20 +1,16 @@
 ﻿@namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
-@using Tagium.Core.Settings
-@using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Components.Modals
-@using System.Timers
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Services
 @inject LibraryService Library
-@inject SettingsManager Settings
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
 @inject AppState AppState
+@inject SearchInput SearchInput
 @implements IDisposable
 
-<div class="toolbar">
-    <div class="app-title">Tagium</div>
-    <div class="divider-v"></div>
-
+<div class="toolbar" @onkeydown="OnKeyDown" tabindex="-1">
     <button class="btn btn-primary" @onclick="ImportFiles">Add Files</button>
     <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
             @onclick="ToggleTagView">
@@ -23,143 +19,62 @@
     <button class="btn" @onclick="OpenDataTools">Data Tools</button>
 
     <div class="search-container">
-        <!-- value is bound one-way to AppState to restore state on navigation,
-             but updates are handled manually via oninput + debounce -->
-        <input type="text"
-               class="search-input"
-               placeholder="Search files..."
-               value="@AppState.SearchText"
-               @oninput="OnSearchInput" />
+        <SearchInput @ref="SearchInput" />
     </div>
 
     @if (AppState.CurrentView == AppView.Files)
     {
-        <div class="control-group">
-            <span class="label">Sort</span>
-            <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy">
-                <option value="@SortBy.DateAdded">Date</option>
-                <option value="@SortBy.Name">Name</option>
-                <option value="@SortBy.Path">Path</option>
-            </select>
-            <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection">
-                <option value="@SortDirection.Asc">Asc</option>
-                <option value="@SortDirection.Desc">Desc</option>
-            </select>
-        </div>
-
-        <div class="divider-v"></div>
-
-        <div class="control-group">
-            <span class="label">Size</span>
-            <input type="range" min="64" max="256" step="16"
-                   value="@Settings.Current.ThumbnailSize"
-                   @oninput="OnThumbSizeInput"
-                   @onchange="OnThumbSizeCommit" />
-        </div>
-
-        <div class="divider-v"></div>
+        <SortControls />
+        <div class="divider"></div>
+        <ThumbnailSizeSlider />
+        <div class="divider"></div>
     }
 
     <div class="icon-actions">
-        <button class="btn-icon" @onclick="OpenPreferences" title="Settings">⚙</button>
-        <button class="btn-icon" @onclick="() => Library.Refresh()" title="Reload Data">↻</button>
+        <IconButton Title="Settings" OnClick="OpenPreferences">⚙</IconButton>
+        <IconButton Title="Reload Data" OnClick="() => Library.Refresh()">↻</IconButton>
     </div>
 </div>
 
 @code {
-    private Timer _debounceTimer = new(300); // Wait 300ms after typing stops
-    private string _pendingSearchText = "";
-
-    protected override void OnInitialized()
+    private async void OnKeyDown(KeyboardEventArgs e)
     {
-        Settings.SettingsChanged += StateHasChanged;
-        AppState.OnChange += StateHasChanged;
-
-        _debounceTimer.AutoReset = false;
-        _debounceTimer.Elapsed += OnDebounceElapsed;
+        if (e.CtrlKey || e.MetaKey)
+        {
+            switch (e.Key.ToLower())
+            {
+                case "f":
+                    await SearchInput.FocusAsync();
+                    break;
+                case "t":
+                    ToggleTagView();
+                    break;
+                case "r":
+                    Library.Refresh();
+                    break;
+            }
+        }
     }
 
     private void ImportFiles()
     {
         var paths = FileDialog.OpenFiles();
-        if (paths != null && paths.Length > 0)
+        if (paths is { Length: > 0 })
         {
             Library.ImportBatch(paths);
         }
     }
 
-    private void ToggleTagView()
-    {
-        if (AppState.CurrentView == AppView.Tags)
-            AppState.SwitchView(AppView.Files);
-        else
-            AppState.SwitchView(AppView.Tags);
-    }
+    private void ToggleTagView() =>
+        AppState.SwitchView(
+            AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
+        );
 
-    private void OnSearchInput(ChangeEventArgs e)
-    {
-        // 1. Capture text immediately so UI doesn't lag
-        _pendingSearchText = e.Value?.ToString() ?? "";
-
-        // 2. Reset timer (stop if running, start fresh)
-        _debounceTimer.Stop();
-        _debounceTimer.Start();
-    }
-
-    private void OnDebounceElapsed(object? sender, ElapsedEventArgs e)
-    {
-        // 3. Timer finished, push to AppState on UI thread
-        InvokeAsync(() =>
-        {
-            AppState.SetSearch(_pendingSearchText);
-        });
-    }
-
-    private void OpenDataTools()
-    {
+    private void OpenDataTools() =>
         ModalService.Show("Data Management", @<DataManagementModal />);
-    }
 
-    private void OpenPreferences()
-    {
+    private void OpenPreferences() =>
         ModalService.Show("Preferences", @<PreferencesModal />);
-    }
 
-    private void OnSortByChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortBy = result);
-        }
-    }
-
-    private void OnSortDirChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortDirection = result);
-        }
-    }
-
-    private void OnThumbSizeInput(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out int val))
-        {
-            Settings.Update(s => s.ThumbnailSize = val, save: false);
-        }
-    }
-
-    private void OnThumbSizeCommit(ChangeEventArgs e)
-    {
-        Settings.Save();
-    }
-
-    public void Dispose()
-    {
-        Settings.SettingsChanged -= StateHasChanged;
-        AppState.OnChange -= StateHasChanged;
-
-        _debounceTimer.Elapsed -= OnDebounceElapsed;
-        _debounceTimer.Dispose();
-    }
+    public void Dispose() { }
 }

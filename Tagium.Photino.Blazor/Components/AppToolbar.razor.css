@@ -1,37 +1,28 @@
 .toolbar {
-    height: 38px;
+    height: var(--toolbar-height);
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
-    padding: 0 10px;
+    padding: 0 var(--space-sm);
     background: var(--panel-bg);
-    gap: 8px;
+    gap: var(--space-xs);
     user-select: none;
     flex-shrink: 0;
 }
 
-.app-title {
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--text-color);
-    margin-right: 4px;
-    letter-spacing: 0.5px;
-}
-
-.divider-v {
+.divider {
     width: 1px;
     height: 18px;
     background: var(--border-color);
-    margin: 0 4px;
+    margin: 0 var(--space-xs);
 }
 
-/* Flexible spacer that now contains the search bar */
 .search-container {
     flex: 1;
     display: flex;
     justify-content: center;
-    max-width: 400px; /* Prevent search bar from getting too wide on large screens */
-    margin: 0 auto; /* Center it */
+    max-width: 400px;
+    margin: 0 auto;
 }
 
 .search-input {
@@ -39,9 +30,9 @@
     background: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 4px 10px;
-    border-radius: 15px; /* Pill shape */
-    font-size: 12px;
+    padding: 4px var(--space-sm);
+    border-radius: 15px;
+    font-size: var(--font-size-xs);
     transition: border-color 0.2s, background-color 0.2s;
 }
 
@@ -58,11 +49,11 @@
 .control-group {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-xs);
 }
 
-.label {
-    font-size: 11px;
+.control-label {
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     color: var(--text-muted);
     font-weight: 600;
@@ -74,7 +65,7 @@ select {
     color: var(--text-color);
     padding: 2px 4px;
     border-radius: 3px;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     height: 24px;
     outline: none;
 }
@@ -83,7 +74,6 @@ select {
         border-color: #555;
     }
 
-/* Slicker Range Slider */
 input[type=range] {
     -webkit-appearance: none;
     width: 100px;
@@ -94,11 +84,6 @@ input[type=range] {
     vertical-align: middle;
 }
 
-    input[type=range]:focus {
-        outline: none;
-    }
-
-    /* Track */
     input[type=range]::-webkit-slider-runnable-track {
         width: 100%;
         height: 4px;
@@ -107,7 +92,6 @@ input[type=range] {
         border-radius: 2px;
     }
 
-    /* Thumb */
     input[type=range]::-webkit-slider-thumb {
         -webkit-appearance: none;
         height: 12px;
@@ -132,12 +116,12 @@ input[type=range] {
     padding: 3px 10px;
     border-radius: 3px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     transition: background 0.1s;
 }
 
     .btn:hover {
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--surface-hover);
         border-color: var(--border-color);
     }
 
@@ -163,22 +147,3 @@ input[type=range] {
     display: flex;
     gap: 2px;
 }
-
-.btn-icon {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-size: 14px;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    cursor: pointer;
-}
-
-    .btn-icon:hover {
-        color: var(--text-color);
-        background: rgba(255,255,255,0.05);
-    }

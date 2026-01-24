@@ -1,5 +1,6 @@
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
 @inject ToastService ToastService
 
 <div class="toast-container">
@@ -66,33 +67,3 @@
         }
     }
 </style>
-
-@code {
-    protected override void OnInitialized()
-    {
-        ToastService.OnChange += HandleToastChange;
-    }
-
-    private async void HandleToastChange()
-    {
-        // Marshals the update to the UI thread to prevent cross-thread exceptions/silence
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private string GetClass(Toast toast) => toast.Type switch
-    {
-        ToastType.Success => "success",
-        ToastType.Error => "error",
-        _ => "info"
-    };
-
-    private void Remove(Toast toast)
-    {
-        ToastService.Remove(toast);
-    }
-
-    public void Dispose()
-    {
-        ToastService.OnChange -= HandleToastChange;
-    }
-}

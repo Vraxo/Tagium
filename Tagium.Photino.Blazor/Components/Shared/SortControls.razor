@@ -1,0 +1,34 @@
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <span class="control-label">Sort</span>
+    <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy" aria-label="Sort by">
+        <option value="@SortBy.DateAdded">Date</option>
+        <option value="@SortBy.Name">Name</option>
+        <option value="@SortBy.Path">Path</option>
+    </select>
+    <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection" aria-label="Sort direction">
+        <option value="@SortDirection.Asc">Asc</option>
+        <option value="@SortDirection.Desc">Desc</option>
+    </select>
+</div>
+
+@code {
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortBy = result);
+        }
+    }
+
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.FileSortDirection = result);
+        }
+    }
+}

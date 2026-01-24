@@ -1,0 +1,24 @@
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <span class="control-label">Size</span>
+    <input type="range" min="64" max="256" step="16"
+           value="@Settings.Current.ThumbnailSize"
+           @oninput="OnInput"
+           @onchange="OnCommit"
+           aria-label="Thumbnail size" />
+</div>
+
+@code {
+    private void OnInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int val))
+        {
+            Settings.Update(s => s.ThumbnailSize = val, save: false);
+        }
+    }
+
+    private void OnCommit(ChangeEventArgs e) => Settings.Save();
+}

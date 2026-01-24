@@ -51,7 +51,7 @@ public static class SchemeHandlers
     {
         contentType = "application/octet-stream";
 
-        if (ServiceProvider == null)
+        if (ServiceProvider is null)
         {
             return Stream.Null;
         }
@@ -66,7 +66,7 @@ public static class SchemeHandlers
         var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
         FileEntry? entry = fileRepo.GetById(fileId);
 
-        if (entry == null || !File.Exists(entry.Path))
+        if (entry is null || !File.Exists(entry.Path))
         {
             return null!; // 404
         }

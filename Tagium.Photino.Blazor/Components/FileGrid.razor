@@ -84,7 +84,7 @@
     {
         if (!file.IsMissing)
         {
-            Launcher.OpenFile(file.Path);
+                SystemLauncherService.OpenFile(file.Path);
         }
     }
 
@@ -119,9 +119,9 @@
         {
             long id = AppState.SelectedFileIds.First();
             var file = Files.FirstOrDefault(f => f.Id == id);
-            if (file != null && !file.IsMissing)
+            if (file is not null && !file.IsMissing)
             {
-                Launcher.OpenFile(file.Path);
+                    SystemLauncherService.OpenFile(file.Path);
             }
         }
     }

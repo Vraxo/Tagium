@@ -145,7 +145,7 @@ public class ThumbnailService
 
             using SKBitmap? original = SKBitmap.Decode(tempFrame);
 
-            if (original != null)
+            if (original is not null)
             {
                 SaveResized(original, destPath, size);
             }

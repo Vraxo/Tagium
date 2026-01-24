@@ -58,7 +58,7 @@ public class FileRepository
     public AddFileResult Add(string path, string hash)
     {
         // Optimization: Checking hash first avoids expensive INSERT attempt if logic dictates hash uniqueness
-        if (GetByHash(hash) != null)
+        if (GetByHash(hash) is not null)
         {
             return AddFileResult.Duplicate;
         }
@@ -173,6 +173,7 @@ public class FileRepository
             SortBy.DateAdded => "DateAdded",
             _ => "Path"
         };
+
         string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
         return $"ORDER BY {col} {dir}";
     }

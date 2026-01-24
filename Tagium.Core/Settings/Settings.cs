@@ -1,6 +1,6 @@
 ﻿namespace Tagium.Core.Settings;
 
-public class TagiumSettings
+public class Settings
 {
     public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
     public EmojiSet EmojiPreference { get; set; } = EmojiSet.SystemDefault;

@@ -15,6 +15,7 @@ public class FileTagRepository
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
         _ = cmd.Parameters.AddWithValue("@FileId", fileId);
@@ -26,6 +27,7 @@ public class FileTagRepository
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
         _ = cmd.Parameters.AddWithValue("@FileId", fileId);
@@ -36,17 +38,21 @@ public class FileTagRepository
     public List<long> GetTagIdsForFile(long fileId)
     {
         List<long> ids = [];
+
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT TagId FROM FileTags WHERE FileId = @FileId";
         _ = cmd.Parameters.AddWithValue("@FileId", fileId);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
+
         while (reader.Read())
         {
             ids.Add(reader.GetInt64(0));
         }
+
         return ids;
     }
 }

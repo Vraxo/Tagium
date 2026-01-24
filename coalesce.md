@@ -164,7 +164,7 @@ public class FileRepository
     public AddFileResult Add(string path, string hash)
     {
         // Optimization: Checking hash first avoids expensive INSERT attempt if logic dictates hash uniqueness
-        if (GetByHash(hash) != null)
+        if (GetByHash(hash) is not null)
         {
             return AddFileResult.Duplicate;
         }
@@ -279,6 +279,7 @@ public class FileRepository
             SortBy.DateAdded => "DateAdded",
             _ => "Path"
         };
+
         string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
         return $"ORDER BY {col} {dir}";
     }
@@ -447,6 +448,7 @@ public class FileTagRepository
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
         _ = cmd.Parameters.AddWithValue("@FileId", fileId);
@@ -458,6 +460,7 @@ public class FileTagRepository
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
         _ = cmd.Parameters.AddWithValue("@FileId", fileId);
@@ -468,17 +471,21 @@ public class FileTagRepository
     public List<long> GetTagIdsForFile(long fileId)
     {
         List<long> ids = [];
+
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT TagId FROM FileTags WHERE FileId = @FileId";
         _ = cmd.Parameters.AddWithValue("@FileId", fileId);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
+
         while (reader.Read())
         {
             ids.Add(reader.GetInt64(0));
         }
+
         return ids;
     }
 }
@@ -701,288 +708,6 @@ public class Tag
 
 ---
 
-### `Tagium.Core\Services\DataMergeService.cs`
-
-```csharp
-using Microsoft.Data.Sqlite;
-using Tagium.Core.Data;
-using Tagium.Core.Models;
-using Tagium.Core.Settings;
-
-namespace Tagium.Core.Services;
-
-public class MergeResult
-{
-    public int NewFiles { get; set; }
-    public int NewTags { get; set; }
-    public int NewAssociations { get; set; }
-}
-
-public class DatabaseMergeService
-{
-    private readonly DatabaseManager _targetDb;
-    private readonly FileRepository _targetFileRepo;
-    private readonly TagRepository _targetTagRepo;
-    private readonly FileTagRepository _targetFileTagRepo;
-
-    public DatabaseMergeService(
-        DatabaseManager targetDb,
-        FileRepository targetFileRepo,
-        TagRepository targetTagRepo,
-        FileTagRepository targetFileTagRepo)
-    {
-        _targetDb = targetDb;
-        _targetFileRepo = targetFileRepo;
-        _targetTagRepo = targetTagRepo;
-        _targetFileTagRepo = targetFileTagRepo;
-    }
-
-    public MergeResult Merge(string sourceDbPath)
-    {
-        MergeResult result = new();
-
-        // Connect to source DB manually
-        string sourceConnString = $"Data Source={sourceDbPath}";
-        using SqliteConnection sourceConn = new(sourceConnString);
-        sourceConn.Open();
-
-        // 1. Load Source Data
-        List<Tag> sourceTags = LoadTags(sourceConn);
-        List<FileEntry> sourceFiles = LoadFiles(sourceConn);
-        Dictionary<long, List<long>> sourceFileTagMap = LoadFileTags(sourceConn);
-
-        // 2. Load Target Data
-        Dictionary<string, Tag> targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, FileEntry> targetFiles = _targetFileRepo.GetAll(SortBy.Path, SortDirection.Asc)
-            .Where(f => f.Hash != null)
-            .ToDictionary(f => f.Hash!);
-
-        // 3. Merge Tags
-        Dictionary<long, long> tagIdMap = []; // SourceId -> TargetId
-
-        foreach (Tag sTag in sourceTags)
-        {
-            if (targetTags.TryGetValue(sTag.Name, out Tag? existing))
-            {
-                tagIdMap[sTag.Id] = existing.Id;
-            }
-            else
-            {
-                _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
-                // Need to fetch the new ID. For simplicity, we reload tags or assume Add returns ID.
-                // Current repo doesn't return ID. Let's re-fetch.
-                Tag newTag = _targetTagRepo.GetAll().First(t => t.Name == sTag.Name);
-                targetTags[newTag.Name] = newTag;
-                tagIdMap[sTag.Id] = newTag.Id;
-                result.NewTags++;
-            }
-        }
-
-        // 4. Merge Files & Associations
-        foreach (FileEntry sFile in sourceFiles)
-        {
-            if (sFile.Hash == null)
-            {
-                continue;
-            }
-
-            long targetFileId;
-
-            if (targetFiles.TryGetValue(sFile.Hash, out FileEntry? existingFile))
-            {
-                targetFileId = existingFile.Id;
-            }
-            else
-            {
-                // Add File
-                _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
-                // Re-fetch to get ID. Optimization: Repo.Add should return ID/Entry.
-                // Fallback:
-                FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
-                if (added == null)
-                {
-                    continue; // Failed to add
-                }
-
-                targetFileId = added.Id;
-                result.NewFiles++;
-            }
-
-            // Merge Associations
-            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
-            {
-                continue;
-            }
-
-            foreach (long sTagId in sTagIds)
-            {
-                if (!tagIdMap.TryGetValue(sTagId, out long targetTagId))
-                {
-                    continue;
-                }
-                // Repository handles "INSERT OR IGNORE"
-                _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
-                // We assume success, hard to count actual "new" without checking first.
-                // We'll just increment. Real logic would check existence.
-                result.NewAssociations++;
-            }
-        }
-
-        return result;
-    }
-
-    // Mini-loaders for the external DB connection
-    private static List<Tag> LoadTags(SqliteConnection conn)
-    {
-        List<Tag> list = [];
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
-        {
-            list.Add(new Tag
-            {
-                Id = r.GetInt64(0),
-                Name = r.GetString(1),
-                ColorHex = r.GetString(2),
-
-                Emoji = r.IsDBNull(3)
-                    ? null
-                    : r.GetString(3)
-            });
-        }
-
-        return list;
-    }
-
-    private static List<FileEntry> LoadFiles(SqliteConnection conn)
-    {
-        List<FileEntry> list = [];
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
-        {
-            list.Add(new FileEntry
-            {
-                Id = r.GetInt64(0),
-                Path = r.GetString(1),
-                Name = r.GetString(2),
-                Hash = r.IsDBNull(3) ? null : r.GetString(3),
-                DateAdded = r.GetInt64(4),
-                IsMissing = r.GetBoolean(5)
-            });
-        }
-
-        return list;
-    }
-
-    private static Dictionary<long, List<long>> LoadFileTags(SqliteConnection conn)
-    {
-        Dictionary<long, List<long>> map = [];
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
-        using SqliteDataReader r = cmd.ExecuteReader();
-        while (r.Read())
-        {
-            long fid = r.GetInt64(0);
-            long tid = r.GetInt64(1);
-
-            if (!map.TryGetValue(fid, out List<long>? value))
-            {
-                value = [];
-                map[fid] = value;
-            }
-
-            value.Add(tid);
-        }
-        return map;
-    }
-}
-```
-
----
-
-### `Tagium.Core\Services\LibraryIntegrityService.cs`
-
-```csharp
-using Tagium.Core.Data;
-using Tagium.Core.Models;
-using Tagium.Core.Settings;
-
-namespace Tagium.Core.Services;
-
-public class IntegrityScanResult
-{
-    public int FilesScanned { get; set; }
-    public int NewlyMissing { get; set; }
-    public int NewlyFound { get; set; }
-}
-
-public class LibraryIntegrityService
-{
-    private readonly FileRepository _fileRepo;
-
-    public LibraryIntegrityService(FileRepository fileRepo)
-    {
-        _fileRepo = fileRepo;
-    }
-
-    public async Task<IntegrityScanResult> ScanAsync()
-    {
-        // Get all files sorted by path for potential optimization, though mostly IO bound
-        List<FileEntry> allFiles = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
-        IntegrityScanResult result = new() { FilesScanned = allFiles.Count };
-
-        List<long> toMarkMissing = [];
-        List<long> toMarkFound = [];
-
-        await Task.Run(() =>
-        {
-            foreach (FileEntry file in allFiles)
-            {
-                bool exists = File.Exists(file.Path);
-
-                if (!exists && !file.IsMissing)
-                {
-                    toMarkMissing.Add(file.Id);
-                }
-                else if (exists && file.IsMissing)
-                {
-                    toMarkFound.Add(file.Id);
-                }
-            }
-        });
-
-        if (toMarkMissing.Any())
-        {
-            _fileRepo.SetMissingStatus(toMarkMissing, true);
-            result.NewlyMissing = toMarkMissing.Count;
-        }
-
-        if (toMarkFound.Any())
-        {
-            _fileRepo.SetMissingStatus(toMarkFound, false);
-            result.NewlyFound = toMarkFound.Count;
-        }
-
-        return result;
-    }
-
-    public void PurgeMissing()
-    {
-        _fileRepo.RemoveMissingFiles();
-    }
-}
-```
-
----
-
 ### `Tagium.Core\Services\LibraryService.cs`
 
 ```csharp
@@ -1069,14 +794,14 @@ public class LibraryService
     public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
     {
         string? hash = FileHasher.ComputeSha256(path);
-        if (hash == null)
+        if (hash is null)
         {
             return new AddFileDetailedResult { Status = AddFileResult.Error };
         }
 
         // Check for existing by hash first to return the entry
         FileEntry? existing = _fileRepo.GetByHash(hash);
-        if (existing != null)
+        if (existing is not null)
         {
             return new AddFileDetailedResult { Status = AddFileResult.Duplicate, Entry = existing };
         }
@@ -1153,20 +878,20 @@ public class LibraryService
         }
 
         string? newHash = FileHasher.ComputeSha256(newPath);
-        if (newHash == null)
+        if (newHash is null)
         {
             return new RelocateResult { Status = RelocateResultStatus.Error };
         }
 
         // Check if the new file is already in the database
         FileEntry? existing = _fileRepo.GetByHash(newHash);
-        if (existing != null && existing.Id != fileId)
+        if (existing is not null && existing.Id != fileId)
         {
             return new RelocateResult { Status = RelocateResultStatus.Duplicate, ConflictingFile = existing };
         }
 
         FileEntry? file = _fileRepo.GetById(fileId);
-        if (file == null)
+        if (file is null)
         {
             return new RelocateResult { Status = RelocateResultStatus.Error };
         }
@@ -1475,7 +1200,7 @@ public class ThumbnailService
 
             using SKBitmap? original = SKBitmap.Decode(tempFrame);
 
-            if (original != null)
+            if (original is not null)
             {
                 SaveResized(original, destPath, size);
             }
@@ -1547,7 +1272,28 @@ public class ThumbnailService
 ```csharp
 namespace Tagium.Core.Settings;
 
-public enum EmojiSet { SystemDefault, Apple }
+public enum EmojiSet
+{
+    SystemDefault,
+    Apple
+}
+```
+
+---
+
+### `Tagium.Core\Settings\Settings.cs`
+
+```csharp
+namespace Tagium.Core.Settings;
+
+public class Settings
+{
+    public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
+    public EmojiSet EmojiPreference { get; set; } = EmojiSet.SystemDefault;
+    public int ThumbnailSize { get; set; } = 120;
+    public SortBy FileSortBy { get; set; } = SortBy.DateAdded;
+    public SortDirection FileSortDirection { get; set; } = SortDirection.Desc;
+}
 ```
 
 ---
@@ -1563,6 +1309,8 @@ namespace Tagium.Core.Settings;
 
 public class SettingsManager
 {
+    public Settings Current { get; }
+
     private readonly string _settingsPath;
 
     public event Action? SettingsChanged;
@@ -1571,7 +1319,10 @@ public class SettingsManager
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() }
+        Converters =
+        {
+            new JsonStringEnumConverter()
+        }
     };
 
     public SettingsManager()
@@ -1581,9 +1332,8 @@ public class SettingsManager
         Current = Load();
     }
 
-    public TagiumSettings Current { get; }
 
-    public void Update(Action<TagiumSettings> updateAction, bool save = true)
+    public void Update(Action<Settings> updateAction, bool save = true)
     {
         updateAction(Current);
 
@@ -1608,22 +1358,23 @@ public class SettingsManager
         }
     }
 
-    private TagiumSettings Load()
+    private Settings Load()
     {
         if (!File.Exists(_settingsPath))
         {
-            return new TagiumSettings();
+            return new Settings();
         }
 
         try
         {
             string json = File.ReadAllText(_settingsPath);
-            return JsonSerializer.Deserialize<TagiumSettings>(json, _serializerOptions) ?? new TagiumSettings();
+            return JsonSerializer.Deserialize<Settings>(json, _serializerOptions)
+                ?? new Settings();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Settings] Error loading: {ex.Message}. Using defaults.");
-            return new TagiumSettings();
+            return new Settings();
         }
     }
 }
@@ -1636,7 +1387,12 @@ public class SettingsManager
 ```csharp
 namespace Tagium.Core.Settings;
 
-public enum SortBy { Path, Name, DateAdded }
+public enum SortBy
+{
+    Path,
+    Name,
+    DateAdded
+}
 ```
 
 ---
@@ -1646,7 +1402,11 @@ public enum SortBy { Path, Name, DateAdded }
 ```csharp
 namespace Tagium.Core.Settings;
 
-public enum SortDirection { Asc, Desc }
+public enum SortDirection
+{
+    Asc,
+    Desc
+}
 ```
 
 ---
@@ -1656,23 +1416,10 @@ public enum SortDirection { Asc, Desc }
 ```csharp
 namespace Tagium.Core.Settings;
 
-public enum TagDisplayMode { ColorCircle, Emoji }
-```
-
----
-
-### `Tagium.Core\Settings\TagiumSettings.cs`
-
-```csharp
-namespace Tagium.Core.Settings;
-
-public class TagiumSettings
+public enum TagDisplayMode
 {
-    public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
-    public EmojiSet EmojiPreference { get; set; } = EmojiSet.SystemDefault;
-    public int ThumbnailSize { get; set; } = 120;
-    public SortBy FileSortBy { get; set; } = SortBy.DateAdded;
-    public SortDirection FileSortDirection { get; set; } = SortDirection.Desc;
+    ColorCircle,
+    Emoji
 }
 ```
 
@@ -1796,6 +1543,325 @@ public class FileExportData
 
 ---
 
+### `Tagium.Core\Services\DataMerge\DataMergeService.cs`
+
+```csharp
+using Microsoft.Data.Sqlite;
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Services.DataMerge;
+
+public class DatabaseMergeService
+{
+    private readonly DatabaseManager _targetDb;
+    private readonly FileRepository _targetFileRepo;
+    private readonly TagRepository _targetTagRepo;
+    private readonly FileTagRepository _targetFileTagRepo;
+
+    public DatabaseMergeService(
+        DatabaseManager targetDb,
+        FileRepository targetFileRepo,
+        TagRepository targetTagRepo,
+        FileTagRepository targetFileTagRepo)
+    {
+        _targetDb = targetDb;
+        _targetFileRepo = targetFileRepo;
+        _targetTagRepo = targetTagRepo;
+        _targetFileTagRepo = targetFileTagRepo;
+    }
+
+    public MergeResult Merge(string sourceDbPath)
+    {
+        MergeResult result = new();
+
+        // Connect to source DB manually
+        string sourceConnString = $"Data Source={sourceDbPath}";
+        using SqliteConnection sourceConn = new(sourceConnString);
+        sourceConn.Open();
+
+        // 1. Load Source Data
+        List<Tag> sourceTags = LoadTags(sourceConn);
+        List<FileEntry> sourceFiles = LoadFiles(sourceConn);
+        Dictionary<long, List<long>> sourceFileTagMap = LoadFileTags(sourceConn);
+
+        // 2. Load Target Data
+        Dictionary<string, Tag> targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, FileEntry> targetFiles = _targetFileRepo.GetAll(SortBy.Path, SortDirection.Asc)
+            .Where(f => f.Hash is not null)
+            .ToDictionary(f => f.Hash!);
+
+        // 3. Merge Tags
+        Dictionary<long, long> tagIdMap = MergeTags(result, sourceTags, targetTags);
+
+        // 4. Merge Files & Associations
+        MergeFilesAndAssociations(result, sourceFiles, sourceFileTagMap, targetFiles, tagIdMap);
+
+        return result;
+    }
+
+    private void MergeFilesAndAssociations(
+        MergeResult result,
+        List<FileEntry> sourceFiles,
+        Dictionary<long, List<long>> sourceFileTagMap,
+        Dictionary<string, FileEntry> targetFiles,
+        Dictionary<long, long> tagIdMap)
+    {
+        foreach (FileEntry sFile in sourceFiles)
+        {
+            if (sFile.Hash is null)
+            {
+                continue;
+            }
+
+            long targetFileId;
+
+            if (targetFiles.TryGetValue(sFile.Hash, out FileEntry? existingFile))
+            {
+                targetFileId = existingFile.Id;
+            }
+            else
+            {
+                // Add File
+                _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
+                // Re-fetch to get ID. Optimization: Repo.Add should return ID/Entry.
+                // Fallback:
+                FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
+                if (added is null)
+                {
+                    continue; // Failed to add
+                }
+
+                targetFileId = added.Id;
+                result.NewFiles++;
+            }
+
+            // Merge Associations
+            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
+            {
+                continue;
+            }
+
+            foreach (long sTagId in sTagIds)
+            {
+                if (!tagIdMap.TryGetValue(sTagId, out long targetTagId))
+                {
+                    continue;
+                }
+                // Repository handles "INSERT OR IGNORE"
+                _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
+                // We assume success, hard to count actual "new" without checking first.
+                // We'll just increment. Real logic would check existence.
+                result.NewAssociations++;
+            }
+        }
+    }
+
+    private Dictionary<long, long> MergeTags(MergeResult result, List<Tag> sourceTags, Dictionary<string, Tag> targetTags)
+    {
+        Dictionary<long, long> tagIdMap = []; // SourceId -> TargetId
+
+        foreach (Tag sTag in sourceTags)
+        {
+            if (targetTags.TryGetValue(sTag.Name, out Tag? existing))
+            {
+                tagIdMap[sTag.Id] = existing.Id;
+            }
+            else
+            {
+                _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
+                // Need to fetch the new ID. For simplicity, we reload tags or assume Add returns ID.
+                // Current repo doesn't return ID. Let's re-fetch.
+                Tag newTag = _targetTagRepo.GetAll().First(t => t.Name == sTag.Name);
+                targetTags[newTag.Name] = newTag;
+                tagIdMap[sTag.Id] = newTag.Id;
+                result.NewTags++;
+            }
+        }
+
+        return tagIdMap;
+    }
+
+    // Mini-loaders for the external DB connection
+    private static List<Tag> LoadTags(SqliteConnection conn)
+    {
+        List<Tag> list = [];
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags";
+
+        using SqliteDataReader r = cmd.ExecuteReader();
+
+        while (r.Read())
+        {
+            list.Add(new Tag
+            {
+                Id = r.GetInt64(0),
+                Name = r.GetString(1),
+                ColorHex = r.GetString(2),
+
+                Emoji = r.IsDBNull(3)
+                    ? null
+                    : r.GetString(3)
+            });
+        }
+
+        return list;
+    }
+
+    private static List<FileEntry> LoadFiles(SqliteConnection conn)
+    {
+        List<FileEntry> list = [];
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files";
+
+        using SqliteDataReader r = cmd.ExecuteReader();
+
+        while (r.Read())
+        {
+            list.Add(new()
+            {
+                Id = r.GetInt64(0),
+                Path = r.GetString(1),
+                Name = r.GetString(2),
+                Hash = r.IsDBNull(3) ? null : r.GetString(3),
+                DateAdded = r.GetInt64(4),
+                IsMissing = r.GetBoolean(5)
+            });
+        }
+
+        return list;
+    }
+
+    private static Dictionary<long, List<long>> LoadFileTags(SqliteConnection conn)
+    {
+        Dictionary<long, List<long>> map = [];
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
+
+        using SqliteDataReader r = cmd.ExecuteReader();
+
+        while (r.Read())
+        {
+            long fid = r.GetInt64(0);
+            long tid = r.GetInt64(1);
+
+            if (!map.TryGetValue(fid, out List<long>? value))
+            {
+                value = [];
+                map[fid] = value;
+            }
+
+            value.Add(tid);
+        }
+
+        return map;
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\DataMerge\MergeResult.cs`
+
+```csharp
+namespace Tagium.Core.Services.DataMerge;
+
+public class MergeResult()
+{
+    public int NewFiles { get; set; }
+    public int NewTags { get; set; }
+    public int NewAssociations { get; set; }
+}
+```
+
+---
+
+### `Tagium.Core\Services\LibraryItengrity\IntegrityScanResult.cs`
+
+```csharp
+namespace Tagium.Core.Services.LibraryItengrity;
+
+public class IntegrityScanResult
+{
+    public int FilesScanned { get; set; }
+    public int NewlyMissing { get; set; }
+    public int NewlyFound { get; set; }
+}
+```
+
+---
+
+### `Tagium.Core\Services\LibraryItengrity\LibraryIntegrityService.cs`
+
+```csharp
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Services.LibraryItengrity;
+
+public class LibraryIntegrityService
+{
+    private readonly FileRepository _fileRepo;
+
+    public LibraryIntegrityService(FileRepository fileRepo)
+    {
+        _fileRepo = fileRepo;
+    }
+
+    public async Task<IntegrityScanResult> ScanAsync()
+    {
+        // Get all files sorted by path for potential optimization, though mostly IO bound
+        List<FileEntry> allFiles = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
+        IntegrityScanResult result = new() { FilesScanned = allFiles.Count };
+
+        List<long> toMarkMissing = [];
+        List<long> toMarkFound = [];
+
+        await Task.Run(() =>
+        {
+            foreach (FileEntry file in allFiles)
+            {
+                bool exists = File.Exists(file.Path);
+
+                if (!exists && !file.IsMissing)
+                {
+                    toMarkMissing.Add(file.Id);
+                }
+                else if (exists && file.IsMissing)
+                {
+                    toMarkFound.Add(file.Id);
+                }
+            }
+        });
+
+        if (toMarkMissing.Count != 0)
+        {
+            _fileRepo.SetMissingStatus(toMarkMissing, true);
+            result.NewlyMissing = toMarkMissing.Count;
+        }
+
+        if (toMarkFound.Count != 0)
+        {
+            _fileRepo.SetMissingStatus(toMarkFound, false);
+            result.NewlyFound = toMarkFound.Count;
+        }
+
+        return result;
+    }
+
+    public void PurgeMissing()
+    {
+        _fileRepo.RemoveMissingFiles();
+    }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Program.cs`
 
 ```csharp
@@ -1870,7 +1936,6 @@ public class Program
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Components\Shared\" />
     <Folder Include="Components\Views\" />
   </ItemGroup>
 
@@ -1987,7 +2052,7 @@ public class Program
     private void ImportFiles()
     {
         var paths = FileDialog.OpenFiles();
-        if (paths != null && paths.Length > 0)
+        if (paths is not null && paths.Length > 0)
         {
             Library.ImportBatch(paths);
         }
@@ -2352,7 +2417,7 @@ input[type=range] {
     {
         if (!file.IsMissing)
         {
-            Launcher.OpenFile(file.Path);
+                SystemLauncherService.OpenFile(file.Path);
         }
     }
 
@@ -2387,9 +2452,9 @@ input[type=range] {
         {
             long id = AppState.SelectedFileIds.First();
             var file = Files.FirstOrDefault(f => f.Id == id);
-            if (file != null && !file.IsMissing)
+            if (file is not null && !file.IsMissing)
             {
-                Launcher.OpenFile(file.Path);
+                    SystemLauncherService.OpenFile(file.Path);
             }
         }
     }
@@ -2512,6 +2577,7 @@ input[type=range] {
 @using Tagium.Photino.Blazor.Components.Modals
 @using Tagium.Photino.Blazor.Components.Views
 @using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Components.Inspectors
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
@@ -2569,6 +2635,7 @@ input[type=range] {
     {
         if (firstRender)
         {
+            // Resizer script handles widths
             await JS.InvokeVoidAsync("layoutResizer.init", "sidebar-panel", "splitter-left", "inspector-panel", "splitter-right");
         }
     }
@@ -2624,6 +2691,7 @@ input[type=range] {
     flex-direction: row;
     overflow: hidden;
     position: relative;
+    background: var(--bg-color);
 }
 
 .left-panel {
@@ -2631,7 +2699,6 @@ input[type=range] {
     background: var(--panel-bg);
     display: flex;
     flex-direction: column;
-    padding: 10px;
     flex-shrink: 0;
     border-right: 1px solid var(--border-color);
 }
@@ -2641,13 +2708,14 @@ input[type=range] {
     display: flex;
     flex-direction: column;
     background: var(--bg-color);
-    min-width: 0;
+    min-width: 0; /* Prevents flex items from overflowing horizontally */
 }
 
 .right-panel {
     width: 300px;
     background: var(--panel-bg);
-    padding: 0;
+    display: flex; /* Ensure inner content can fill height */
+    flex-direction: column;
     flex-shrink: 0;
     border-left: 1px solid var(--border-color);
 }
@@ -2656,6 +2724,8 @@ input[type=range] {
     flex: 1;
     overflow: hidden;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Splitter Styles */
@@ -2700,8 +2770,36 @@ input[type=range] {
     </div>
 }
 
-<style>
-    .modal-backdrop {
+
+
+@code {
+    private bool IsVisible => ModalService.Content is not null;
+
+    protected override void OnInitialized()
+    {
+        ModalService.OnShow += StateHasChanged;
+        ModalService.OnClose += StateHasChanged;
+    }
+
+    private void Close()
+    {
+        ModalService.Close();
+    }
+
+    public void Dispose()
+    {
+        ModalService.OnShow -= StateHasChanged;
+        ModalService.OnClose -= StateHasChanged;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\ModalHost.razor.css`
+
+```css
+.modal-backdrop {
         position: fixed;
         top: 0;
         left: 0;
@@ -2755,28 +2853,6 @@ input[type=range] {
         padding: 15px;
         overflow-y: auto;
     }
-</style>
-
-@code {
-    private bool IsVisible => ModalService.Content != null;
-
-    protected override void OnInitialized()
-    {
-        ModalService.OnShow += StateHasChanged;
-        ModalService.OnClose += StateHasChanged;
-    }
-
-    private void Close()
-    {
-        ModalService.Close();
-    }
-
-    public void Dispose()
-    {
-        ModalService.OnShow -= StateHasChanged;
-        ModalService.OnClose -= StateHasChanged;
-    }
-}
 ```
 
 ---
@@ -2997,8 +3073,19 @@ hr {
         }
     }
 </style>
+```
 
-@code {
+---
+
+### `Tagium.Photino.Blazor\Components\ToastContainer.razor.cs`
+
+```csharp
+using Tagium.Photino.Blazor.Services.Toasting;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class ToastContainer
+{
     protected override void OnInitialized()
     {
         ToastService.OnChange += HandleToastChange;
@@ -3010,12 +3097,15 @@ hr {
         await InvokeAsync(StateHasChanged);
     }
 
-    private string GetClass(Toast toast) => toast.Type switch
+    private static string GetClass(Toast toast)
     {
-        ToastType.Success => "success",
-        ToastType.Error => "error",
-        _ => "info"
-    };
+        return toast.Type switch
+        {
+            ToastType.Success => "success",
+            ToastType.Error => "error",
+            _ => "info"
+        };
+    }
 
     private void Remove(Toast toast)
     {
@@ -3064,63 +3154,75 @@ public class AppState
     public HashSet<long> SelectedFileIds { get; private set; } = [];
 
     // Events
-    // Fired when data-impacting state changes (Search, View, Filter) -> Requires DB Reload
     public event Action? OnChange;
-
-    // Fired when selection changes -> Requires UI Update only (No DB Reload)
     public event Action? OnSelectionChange;
 
     public void SwitchView(AppView view)
     {
-        if (CurrentView != view)
+        if (CurrentView == view)
         {
-            CurrentView = view;
-            NotifyStateChanged();
+            return;
         }
+
+        CurrentView = view;
+        NotifyStateChanged();
     }
 
     public void SetSearch(string text)
     {
-        if (SearchText != text)
+        if (SearchText == text)
         {
-            SearchText = text;
-            IsMissingOnly = false;
-            SelectedFileIds.Clear();
-
-            if (CurrentView != AppView.Files)
-            {
-                CurrentView = AppView.Files;
-            }
-
-            NotifyStateChanged();
+            return;
         }
+
+        SearchText = text;
+        IsMissingOnly = false;
+        SelectedFileIds.Clear();
+
+        if (CurrentView != AppView.Files)
+        {
+            CurrentView = AppView.Files;
+        }
+
+        NotifyStateChanged();
     }
 
     public void SetMissingOnly(bool isMissing)
     {
-        if (IsMissingOnly != isMissing)
+        if (IsMissingOnly == isMissing)
         {
-            IsMissingOnly = isMissing;
-            SearchText = "";
-            SelectedFileIds.Clear();
-
-            if (CurrentView != AppView.Files)
-            {
-                CurrentView = AppView.Files;
-            }
-
-            NotifyStateChanged();
+            return;
         }
+
+        IsMissingOnly = isMissing;
+        SearchText = "";
+        SelectedFileIds.Clear();
+
+        if (CurrentView != AppView.Files)
+        {
+            CurrentView = AppView.Files;
+        }
+
+        NotifyStateChanged();
     }
 
     public void SelectFile(long id, bool multiSelect, bool rangeSelect)
     {
+        // Future: Handle rangeSelect (Shift) logic here if needed.
+
         if (!multiSelect)
         {
+            // Standard single selection
             SelectedFileIds.Clear();
+            _ = SelectedFileIds.Add(id);
         }
-
-        _ = SelectedFileIds.Contains(id) && multiSelect ? SelectedFileIds.Remove(id) : SelectedFileIds.Add(id);
+        else
+        {
+            // Toggle selection
+            _ = SelectedFileIds.Contains(id)
+                ? SelectedFileIds.Remove(id)
+                : SelectedFileIds.Add(id);
+        }
 
         NotifySelectionChanged();
     }
@@ -3128,20 +3230,24 @@ public class AppState
     public void SetSelection(IEnumerable<long> ids)
     {
         SelectedFileIds.Clear();
+
         foreach (long id in ids)
         {
             _ = SelectedFileIds.Add(id);
         }
+
         NotifySelectionChanged();
     }
 
     public void ClearSelection()
     {
-        if (SelectedFileIds.Count > 0)
+        if (SelectedFileIds.Count <= 0)
         {
-            SelectedFileIds.Clear();
-            NotifySelectionChanged();
+            return;
         }
+
+        SelectedFileIds.Clear();
+        NotifySelectionChanged();
     }
 
     private void NotifyStateChanged()
@@ -3274,7 +3380,7 @@ namespace Tagium.Photino.Blazor.Services;
 
 public class SystemLauncherService
 {
-    public void OpenFile(string path)
+    public static void OpenFile(string path)
     {
         if (!File.Exists(path))
         {
@@ -3291,7 +3397,7 @@ public class SystemLauncherService
         }
     }
 
-    public void ShowInExplorer(string path)
+    public static void ShowInExplorer(string path)
     {
         if (!File.Exists(path))
         {
@@ -3308,60 +3414,6 @@ public class SystemLauncherService
         {
             Console.WriteLine($"[Launcher] Failed to show in explorer: {ex.Message}");
         }
-    }
-}
-```
-
----
-
-### `Tagium.Photino.Blazor\Services\ToastService.cs`
-
-```csharp
-namespace Tagium.Photino.Blazor.Services;
-
-public enum ToastType { Info, Success, Error }
-
-public class Toast
-{
-    public Guid Id { get; } = Guid.NewGuid();
-    public required string Message { get; init; }
-    public ToastType Type { get; init; }
-}
-
-public class ToastService
-{
-    public event Action? OnChange;
-    public List<Toast> Toasts { get; } = [];
-
-    public void Show(string message, ToastType type = ToastType.Info, int durationMs = 3000)
-    {
-        var toast = new Toast { Message = message, Type = type };
-        Toasts.Add(toast);
-        NotifyStateChanged();
-
-        if (durationMs > 0)
-        {
-            _ = RemoveAfterDelay(toast, durationMs);
-        }
-    }
-
-    public void Remove(Toast toast)
-    {
-        if (Toasts.Remove(toast))
-        {
-            NotifyStateChanged();
-        }
-    }
-
-    private async Task RemoveAfterDelay(Toast toast, int delay)
-    {
-        await Task.Delay(delay);
-        Remove(toast);
-    }
-
-    private void NotifyStateChanged()
-    {
-        OnChange?.Invoke();
     }
 }
 ```
@@ -3424,7 +3476,7 @@ public static class SchemeHandlers
     {
         contentType = "application/octet-stream";
 
-        if (ServiceProvider == null)
+        if (ServiceProvider is null)
         {
             return Stream.Null;
         }
@@ -3439,7 +3491,7 @@ public static class SchemeHandlers
         var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
         FileEntry? entry = fileRepo.GetById(fileId);
 
-        if (entry == null || !File.Exists(entry.Path))
+        if (entry is null || !File.Exists(entry.Path))
         {
             return null!; // 404
         }
@@ -3476,8 +3528,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
+using Tagium.Core.Services.DataMerge;
+using Tagium.Core.Services.LibraryItengrity;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Services;
+using Tagium.Photino.Blazor.Services.Toasting;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -3589,65 +3644,53 @@ public static class ServiceRegistrar
 @inject LibraryService Library
 @inject AppState AppState
 
-<div class="inspector">
-    @if (SelectionMode == InspectorMode.None)
-    {
-        <div class="empty-state">Select a file to view details.</div>
-    }
-    else if (SelectionMode == InspectorMode.Error)
-    {
-        <div class="empty-state error">
-            <p>Error loading details.</p>
-            <button class="btn" @onclick="UpdateView">Retry</button>
-        </div>
-    }
-    else if (SelectionMode == InspectorMode.Single && SelectedFile != null)
-    {
-        <SingleFileInspector File="SelectedFile"
-                             AssignedTags="AssignedTags"
-                             AvailableTags="AvailableTags" />
-    }
-    else if (SelectionMode == InspectorMode.Multi)
-    {
-        <MultiFileInspector CommonTags="CommonTags"
-                            AvailableTags="AvailableTags" />
-    }
+<div class="inspector-container">
+    <div class="inspector-header">
+        <span class="title">Inspector</span>
+        <span class="badge">@AppState.SelectedFileIds.Count selected</span>
+    </div>
+
+    <div class="inspector-content">
+        @if (HasRenderError)
+        {
+            <div class="state-message error">
+                <p>⚠️ Display Error</p>
+                <button class="btn" @onclick="UpdateView">Retry</button>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.None)
+        {
+            <div class="state-message">
+                <span class="icon">👆</span>
+                <p>Select a file to view details</p>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.Single && SelectedFile is not null)
+        {
+            <SingleFileInspector File="SelectedFile"
+                                 AssignedTags="AssignedTags"
+                                 AvailableTags="AvailableTags" />
+        }
+        else if (SelectionMode == InspectorMode.Multi)
+        {
+            <MultiFileInspector CommonTags="CommonTags"
+                                AvailableTags="AvailableTags" />
+        }
+        else
+        {
+            <div class="state-message">
+                <p>Loading...</p>
+            </div>
+        }
+    </div>
 </div>
 
-<style>
-    .inspector {
-        padding: 10px;
-        height: 100%;
-        overflow-y: auto;
-        color: var(--text-color);
-    }
-
-    .empty-state {
-        color: var(--text-muted);
-        text-align: center;
-        margin-top: 50px;
-    }
-
-        .empty-state.error {
-            color: var(--danger-color);
-        }
-
-    .btn {
-        background: var(--surface-bg);
-        border: 1px solid var(--border-color);
-        color: var(--text-color);
-        padding: 4px 8px;
-        border-radius: 4px;
-        cursor: pointer;
-        margin-top: 10px;
-    }
-</style>
-
 @code {
-    private enum InspectorMode { None, Single, Multi, Error }
+    private enum InspectorMode { None, Single, Multi }
 
     private InspectorMode SelectionMode = InspectorMode.None;
     private FileEntry? SelectedFile;
+    private bool HasRenderError = false;
 
     // Single Mode Data
     private List<Tag> AssignedTags = [];
@@ -3660,6 +3703,7 @@ public static class ServiceRegistrar
     {
         AppState.OnSelectionChange += OnSelectionChanged;
         Library.LibraryChanged += OnLibraryChanged;
+        UpdateView();
     }
 
     private void OnSelectionChanged() => InvokeAsync(UpdateView);
@@ -3667,6 +3711,7 @@ public static class ServiceRegistrar
 
     private void UpdateView()
     {
+        HasRenderError = false;
         try
         {
             int count = AppState.SelectedFileIds.Count;
@@ -3679,22 +3724,17 @@ public static class ServiceRegistrar
             else if (count == 1)
             {
                 long id = AppState.SelectedFileIds.First();
-
-                // Robust fetch
                 SelectedFile = Library.GetFileById(id);
 
-                if (SelectedFile != null)
+                if (SelectedFile is not null)
                 {
                     SelectionMode = InspectorMode.Single;
                     AssignedTags = Library.GetTagsForFile(id);
-
-                    var allTags = Library.GetTags();
-                    // Exclude assigned tags from available list
-                    AvailableTags = allTags.Where(t => !AssignedTags.Any(at => at.Id == t.Id)).ToList();
+                    AvailableTags = GetAvailableTags(AssignedTags);
                 }
                 else
                 {
-                    // ID exists in selection but not DB? Clear selection to be safe or show None
+                    // Stale ID, treat as none
                     SelectionMode = InspectorMode.None;
                 }
             }
@@ -3702,24 +3742,25 @@ public static class ServiceRegistrar
             {
                 SelectionMode = InspectorMode.Multi;
                 SelectedFile = null;
-
                 CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
-                var allTags = Library.GetTags();
-                // Available tags are those NOT in common tags?
-                // Or those that can be added? Logic: Tag is available if it's not common?
-                // Actually, for multi-edit, we usually show tags that can be added (not already present in ALL).
-                // Existing logic: tags not in CommonTags.
-                AvailableTags = allTags.Where(t => !CommonTags.Any(ct => ct.Id == t.Id)).ToList();
+                AvailableTags = GetAvailableTags(CommonTags);
             }
 
             StateHasChanged();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Inspector] Error updating view: {ex.Message}");
-            SelectionMode = InspectorMode.Error;
+            Console.WriteLine($"[Inspector] Critical Error: {ex}");
+            HasRenderError = true;
             StateHasChanged();
         }
+    }
+
+    private List<Tag> GetAvailableTags(List<Tag> existingTags)
+    {
+        var allTags = Library.GetTags();
+        var existingIds = existingTags.Select(t => t.Id).ToHashSet();
+        return allTags.Where(t => !existingIds.Contains(t.Id)).ToList();
     }
 
     public void Dispose()
@@ -3728,6 +3769,84 @@ public static class ServiceRegistrar
         Library.LibraryChanged -= OnLibraryChanged;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor.css`
+
+```css
+.inspector-container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        background-color: var(--panel-bg);
+        color: var(--text-color);
+        border-left: 1px solid var(--border-color);
+    }
+
+    .inspector-header {
+        padding: 10px;
+        background: var(--surface-bg);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .badge {
+        font-size: 0.8rem;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: var(--text-muted);
+    }
+
+    .inspector-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+        position: relative;
+    }
+
+    .state-message {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--text-muted);
+        text-align: center;
+        opacity: 0.7;
+    }
+
+        .state-message .icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .state-message.error {
+            color: var(--danger-color);
+            opacity: 1;
+        }
+
+    .btn {
+        background: var(--surface-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
 ```
 
 ---
@@ -3789,8 +3908,34 @@ public static class ServiceRegistrar
     }
 </div>
 
-<style>
-    .summary-text {
+@code {
+    [Parameter] public List<Tag> CommonTags { get; set; } = [];
+    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
+
+    private void BulkAddTag(long tagId)
+    {
+        Library.AddTagToFiles(AppState.SelectedFileIds, tagId);
+    }
+
+    private void BulkRemoveTag(long tagId)
+    {
+        Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
+    }
+
+    private void RemoveMultipleFiles()
+    {
+        Library.RemoveFiles(AppState.SelectedFileIds);
+        AppState.ClearSelection();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor.css`
+
+```css
+.summary-text {
         color: var(--text-muted);
         margin-bottom: 10px;
     }
@@ -3878,28 +4023,6 @@ public static class ServiceRegistrar
                 border-style: solid;
                 opacity: 1;
             }
-</style>
-
-@code {
-    [Parameter] public List<Tag> CommonTags { get; set; } = [];
-    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
-
-    private void BulkAddTag(long tagId)
-    {
-        Library.AddTagToFiles(AppState.SelectedFileIds, tagId);
-    }
-
-    private void BulkRemoveTag(long tagId)
-    {
-        Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
-    }
-
-    private void RemoveMultipleFiles()
-    {
-        Library.RemoveFiles(AppState.SelectedFileIds);
-        AppState.ClearSelection();
-    }
-}
 ```
 
 ---
@@ -3997,8 +4120,68 @@ public static class ServiceRegistrar
     }
 </div>
 
-<style>
-    .preview-container {
+@code {
+    [Parameter, EditorRequired] public required FileEntry File { get; set; }
+    [Parameter] public List<Tag> AssignedTags { get; set; } = [];
+    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
+
+    private bool IsImage => CheckExtension([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
+    private bool IsVideo => CheckExtension([".mp4", ".webm", ".mov", ".mkv"]);
+
+    private bool CheckExtension(string[] exts)
+    {
+        string ext = Path.GetExtension(File.Path);
+        return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void AddTag(long tagId)
+    {
+        Library.AddTagToFile(File.Id, tagId);
+    }
+
+    private void RemoveTag(long tagId)
+    {
+        Library.RemoveTagFromFile(File.Id, tagId);
+    }
+
+    private void OpenFile()
+    {
+            SystemLauncherService.OpenFile(File.Path);
+    }
+
+    private void ShowInExplorer()
+    {
+            SystemLauncherService.ShowInExplorer(File.Path);
+    }
+
+    private void RemoveFile()
+    {
+        Library.RemoveFile(File.Id);
+        AppState.ClearSelection();
+    }
+
+    private void RelocateFile()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files is not null && files.Length > 0)
+        {
+            var result = Library.RelocateFile(File.Id, files[0]);
+
+            if (result.Status == RelocateResultStatus.Duplicate && result.ConflictingFile is not null)
+            {
+                ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
+            }
+        }
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor.css`
+
+```css
+.preview-container {
         width: 100%;
         aspect-ratio: 16 / 9;
         background: #000;
@@ -4154,62 +4337,6 @@ public static class ServiceRegistrar
                 border-style: solid;
                 opacity: 1;
             }
-</style>
-
-@code {
-    [Parameter, EditorRequired] public required FileEntry File { get; set; }
-    [Parameter] public List<Tag> AssignedTags { get; set; } = [];
-    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
-
-    private bool IsImage => CheckExtension([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
-    private bool IsVideo => CheckExtension([".mp4", ".webm", ".mov", ".mkv"]);
-
-    private bool CheckExtension(string[] exts)
-    {
-        string ext = Path.GetExtension(File.Path);
-        return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private void AddTag(long tagId)
-    {
-        Library.AddTagToFile(File.Id, tagId);
-    }
-
-    private void RemoveTag(long tagId)
-    {
-        Library.RemoveTagFromFile(File.Id, tagId);
-    }
-
-    private void OpenFile()
-    {
-        Launcher.OpenFile(File.Path);
-    }
-
-    private void ShowInExplorer()
-    {
-        Launcher.ShowInExplorer(File.Path);
-    }
-
-    private void RemoveFile()
-    {
-        Library.RemoveFile(File.Id);
-        AppState.ClearSelection();
-    }
-
-    private void RelocateFile()
-    {
-        var files = FileDialog.OpenFiles();
-        if (files != null && files.Length > 0)
-        {
-            var result = Library.RelocateFile(File.Id, files[0]);
-
-            if (result.Status == RelocateResultStatus.Duplicate && result.ConflictingFile != null)
-            {
-                ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
-            }
-        }
-    }
-}
 ```
 
 ---
@@ -4221,6 +4348,9 @@ public static class ServiceRegistrar
 @using Tagium.Core.Data
 @using Tagium.Core.Services
 @using Tagium.Core.Services.DataExport
+@using Tagium.Core.Services.DataMerge
+@using Tagium.Core.Services.LibraryItengrity
+@using Tagium.Core.Services.Merge
 @using Tagium.Photino.Blazor.Services
 @inject LibraryService Library
 @inject LibraryIntegrityService IntegrityService
@@ -4236,7 +4366,7 @@ public static class ServiceRegistrar
         <h4>Integrity</h4>
         <p class="desc">Scan for files missing from disk.</p>
         <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
-        @if (ScanResult != null)
+        @if (ScanResult is not null)
         {
             <div class="result-box">
                 Scanned: @ScanResult.FilesScanned <br />
@@ -4267,7 +4397,7 @@ public static class ServiceRegistrar
             <button class="btn" @onclick="MergeDb">Merge...</button>
             <button class="btn btn-danger" @onclick="RestoreDb">Restore...</button>
         </div>
-        @if (MergeResult != null)
+        @if (MergeResult is not null)
         {
             <div class="result-box">
                 New Files: @MergeResult.NewFiles <br />
@@ -4278,8 +4408,88 @@ public static class ServiceRegistrar
     </div>
 </div>
 
-<style>
-    .data-tools {
+@code {
+    private IntegrityScanResult? ScanResult;
+    private MergeResult? MergeResult;
+
+    private async Task ScanIntegrity()
+    {
+        ScanResult = null;
+        ScanResult = await IntegrityService.ScanAsync();
+        Library.Refresh();
+    }
+
+    private void PurgeMissing()
+    {
+        IntegrityService.PurgeMissing();
+        Library.Refresh();
+        ScanResult = null;
+        Toast.Show("Missing files purged.", ToastType.Success);
+    }
+
+    private async Task ExportJson()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
+        await ExportService.ExportJsonAsync(path);
+        Toast.Show($"Exported to {path}", ToastType.Success);
+    }
+
+    private async Task ExportCsv()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
+        await ExportService.ExportCsvAsync(path);
+        Toast.Show($"Exported to {path}", ToastType.Success);
+    }
+
+    private void BackupDb()
+    {
+        string source = DbManager.ConnectionString.Replace("Data Source=", "");
+        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
+        File.Copy(source, dest, true);
+        Toast.Show($"Backup saved to {dest}", ToastType.Success);
+    }
+
+    private void MergeDb()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files is not null && files.Length > 0)
+        {
+            MergeResult = MergeService.Merge(files[0]);
+            Library.Refresh();
+            Toast.Show("Merge complete.", ToastType.Success);
+        }
+    }
+
+    private void RestoreDb()
+    {
+        var files = FileDialog.OpenFiles();
+        if (files is not null && files.Length > 0)
+        {
+            string source = files[0];
+            string dest = DbManager.ConnectionString.Replace("Data Source=", "");
+
+            try
+            {
+                // This is a risky operation while the app is running, but standard for this simple app type.
+                // SQLite usually allows it if no write transaction is active.
+                File.Copy(source, dest, true);
+                Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
+            }
+            catch (Exception ex)
+            {
+                Toast.Show($"Restore failed: {ex.Message}", ToastType.Error);
+            }
+        }
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor.css`
+
+```css
+.data-tools {
         padding: 5px;
     }
 
@@ -4345,82 +4555,6 @@ public static class ServiceRegistrar
         border-top: 1px solid #444;
         margin: 15px 0;
     }
-</style>
-
-@code {
-    private IntegrityScanResult? ScanResult;
-    private MergeResult? MergeResult;
-
-    private async Task ScanIntegrity()
-    {
-        ScanResult = null;
-        ScanResult = await IntegrityService.ScanAsync();
-        Library.Refresh();
-    }
-
-    private void PurgeMissing()
-    {
-        IntegrityService.PurgeMissing();
-        Library.Refresh();
-        ScanResult = null;
-        Toast.Show("Missing files purged.", ToastType.Success);
-    }
-
-    private async Task ExportJson()
-    {
-        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
-        await ExportService.ExportJsonAsync(path);
-        Toast.Show($"Exported to {path}", ToastType.Success);
-    }
-
-    private async Task ExportCsv()
-    {
-        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
-        await ExportService.ExportCsvAsync(path);
-        Toast.Show($"Exported to {path}", ToastType.Success);
-    }
-
-    private void BackupDb()
-    {
-        string source = DbManager.ConnectionString.Replace("Data Source=", "");
-        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
-        File.Copy(source, dest, true);
-        Toast.Show($"Backup saved to {dest}", ToastType.Success);
-    }
-
-    private void MergeDb()
-    {
-        var files = FileDialog.OpenFiles();
-        if (files != null && files.Length > 0)
-        {
-            MergeResult = MergeService.Merge(files[0]);
-            Library.Refresh();
-            Toast.Show("Merge complete.", ToastType.Success);
-        }
-    }
-
-    private void RestoreDb()
-    {
-        var files = FileDialog.OpenFiles();
-        if (files != null && files.Length > 0)
-        {
-            string source = files[0];
-            string dest = DbManager.ConnectionString.Replace("Data Source=", "");
-
-            try
-            {
-                // This is a risky operation while the app is running, but standard for this simple app type.
-                // SQLite usually allows it if no write transaction is active.
-                File.Copy(source, dest, true);
-                Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
-            }
-            catch (Exception ex)
-            {
-                Toast.Show($"Restore failed: {ex.Message}", ToastType.Error);
-            }
-        }
-    }
-}
 ```
 
 ---
@@ -4445,8 +4579,34 @@ public static class ServiceRegistrar
     </div>
 </div>
 
-<style>
-    .duplicate-modal p {
+@code {
+    [Parameter, EditorRequired] public required FileEntry ExistingFile { get; set; }
+
+    private void ShowExisting()
+    {
+        // Clear filters to ensure the file is visible
+        AppState.SetSearch("");
+        AppState.SetMissingOnly(false);
+
+        // Select the file
+        AppState.SelectFile(ExistingFile.Id, false, false);
+
+        ModalService.Close();
+    }
+
+    private void Close()
+    {
+        ModalService.Close();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor.css`
+
+```css
+.duplicate-modal p {
         color: #eee;
         margin-top: 0;
     }
@@ -4489,28 +4649,6 @@ public static class ServiceRegistrar
         .btn-primary:hover {
             background: #1e88e5;
         }
-</style>
-
-@code {
-    [Parameter, EditorRequired] public required FileEntry ExistingFile { get; set; }
-
-    private void ShowExisting()
-    {
-        // Clear filters to ensure the file is visible
-        AppState.SetSearch("");
-        AppState.SetMissingOnly(false);
-
-        // Select the file
-        AppState.SelectFile(ExistingFile.Id, false, false);
-
-        ModalService.Close();
-    }
-
-    private void Close()
-    {
-        ModalService.Close();
-    }
-}
 ```
 
 ---
@@ -4551,8 +4689,25 @@ public static class ServiceRegistrar
     <button class="btn" @onclick="Close">Close</button>
 </div>
 
-<style>
-    .radio-group {
+@code {
+    private void UpdateEmojiSet(EmojiSet set)
+    {
+        Settings.Update(s => s.EmojiPreference = set);
+    }
+
+    private void Close()
+    {
+        ModalService.Close();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor.css`
+
+```css
+.radio-group {
         display: flex;
         flex-direction: column;
         gap: 8px;
@@ -4585,19 +4740,6 @@ public static class ServiceRegistrar
         .btn:hover {
             background: #555;
         }
-</style>
-
-@code {
-    private void UpdateEmojiSet(EmojiSet set)
-    {
-        Settings.Update(s => s.EmojiPreference = set);
-    }
-
-    private void Close()
-    {
-        ModalService.Close();
-    }
-}
 ```
 
 ---
@@ -4631,56 +4773,7 @@ public static class ServiceRegistrar
     </div>
 </div>
 
-<style>
-    .drop-zone-wrapper {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-    }
 
-    .drag-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.85);
-        z-index: 9999;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s;
-    }
-
-        .drag-overlay.active {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-    .drag-input {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        opacity: 0;
-        cursor: copy;
-    }
-
-    .drag-message {
-        text-align: center;
-        color: white;
-    }
-
-    .drag-icon {
-        font-size: 3em;
-        color: var(--primary-color);
-        margin-bottom: 20px;
-    }
-</style>
 
 @code {
     [Parameter] public RenderFragment? ChildContent { get; set; }
@@ -4738,6 +4831,61 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\FileDropZone.razor.css`
+
+```css
+.drop-zone-wrapper {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .drag-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+    }
+
+        .drag-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+    .drag-input {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: copy;
+    }
+
+    .drag-message {
+        text-align: center;
+        color: white;
+    }
+
+    .drag-icon {
+        font-size: 3em;
+        color: var(--primary-color);
+        margin-bottom: 20px;
+    }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
 
 ```
@@ -4753,8 +4901,19 @@ else
     <span class="tag-color" style="background-color: @Tag.ColorHex"></span>
 }
 
-<style>
-    .tag-emoji {
+
+
+@code {
+    [Parameter, EditorRequired] public required Tag Tag { get; set; }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor.css`
+
+```css
+.tag-emoji {
         display: inline-block;
         width: 1.2em;
         text-align: center;
@@ -4772,11 +4931,6 @@ else
         flex-shrink: 0;
         border: 1px solid rgba(255,255,255,0.1);
     }
-</style>
-
-@code {
-    [Parameter, EditorRequired] public required Tag Tag { get; set; }
-}
 ```
 
 ---
@@ -5112,6 +5266,90 @@ else
     .btn-icon.delete:hover {
         color: #d32f2f;
     }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\Toasting\Toast.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Services.Toasting;
+
+public class Toast
+{
+    public Guid Id { get; } = Guid.NewGuid();
+    public required string Message { get; init; }
+    public ToastType Type { get; init; }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\Toasting\ToastService.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Services.Toasting;
+
+public class ToastService
+{
+    public event Action? OnChange;
+    public List<Toast> Toasts { get; } = [];
+
+    public void Show(string message, ToastType type = ToastType.Info, int durationMs = 3000)
+    {
+        Toast toast = new()
+        {
+            Message = message,
+            Type = type
+        };
+
+        Toasts.Add(toast);
+        NotifyStateChanged();
+
+        if (durationMs <= 0)
+        {
+            return;
+        }
+
+        _ = RemoveAfterDelay(toast, durationMs);
+    }
+
+    public void Remove(Toast toast)
+    {
+        if (!Toasts.Remove(toast))
+        {
+            return;
+        }
+
+        NotifyStateChanged();
+    }
+
+    private async Task RemoveAfterDelay(Toast toast, int delay)
+    {
+        await Task.Delay(delay);
+        Remove(toast);
+    }
+
+    private void NotifyStateChanged()
+    {
+        OnChange?.Invoke();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Services\Toasting\ToastType.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Services.Toasting;
+
+public enum ToastType
+{
+    Info,
+    Success,
+    Error
+}
 ```
 
 ---

@@ -2,14 +2,7 @@
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
-namespace Tagium.Core.Services;
-
-public class IntegrityScanResult
-{
-    public int FilesScanned { get; set; }
-    public int NewlyMissing { get; set; }
-    public int NewlyFound { get; set; }
-}
+namespace Tagium.Core.Services.LibraryItengrity;
 
 public class LibraryIntegrityService
 {
@@ -46,13 +39,13 @@ public class LibraryIntegrityService
             }
         });
 
-        if (toMarkMissing.Any())
+        if (toMarkMissing.Count != 0)
         {
             _fileRepo.SetMissingStatus(toMarkMissing, true);
             result.NewlyMissing = toMarkMissing.Count;
         }
 
-        if (toMarkFound.Any())
+        if (toMarkFound.Count != 0)
         {
             _fileRepo.SetMissingStatus(toMarkFound, false);
             result.NewlyFound = toMarkFound.Count;

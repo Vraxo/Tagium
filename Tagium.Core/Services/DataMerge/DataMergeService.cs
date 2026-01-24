@@ -3,14 +3,7 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
-namespace Tagium.Core.Services;
-
-public class MergeResult
-{
-    public int NewFiles { get; set; }
-    public int NewTags { get; set; }
-    public int NewAssociations { get; set; }
-}
+namespace Tagium.Core.Services.DataMerge;
 
 public class DatabaseMergeService
 {
@@ -48,34 +41,28 @@ public class DatabaseMergeService
         // 2. Load Target Data
         Dictionary<string, Tag> targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, FileEntry> targetFiles = _targetFileRepo.GetAll(SortBy.Path, SortDirection.Asc)
-            .Where(f => f.Hash != null)
+            .Where(f => f.Hash is not null)
             .ToDictionary(f => f.Hash!);
 
         // 3. Merge Tags
-        Dictionary<long, long> tagIdMap = []; // SourceId -> TargetId
-
-        foreach (Tag sTag in sourceTags)
-        {
-            if (targetTags.TryGetValue(sTag.Name, out Tag? existing))
-            {
-                tagIdMap[sTag.Id] = existing.Id;
-            }
-            else
-            {
-                _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
-                // Need to fetch the new ID. For simplicity, we reload tags or assume Add returns ID.
-                // Current repo doesn't return ID. Let's re-fetch.
-                Tag newTag = _targetTagRepo.GetAll().First(t => t.Name == sTag.Name);
-                targetTags[newTag.Name] = newTag;
-                tagIdMap[sTag.Id] = newTag.Id;
-                result.NewTags++;
-            }
-        }
+        Dictionary<long, long> tagIdMap = MergeTags(result, sourceTags, targetTags);
 
         // 4. Merge Files & Associations
+        MergeFilesAndAssociations(result, sourceFiles, sourceFileTagMap, targetFiles, tagIdMap);
+
+        return result;
+    }
+
+    private void MergeFilesAndAssociations(
+        MergeResult result,
+        List<FileEntry> sourceFiles,
+        Dictionary<long, List<long>> sourceFileTagMap,
+        Dictionary<string, FileEntry> targetFiles,
+        Dictionary<long, long> tagIdMap)
+    {
         foreach (FileEntry sFile in sourceFiles)
         {
-            if (sFile.Hash == null)
+            if (sFile.Hash is null)
             {
                 continue;
             }
@@ -93,7 +80,7 @@ public class DatabaseMergeService
                 // Re-fetch to get ID. Optimization: Repo.Add should return ID/Entry.
                 // Fallback:
                 FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
-                if (added == null)
+                if (added is null)
                 {
                     continue; // Failed to add
                 }
@@ -121,8 +108,31 @@ public class DatabaseMergeService
                 result.NewAssociations++;
             }
         }
+    }
 
-        return result;
+    private Dictionary<long, long> MergeTags(MergeResult result, List<Tag> sourceTags, Dictionary<string, Tag> targetTags)
+    {
+        Dictionary<long, long> tagIdMap = []; // SourceId -> TargetId
+
+        foreach (Tag sTag in sourceTags)
+        {
+            if (targetTags.TryGetValue(sTag.Name, out Tag? existing))
+            {
+                tagIdMap[sTag.Id] = existing.Id;
+            }
+            else
+            {
+                _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
+                // Need to fetch the new ID. For simplicity, we reload tags or assume Add returns ID.
+                // Current repo doesn't return ID. Let's re-fetch.
+                Tag newTag = _targetTagRepo.GetAll().First(t => t.Name == sTag.Name);
+                targetTags[newTag.Name] = newTag;
+                tagIdMap[sTag.Id] = newTag.Id;
+                result.NewTags++;
+            }
+        }
+
+        return tagIdMap;
     }
 
     // Mini-loaders for the external DB connection
@@ -162,7 +172,7 @@ public class DatabaseMergeService
 
         while (r.Read())
         {
-            list.Add(new FileEntry
+            list.Add(new()
             {
                 Id = r.GetInt64(0),
                 Path = r.GetString(1),
@@ -179,9 +189,12 @@ public class DatabaseMergeService
     private static Dictionary<long, List<long>> LoadFileTags(SqliteConnection conn)
     {
         Dictionary<long, List<long>> map = [];
+
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
+
         using SqliteDataReader r = cmd.ExecuteReader();
+
         while (r.Read())
         {
             long fid = r.GetInt64(0);
@@ -195,6 +208,7 @@ public class DatabaseMergeService
 
             value.Add(tid);
         }
+
         return map;
     }
 }

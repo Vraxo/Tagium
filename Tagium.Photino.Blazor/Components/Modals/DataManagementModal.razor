@@ -2,7 +2,10 @@
 @using Tagium.Core.Data
 @using Tagium.Core.Services
 @using Tagium.Core.Services.DataExport
+@using Tagium.Core.Services.DataMerge
+@using Tagium.Core.Services.LibraryItengrity
 @using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
 @inject LibraryService Library
 @inject LibraryIntegrityService IntegrityService
 @inject DataExportService ExportService
@@ -17,7 +20,7 @@
         <h4>Integrity</h4>
         <p class="desc">Scan for files missing from disk.</p>
         <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
-        @if (ScanResult != null)
+        @if (ScanResult is not null)
         {
             <div class="result-box">
                 Scanned: @ScanResult.FilesScanned <br />
@@ -48,7 +51,7 @@
             <button class="btn" @onclick="MergeDb">Merge...</button>
             <button class="btn btn-danger" @onclick="RestoreDb">Restore...</button>
         </div>
-        @if (MergeResult != null)
+        @if (MergeResult is not null)
         {
             <div class="result-box">
                 New Files: @MergeResult.NewFiles <br />
@@ -58,75 +61,6 @@
         }
     </div>
 </div>
-
-<style>
-    .data-tools {
-        padding: 5px;
-    }
-
-    .section {
-        margin-bottom: 15px;
-    }
-
-    h4 {
-        margin: 0 0 5px 0;
-        color: #eee;
-    }
-
-    .desc {
-        font-size: 0.9em;
-        color: #aaa;
-        margin: 0 0 10px 0;
-    }
-
-    .btn {
-        background: #444;
-        border: 1px solid #555;
-        color: white;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-        .btn:hover {
-            background: #555;
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-    .btn-danger {
-        background: #c62828;
-        border-color: #b71c1c;
-    }
-
-        .btn-danger:hover {
-            background: #d32f2f;
-        }
-
-    .btn-row {
-        display: flex;
-        gap: 10px;
-    }
-
-    .result-box {
-        margin-top: 10px;
-        padding: 8px;
-        background: #222;
-        border: 1px solid #333;
-        border-radius: 4px;
-        font-size: 0.9em;
-        color: #ccc;
-    }
-
-    hr {
-        border: 0;
-        border-top: 1px solid #444;
-        margin: 15px 0;
-    }
-</style>
 
 @code {
     private IntegrityScanResult? ScanResult;
@@ -172,7 +106,7 @@
     private void MergeDb()
     {
         var files = FileDialog.OpenFiles();
-        if (files != null && files.Length > 0)
+        if (files is not null && files.Length > 0)
         {
             MergeResult = MergeService.Merge(files[0]);
             Library.Refresh();
@@ -183,7 +117,7 @@
     private void RestoreDb()
     {
         var files = FileDialog.OpenFiles();
-        if (files != null && files.Length > 0)
+        if (files is not null && files.Length > 0)
         {
             string source = files[0];
             string dest = DbManager.ConnectionString.Replace("Data Source=", "");

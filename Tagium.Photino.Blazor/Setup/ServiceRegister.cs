@@ -2,8 +2,12 @@
 using Tagium.Core.Data;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
+using Tagium.Core.Services.DataMerge;
+using Tagium.Core.Services.LibraryItengrity;
 using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Components.Shared;
 using Tagium.Photino.Blazor.Services;
+using Tagium.Photino.Blazor.Services.Toasting;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -28,12 +32,16 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<DataExportService>();
         _ = services.AddSingleton<DatabaseMergeService>();
 
-        // UI Services
+        // UI - Components
+        _ = services.AddTransient<SearchInput>();
+
+        // UI - Services
         _ = services.AddSingleton<AppState>();
         _ = services.AddSingleton<ModalService>();
         _ = services.AddSingleton<FileDialogService>();
         _ = services.AddSingleton<SystemLauncherService>();
         _ = services.AddSingleton<ToastService>();
         _ = services.AddSingleton<FileImportService>();
+        _ = services.AddSingleton<KeyboardShortcutService>();
     }
 }

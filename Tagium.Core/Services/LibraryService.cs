@@ -81,14 +81,14 @@ public class LibraryService
     public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
     {
         string? hash = FileHasher.ComputeSha256(path);
-        if (hash == null)
+        if (hash is null)
         {
             return new AddFileDetailedResult { Status = AddFileResult.Error };
         }
 
         // Check for existing by hash first to return the entry
         FileEntry? existing = _fileRepo.GetByHash(hash);
-        if (existing != null)
+        if (existing is not null)
         {
             return new AddFileDetailedResult { Status = AddFileResult.Duplicate, Entry = existing };
         }
@@ -165,20 +165,20 @@ public class LibraryService
         }
 
         string? newHash = FileHasher.ComputeSha256(newPath);
-        if (newHash == null)
+        if (newHash is null)
         {
             return new RelocateResult { Status = RelocateResultStatus.Error };
         }
 
         // Check if the new file is already in the database
         FileEntry? existing = _fileRepo.GetByHash(newHash);
-        if (existing != null && existing.Id != fileId)
+        if (existing is not null && existing.Id != fileId)
         {
             return new RelocateResult { Status = RelocateResultStatus.Duplicate, ConflictingFile = existing };
         }
 
         FileEntry? file = _fileRepo.GetById(fileId);
-        if (file == null)
+        if (file is null)
         {
             return new RelocateResult { Status = RelocateResultStatus.Error };
         }

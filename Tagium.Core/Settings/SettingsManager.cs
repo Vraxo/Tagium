@@ -6,6 +6,8 @@ namespace Tagium.Core.Settings;
 
 public class SettingsManager
 {
+    public Settings Current { get; }
+
     private readonly string _settingsPath;
 
     public event Action? SettingsChanged;
@@ -14,7 +16,10 @@ public class SettingsManager
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() }
+        Converters =
+        {
+            new JsonStringEnumConverter()
+        }
     };
 
     public SettingsManager()
@@ -24,9 +29,8 @@ public class SettingsManager
         Current = Load();
     }
 
-    public TagiumSettings Current { get; }
 
-    public void Update(Action<TagiumSettings> updateAction, bool save = true)
+    public void Update(Action<Settings> updateAction, bool save = true)
     {
         updateAction(Current);
 
@@ -51,22 +55,23 @@ public class SettingsManager
         }
     }
 
-    private TagiumSettings Load()
+    private Settings Load()
     {
         if (!File.Exists(_settingsPath))
         {
-            return new TagiumSettings();
+            return new Settings();
         }
 
         try
         {
             string json = File.ReadAllText(_settingsPath);
-            return JsonSerializer.Deserialize<TagiumSettings>(json, _serializerOptions) ?? new TagiumSettings();
+            return JsonSerializer.Deserialize<Settings>(json, _serializerOptions)
+                ?? new Settings();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Settings] Error loading: {ex.Message}. Using defaults.");
-            return new TagiumSettings();
+            return new Settings();
         }
     }
 }
