@@ -13,36 +13,15 @@
 }
 
 .search-container {
+    /* Flex grow fills the available space between left and right controls */
     flex-grow: 1;
     min-width: 0;
-    display: flex; /* Ensures child fills height/width if needed */
+    display: flex;
 }
 
 .right-controls {
     flex-shrink: 0;
 }
-
-/* ::deep is required because the input exists inside the SearchInput child component */
-::deep .search-input {
-    width: 100%;
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: 6px var(--space-sm);
-    border-radius: 15px;
-    font-size: var(--font-size-sm);
-    transition: border-color 0.2s, background-color 0.2s;
-}
-
-    ::deep .search-input:focus {
-        outline: none;
-        border-color: var(--primary-color);
-        background: #000;
-    }
-
-    ::deep .search-input::placeholder {
-        color: var(--text-muted);
-    }
 
 .control-group {
     display: flex;
