@@ -58,7 +58,7 @@
     cursor: col-resize;
     flex-shrink: 0;
     position: relative;
-    z-index: 10;
+    z-index: 30; /* Draw above toolbar during resize */
     transition: background 0.2s;
     margin-left: -2px;
     margin-right: -2px;

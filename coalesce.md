@@ -4906,6 +4906,33 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor.css`
+
+```css
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+select {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: var(--font-size-sm);
+    height: 24px;
+    outline: none;
+}
+
+    select:hover {
+        border-color: #555;
+    }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
 
 ```
@@ -4985,84 +5012,14 @@ else
 
 ---
 
-### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor`
-
-```
-@namespace Tagium.Photino.Blazor.Components.Views
-@using Tagium.Photino.Blazor.Components.Shared
-@using Tagium.Core.Settings
-@inject SearchInput SearchInput
-@inject SettingsManager Settings
-
-<div class="files-view-toolbar">
-    <div class="left-controls">
-        <SortControls />
-    </div>
-
-    <div class="search-container">
-        <SearchInput @ref="SearchInput" />
-    </div>
-
-    <div class="right-controls">
-        <ThumbnailSizeSlider />
-    </div>
-</div>
-
-@code {
-    public async Task FocusSearchAsync() => await SearchInput.FocusAsync();
-}
-```
-
----
-
-### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor.css`
+### `Tagium.Photino.Blazor\Components\Shared\ThumbnailSizeSlider.razor.css`
 
 ```css
-.files-view-toolbar {
-    display: flex;
-    align-items: center;
-    padding: var(--space-sm) var(--space-md);
-    background: var(--panel-bg);
-    border-bottom: 1px solid var(--border-color);
-    gap: var(--space-md);
-    flex-shrink: 0;
-}
-
-.left-controls {
-    flex-shrink: 0;
-}
-
-.search-container {
-    /* Flex grow fills the available space between left and right controls */
-    flex-grow: 1;
-    min-width: 0;
-    display: flex;
-}
-
-.right-controls {
-    flex-shrink: 0;
-}
-
 .control-group {
     display: flex;
     align-items: center;
     gap: var(--space-xs);
 }
-
-select {
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: var(--font-size-sm);
-    height: 24px;
-    outline: none;
-}
-
-    select:hover {
-        border-color: #555;
-    }
 
 input[type=range] {
     -webkit-appearance: none;
@@ -5098,28 +5055,166 @@ input[type=range] {
             transform: scale(1.2);
             background: var(--primary-hover);
         }
+```
 
-/* Responsive: stack vertically below 700px */
-@media (max-width: 700px) {
-    .files-view-toolbar {
-        flex-direction: column;
-        align-items: stretch;
-        gap: var(--space-sm);
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SearchInput SearchInput
+@inject SettingsManager Settings
+
+<div class="files-view-toolbar">
+    <div class="search-container">
+        <SearchInput @ref="SearchInput" />
+    </div>
+
+    <div class="view-options-wrapper">
+        <button class="btn-icon @(IsMenuOpen ? "active" : "")"
+                @onclick="ToggleMenu"
+                title="View Options">
+            <span>👁</span>
+        </button>
+
+        @if (IsMenuOpen)
+        {
+            <div class="view-menu-overlay" @onclick="CloseMenu"></div>
+            <div class="view-menu-dropdown">
+                <div class="menu-section">
+                    <label>Sort By</label>
+                    <SortControls />
+                </div>
+                <hr />
+                <div class="menu-section">
+                    <label>Thumbnail Size</label>
+                    <ThumbnailSizeSlider />
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private bool IsMenuOpen = false;
+
+    public async Task FocusSearchAsync() => await SearchInput.FocusAsync();
+
+    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
+    private void CloseMenu() => IsMenuOpen = false;
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor.css`
+
+```css
+.files-view-toolbar {
+    display: flex;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    gap: var(--space-sm);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 20;
+}
+
+.search-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.view-options-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.btn-icon {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    transition: background 0.1s;
+}
+
+    .btn-icon:hover {
+        background: var(--surface-hover);
+        color: var(--text-color);
     }
 
-    .search-container {
-        order: 1;
-        width: 100%;
+    .btn-icon.active {
+        background: var(--surface-hover);
+        color: var(--primary-color);
+        border-color: var(--border-color);
     }
 
-    .left-controls {
-        order: 2;
-        align-self: center;
+/* Dropdown Menu */
+.view-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 1001;
+    min-width: 200px;
+    animation: fadeIn 0.1s ease-out;
+}
+
+.view-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+}
+
+.menu-section {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+    .menu-section label {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
     }
 
-    .right-controls {
-        order: 3;
-        align-self: center;
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: 10px 0;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
 ```
