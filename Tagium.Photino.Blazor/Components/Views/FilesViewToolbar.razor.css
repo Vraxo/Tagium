@@ -29,13 +29,6 @@
     gap: var(--space-xs);
 }
 
-.control-label {
-    font-size: var(--font-size-sm);
-    text-transform: uppercase;
-    color: var(--text-muted);
-    font-weight: 600;
-}
-
 select {
     background: var(--bg-color);
     border: 1px solid var(--border-color);

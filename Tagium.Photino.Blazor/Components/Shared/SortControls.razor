@@ -3,7 +3,6 @@
 @inject SettingsManager Settings
 
 <div class="control-group">
-    <span class="control-label">Sort</span>
     <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy" aria-label="Sort by">
         <option value="@SortBy.DateAdded">Date</option>
         <option value="@SortBy.Name">Name</option>

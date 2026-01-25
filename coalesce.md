@@ -4836,6 +4836,36 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\SearchInput.razor.css`
+
+```css
+.search-input {
+    width: 100%;
+    /* Ensure padding doesn't overflow width */
+    box-sizing: border-box;
+    /* Visual Styles moved from Toolbar */
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px var(--space-sm);
+    border-radius: 15px;
+    font-size: var(--font-size-sm);
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        background: #000;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor`
 
 ```
@@ -4844,7 +4874,6 @@ public static class ServiceRegistrar
 @inject SettingsManager Settings
 
 <div class="control-group">
-    <span class="control-label">Sort</span>
     <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy" aria-label="Sort by">
         <option value="@SortBy.DateAdded">Date</option>
         <option value="@SortBy.Name">Name</option>
@@ -4934,7 +4963,6 @@ else
 @inject SettingsManager Settings
 
 <div class="control-group">
-    <span class="control-label">Size</span>
     <input type="range" min="64" max="256" step="16"
            value="@Settings.Current.ThumbnailSize"
            @oninput="OnInput"
@@ -4991,8 +5019,7 @@ else
 
 ```css
 .files-view-toolbar {
-    display: grid;
-    grid-template-columns: 1fr minmax(200px, 1fr) 1fr;
+    display: flex;
     align-items: center;
     padding: var(--space-sm) var(--space-md);
     background: var(--panel-bg);
@@ -5002,49 +5029,24 @@ else
 }
 
 .left-controls {
-    justify-self: start;
+    flex-shrink: 0;
 }
 
 .search-container {
-    width: 100%;
+    /* Flex grow fills the available space between left and right controls */
+    flex-grow: 1;
+    min-width: 0;
+    display: flex;
 }
 
 .right-controls {
-    justify-self: end;
+    flex-shrink: 0;
 }
-
-.search-input {
-    width: 100%;
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: 6px var(--space-sm);
-    border-radius: 15px;
-    font-size: var(--font-size-sm);
-    transition: border-color 0.2s, background-color 0.2s;
-}
-
-    .search-input:focus {
-        outline: none;
-        border-color: var(--primary-color);
-        background: #000;
-    }
-
-    .search-input::placeholder {
-        color: var(--text-muted);
-    }
 
 .control-group {
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-}
-
-.control-label {
-    font-size: var(--font-size-sm);
-    text-transform: uppercase;
-    color: var(--text-muted);
-    font-weight: 600;
 }
 
 select {
@@ -5100,25 +5102,24 @@ input[type=range] {
 /* Responsive: stack vertically below 700px */
 @media (max-width: 700px) {
     .files-view-toolbar {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto auto auto;
+        flex-direction: column;
+        align-items: stretch;
         gap: var(--space-sm);
-        justify-items: center;
     }
 
     .search-container {
         order: 1;
-        max-width: 100%;
+        width: 100%;
     }
 
     .left-controls {
         order: 2;
-        justify-self: center;
+        align-self: center;
     }
 
     .right-controls {
         order: 3;
-        justify-self: center;
+        align-self: center;
     }
 }
 ```
