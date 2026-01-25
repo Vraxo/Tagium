@@ -21,7 +21,7 @@
     transition: background-color 0.1s;
     user-select: none;
     font-size: var(--font-size-sm);
-    line-height: 1;
+    line-height: 1.2;
 }
 
     .tag-item:hover {
