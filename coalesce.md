@@ -1935,10 +1935,6 @@ public class Program
     </Content>
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Components\Views\" />
-  </ItemGroup>
-
 </Project>
 ```
 
@@ -2672,15 +2668,28 @@ public class Program
         }
     </div>
 </div>
+```
 
-@code {
+---
+
+### `Tagium.Photino.Blazor\Components\TagSidebar.razor.cs`
+
+```csharp
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class TagSidebar
+{
     private List<Tag> Tags = [];
 
     private bool IsAllFilesActive => string.IsNullOrEmpty(AppState.SearchText)
-                                     && !AppState.IsMissingOnly
-                                     && AppState.CurrentView == AppView.Files;
+        && !AppState.IsMissingOnly
+        && AppState.CurrentView == AppView.Files;
 
-    private bool IsMissingActive => AppState.IsMissingOnly && AppState.CurrentView == AppView.Files;
+    private bool IsMissingActive => AppState.IsMissingOnly
+        && AppState.CurrentView == AppView.Files;
 
     protected override void OnInitialized()
     {
@@ -2692,7 +2701,7 @@ public class Program
     private void RefreshData()
     {
         Tags = Library.GetTags();
-        InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void SetSearch(string text)
@@ -2726,7 +2735,7 @@ public class Program
 }
 
 .tag-item {
-    padding: 6px 8px;
+    padding: 4px 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -2735,6 +2744,8 @@ public class Program
     color: var(--text-color);
     transition: background-color 0.1s;
     user-select: none;
+    font-size: var(--font-size-sm);
+    line-height: 1.2;
 }
 
     .tag-item:hover {
@@ -2767,6 +2778,7 @@ public class Program
     display: inline-block;
     width: 1.2em;
     text-align: center;
+    font-size: 1em;
 }
 
 hr {
@@ -2949,11 +2961,6 @@ public class AppState
 
     public void SetSearch(string text)
     {
-        if (SearchText == text)
-        {
-            return;
-        }
-
         SearchText = text;
         IsMissingOnly = false;
         SelectedFileIds.Clear();
@@ -2968,11 +2975,6 @@ public class AppState
 
     public void SetMissingOnly(bool isMissing)
     {
-        if (IsMissingOnly == isMissing)
-        {
-            return;
-        }
-
         IsMissingOnly = isMissing;
         SearchText = "";
         SelectedFileIds.Clear();
@@ -2987,17 +2989,13 @@ public class AppState
 
     public void SelectFile(long id, bool multiSelect, bool rangeSelect)
     {
-        // Future: Handle rangeSelect (Shift) logic here if needed.
-
         if (!multiSelect)
         {
-            // Standard single selection
             SelectedFileIds.Clear();
             _ = SelectedFileIds.Add(id);
         }
         else
         {
-            // Toggle selection
             _ = SelectedFileIds.Contains(id)
                 ? SelectedFileIds.Remove(id)
                 : SelectedFileIds.Add(id);
@@ -3466,6 +3464,13 @@ public static class ServiceRegistrar
     <script src="js/layout.js"></script>
 </body>
 </html>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\Component.razor`
+
+```
 ```
 
 ---
@@ -5317,19 +5322,48 @@ hr {
         }
     </div>
 </div>
+```
 
-@code {
+---
+
+### `Tagium.Photino.Blazor\Components\Views\TagManagerView.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components.Web;
+using Tagium.Core.Models;
+
+namespace Tagium.Photino.Blazor.Components.Views;
+
+public partial class TagManagerView
+{
     private List<Tag> Tags = [];
     private string NewTagName = "";
     private long? ActiveColorPickerId = null;
 
-    private static readonly List<string> Palette = new()
-    {
-        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
-        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
-        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
-        "#546e7a", "#FFFFFF", "#000000"
-    };
+    private static readonly List<string> Palette =
+    [
+        "#e53935",
+        "#d81b60",
+        "#8e24aa",
+        "#5e35b1",
+        "#3949ab",
+        "#1e88e5",
+        "#039be5",
+        "#00acc1",
+        "#00897b",
+        "#43a047",
+        "#7cb342",
+        "#c0ca33",
+        "#fdd835",
+        "#ffb300",
+        "#fb8c00",
+        "#f4511e",
+        "#6d4c41",
+        "#757575",
+        "#546e7a",
+        "#FFFFFF",
+        "#000000"
+    ];
 
     protected override void OnInitialized()
     {
@@ -5340,21 +5374,28 @@ hr {
     private void RefreshTags()
     {
         Tags = Library.GetTags();
-        InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void HandleKeyUp(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") AddTag();
+        if (e.Key != "Enter")
+        {
+            return;
+        }
+
+        AddTag();
     }
 
     private void AddTag()
     {
-        if (!string.IsNullOrWhiteSpace(NewTagName))
+        if (string.IsNullOrWhiteSpace(NewTagName))
         {
-            Library.AddTag(NewTagName);
-            NewTagName = "";
+            return;
         }
+
+        Library.AddTag(NewTagName);
+        NewTagName = "";
     }
 
     private void DeleteTag(long id)
@@ -5364,22 +5405,29 @@ hr {
 
     private void UpdateTagName(Tag tag, string? newName)
     {
-        if (!string.IsNullOrWhiteSpace(newName) && newName != tag.Name)
+        if (string.IsNullOrWhiteSpace(newName) || newName == tag.Name)
         {
-            tag.Name = newName;
-            Library.UpdateTag(tag);
+            return;
         }
+
+        tag.Name = newName;
+        Library.UpdateTag(tag);
     }
 
     private void UpdateTagEmoji(Tag tag, string? newEmoji)
     {
-        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji;
+        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji)
+            ? null
+            : newEmoji;
+
         Library.UpdateTag(tag);
     }
 
     private void ToggleColorPicker(long id)
     {
-        ActiveColorPickerId = (ActiveColorPickerId == id) ? null : id;
+        ActiveColorPickerId = ActiveColorPickerId == id
+            ? null
+            : id;
     }
 
     private void UpdateTagColor(Tag tag, string color)
@@ -5537,7 +5585,7 @@ hr {
 }
 
 .emoji-input {
-    width: 30px;
+    width: 26px;
     text-align: center;
     background: var(--bg-color);
     border: 1px solid var(--border-color);

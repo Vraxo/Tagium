@@ -2,7 +2,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 20px;
+    padding: var(--space-md);
     background: var(--bg-color);
     color: var(--text-color);
 }
@@ -11,28 +11,30 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-sm);
     border-bottom: 1px solid var(--border-color);
-    padding-bottom: 15px;
+    padding-bottom: var(--space-sm);
 }
 
     .header-row h3 {
         margin: 0;
         color: var(--text-color);
+        font-size: var(--font-size-sm);
     }
 
 .add-row {
     display: flex;
-    gap: 10px;
+    gap: var(--space-xs);
 }
 
     .add-row input {
-        padding: 8px;
+        padding: 4px var(--space-xs);
         background: var(--surface-bg);
         border: 1px solid var(--border-color);
         color: var(--text-color);
         border-radius: 4px;
-        width: 250px;
+        flex: 1;
+        font-size: var(--font-size-sm);
     }
 
         .add-row input:focus {
@@ -44,9 +46,11 @@
     background: var(--primary-color);
     border: none;
     color: white;
-    padding: 0 15px;
+    padding: 0 12px;
     border-radius: 4px;
     cursor: pointer;
+    font-size: var(--font-size-xs);
+    height: 24px;
 }
 
     .btn-primary:hover {
@@ -64,10 +68,10 @@
 .tag-row {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 4px var(--space-sm);
     background: var(--surface-bg);
     border-radius: 4px;
-    gap: 15px;
+    gap: var(--space-xs);
     transition: background 0.1s;
 }
 
@@ -82,8 +86,8 @@
 }
 
 .color-circle {
-    width: 24px;
-    height: 24px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     border: 2px solid var(--border-color);
     cursor: pointer;
@@ -92,28 +96,28 @@
 
 .color-popup {
     position: absolute;
-    top: 35px;
+    top: 25px;
     left: 0;
     background: var(--panel-bg);
     border: 1px solid var(--border-color);
-    padding: 8px;
+    padding: 6px;
     z-index: 1000;
     border-radius: 6px;
-    width: 160px;
+    width: 140px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
 .color-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 3px;
     position: relative;
     z-index: 2;
 }
 
 .swatch {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     border-radius: 3px;
     cursor: pointer;
     border: 1px solid rgba(255,255,255,0.1);
@@ -134,14 +138,14 @@
 }
 
 .emoji-input {
-    width: 26px;
+    width: 24px;
     text-align: center;
     background: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
     border-radius: 4px;
-    padding: 5px;
-    font-size: 1.2em;
+    padding: 2px 4px;
+    font-size: var(--font-size-sm);
 }
 
     .emoji-input:focus {
@@ -154,9 +158,9 @@
     background: transparent;
     border: 1px solid transparent;
     color: var(--text-color);
-    padding: 5px;
+    padding: 3px var(--space-xs);
     border-radius: 4px;
-    font-size: 1em;
+    font-size: var(--font-size-sm);
 }
 
     .name-input:focus {
@@ -166,21 +170,21 @@
 
 .count {
     color: var(--text-muted);
-    font-size: 0.9em;
-    width: 80px;
+    font-size: var(--font-size-xs);
+    width: 60px;
     text-align: right;
 }
 
 .btn-icon.delete {
     background: none;
     border: none;
-    color: #e57373;
-    font-size: 1.5em;
+    color: var(--danger-color);
+    font-size: 1.2em;
     cursor: pointer;
-    padding: 0 10px;
+    padding: 0 var(--space-xs);
     line-height: 1;
 }
 
     .btn-icon.delete:hover {
-        color: #d32f2f;
+        color: var(--danger-hover);
     }
