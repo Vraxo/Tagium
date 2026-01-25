@@ -27,11 +27,6 @@ public class AppState
 
     public void SetSearch(string text)
     {
-        if (SearchText == text)
-        {
-            return;
-        }
-
         SearchText = text;
         IsMissingOnly = false;
         SelectedFileIds.Clear();
@@ -46,11 +41,6 @@ public class AppState
 
     public void SetMissingOnly(bool isMissing)
     {
-        if (IsMissingOnly == isMissing)
-        {
-            return;
-        }
-
         IsMissingOnly = isMissing;
         SearchText = "";
         SelectedFileIds.Clear();
@@ -65,17 +55,13 @@ public class AppState
 
     public void SelectFile(long id, bool multiSelect, bool rangeSelect)
     {
-        // Future: Handle rangeSelect (Shift) logic here if needed.
-
         if (!multiSelect)
         {
-            // Standard single selection
             SelectedFileIds.Clear();
             _ = SelectedFileIds.Add(id);
         }
         else
         {
-            // Toggle selection
             _ = SelectedFileIds.Contains(id)
                 ? SelectedFileIds.Remove(id)
                 : SelectedFileIds.Add(id);

@@ -2511,7 +2511,7 @@ public class Program
     cursor: col-resize;
     flex-shrink: 0;
     position: relative;
-    z-index: 10;
+    z-index: 30; /* Draw above toolbar during resize */
     transition: background 0.2s;
     margin-left: -2px;
     margin-right: -2px;
@@ -2633,7 +2633,7 @@ public class Program
 
 ---
 
-### `Tagium.Photino.Blazor\Components\TagSideBar.razor`
+### `Tagium.Photino.Blazor\Components\TagSidebar.razor`
 
 ```
 @namespace Tagium.Photino.Blazor.Components
@@ -3615,76 +3615,79 @@ public static class ServiceRegistrar
 
 ```css
 .inspector-container {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        background-color: var(--panel-bg);
-        color: var(--text-color);
-        border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--panel-bg);
+    color: var(--text-color);
+    border-left: 1px solid var(--border-color);
+    min-width: 0; /* Allow container to shrink below intrinsic width */
+}
+
+.inspector-header {
+    padding: 8px var(--space-sm);
+    background: var(--surface-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-shrink: 0;
+}
+
+.title {
+    font-weight: 600;
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.badge {
+    font-size: var(--font-size-xs);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-muted);
+}
+
+.inspector-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden; /* Explicitly prevent horizontal scrolling */
+    padding: var(--space-sm);
+    position: relative;
+    min-width: 0; /* Critical: allows flex item to shrink below content size */
+}
+
+.state-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    opacity: 0.7;
+}
+
+    .state-message .icon {
+        font-size: 1.5em;
+        margin-bottom: 8px;
     }
 
-    .inspector-header {
-        padding: 10px;
-        background: var(--surface-bg);
-        border-bottom: 1px solid var(--border-color);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-shrink: 0;
+    .state-message.error {
+        color: var(--danger-color);
+        opacity: 1;
     }
 
-    .title {
-        font-weight: 600;
-        font-size: 0.9rem;
-        text-transform: uppercase;
-        color: var(--text-muted);
-    }
-
-    .badge {
-        font-size: 0.8rem;
-        background: rgba(255, 255, 255, 0.1);
-        padding: 2px 6px;
-        border-radius: 4px;
-        color: var(--text-muted);
-    }
-
-    .inspector-content {
-        flex: 1;
-        overflow-y: auto;
-        padding: 15px;
-        position: relative;
-    }
-
-    .state-message {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        color: var(--text-muted);
-        text-align: center;
-        opacity: 0.7;
-    }
-
-        .state-message .icon {
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-
-        .state-message.error {
-            color: var(--danger-color);
-            opacity: 1;
-        }
-
-    .btn {
-        background: var(--surface-bg);
-        border: 1px solid var(--border-color);
-        color: var(--text-color);
-        padding: 4px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        margin-top: 10px;
-    }
+.btn {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 8px;
+}
 ```
 
 ---
@@ -3774,93 +3777,110 @@ public static class ServiceRegistrar
 
 ```css
 .summary-text {
-        color: var(--text-muted);
-        margin-bottom: 10px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-size: var(--font-size-xs);
+}
+
+.help-text {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    margin: -4px 0 8px 0;
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
     }
 
-    .help-text {
-        font-size: 0.8em;
-        color: var(--text-muted);
-        margin: -5px 0 10px 0;
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background: var(--danger-hover);
     }
 
-    .actions-row {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 15px;
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.empty-tag {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-size-xs);
+}
+
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
+
+    .tag-pill:hover {
+        background: var(--border-color);
     }
 
-    .btn {
-        background: var(--surface-bg);
-        color: var(--text-color);
-        border: 1px solid var(--border-color);
-        padding: 5px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.9em;
-        flex: 1;
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
     }
 
-        .btn:hover {
-            background: var(--border-color);
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
         }
 
-    .btn-danger {
-        background: var(--danger-color);
-        border-color: var(--danger-color);
-        color: white;
-    }
+/* Subtle separator styling */
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
 
-        .btn-danger:hover {
-            background: var(--danger-hover);
-        }
-
-    .tags-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-    }
-
-    .empty-tag {
-        color: var(--text-muted);
-        font-style: italic;
-        font-size: 0.9em;
-    }
-
-    .tag-pill {
-        background: var(--surface-bg);
-        padding: 3px 8px;
-        border-radius: 12px;
-        font-size: 0.9em;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        user-select: none;
-        border: 1px solid var(--border-color);
-        transition: background-color 0.1s;
-    }
-
-        .tag-pill:hover {
-            background: var(--border-color);
-        }
-
-        .tag-pill .remove {
-            margin-left: 5px;
-            color: var(--danger-color);
-            font-weight: bold;
-        }
-
-        .tag-pill.add {
-            background: transparent;
-            border-style: dashed;
-            opacity: 0.8;
-        }
-
-            .tag-pill.add:hover {
-                background: var(--surface-bg);
-                border-style: solid;
-                opacity: 1;
-            }
+/* Natural, readable section headings */
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal; /* Matches single inspector */
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
 ```
 
 ---
@@ -3901,8 +3921,6 @@ public static class ServiceRegistrar
         <div class="preview-placeholder error">❓</div>
     }
 </div>
-
-<h3>File Details</h3>
 
 @if (File.IsMissing)
 {
@@ -3984,12 +4002,12 @@ public static class ServiceRegistrar
 
     private void OpenFile()
     {
-            SystemLauncherService.OpenFile(File.Path);
+        SystemLauncherService.OpenFile(File.Path);
     }
 
     private void ShowInExplorer()
     {
-            SystemLauncherService.ShowInExplorer(File.Path);
+        SystemLauncherService.ShowInExplorer(File.Path);
     }
 
     private void RemoveFile()
@@ -4020,161 +4038,178 @@ public static class ServiceRegistrar
 
 ```css
 .preview-container {
-        width: 100%;
-        aspect-ratio: 16 / 9;
-        background: #000;
-        border-radius: 6px;
-        margin-bottom: 15px;
-        overflow: hidden;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        border: 1px solid var(--border-color);
+    width: 100%;
+    max-width: 100%; /* Prevent overflow in constrained flex containers */
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid var(--border-color);
+}
+
+.preview-media {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.preview-placeholder {
+    font-size: 2em;
+    color: var(--border-color);
+}
+
+    .preview-placeholder.error {
+        color: var(--danger-color);
     }
 
-    .preview-media {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-    }
+.prop-row {
+    margin-bottom: 8px;
+}
 
-    .preview-placeholder {
-        font-size: 3em;
-        color: var(--border-color);
-    }
-
-        .preview-placeholder.error {
-            color: var(--danger-color);
-        }
-
-    .prop-row {
-        margin-bottom: 10px;
-    }
-
-        .prop-row label {
-            display: block;
-            font-size: 0.8em;
-            color: var(--text-muted);
-        }
-
-    .path {
-        word-break: break-all;
-        font-size: 0.9em;
-        font-family: monospace;
+    .prop-row label {
+        display: block;
+        font-size: var(--font-size-xs);
         color: var(--text-muted);
     }
 
-    .actions-row {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 15px;
+.path {
+    word-break: break-all;
+    font-size: var(--font-size-xs);
+    font-family: monospace;
+    color: var(--text-muted);
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
     }
 
-    .btn {
-        background: var(--surface-bg);
-        color: var(--text-color);
-        border: 1px solid var(--border-color);
-        padding: 5px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.9em;
-        flex: 1;
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
-        .btn:hover {
-            background: var(--border-color);
-        }
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
 
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-    .btn-danger {
-        background: var(--danger-color);
-        border-color: var(--danger-color);
-        color: white;
+    .btn-danger:hover {
+        background: var(--danger-hover);
     }
 
-        .btn-danger:hover {
-            background: var(--danger-hover);
-        }
+.btn-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
 
-    .btn-primary {
-        background: var(--primary-color);
-        border-color: var(--primary-color);
-        color: white;
+    .btn-primary:hover {
+        background: var(--primary-hover);
     }
 
-        .btn-primary:hover {
-            background: var(--primary-hover);
-        }
+.btn-small {
+    font-size: var(--font-size-xs);
+    padding: 2px 6px;
+}
 
-    .btn-small {
-        font-size: 0.8em;
-        padding: 4px 8px;
+.missing-warning {
+    background: rgba(198, 40, 40, 0.15);
+    border: 1px solid var(--danger-color);
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+    .missing-warning h4 {
+        margin: 0 0 4px 0;
+        color: var(--danger-color);
+        font-size: var(--font-size-sm);
     }
 
-    .missing-warning {
-        background: rgba(198, 40, 40, 0.15); /* Keep partially transparent red */
-        border: 1px solid var(--danger-color);
-        padding: 10px;
-        border-radius: 4px;
-        margin-bottom: 15px;
+    .missing-warning p {
+        margin: 0 0 8px 0;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
     }
 
-        .missing-warning h4 {
-            margin: 0 0 5px 0;
-            color: var(--danger-color);
-            font-size: 1em;
-        }
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
 
-        .missing-warning p {
-            margin: 0 0 10px 0;
-            font-size: 0.9em;
-            color: var(--text-muted);
-        }
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
 
-    .tags-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
+    .tag-pill:hover {
+        background: var(--border-color);
     }
 
-    .tag-pill {
-        background: var(--surface-bg);
-        padding: 3px 8px;
-        border-radius: 12px;
-        font-size: 0.9em;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        user-select: none;
-        border: 1px solid var(--border-color);
-        transition: background-color 0.1s;
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
     }
 
-        .tag-pill:hover {
-            background: var(--border-color);
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
         }
 
-        .tag-pill .remove {
-            margin-left: 5px;
-            color: var(--danger-color);
-            font-weight: bold;
-        }
+/* Subtle separator styling */
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
 
-        .tag-pill.add {
-            background: transparent;
-            border-style: dashed;
-            opacity: 0.8;
-        }
-
-            .tag-pill.add:hover {
-                background: var(--surface-bg);
-                border-style: solid;
-                opacity: 1;
-            }
+/* Natural, readable section headings */
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
 ```
 
 ---
@@ -5654,8 +5689,8 @@ public enum ToastType
     --text-muted: #9E9E9E;
     --primary-color: #42a5f5;
     --primary-hover: #1e88e5;
-    --danger-color: #e57373;
-    --danger-hover: #ef5350;
+    --danger-color: #d32f2f; /* Vibrant red */
+    --danger-hover: #b71c1c; /* Deeper red on hover */
     /* Spacing & Sizing Tokens */
     --space-xs: 4px;
     --space-sm: 8px;
