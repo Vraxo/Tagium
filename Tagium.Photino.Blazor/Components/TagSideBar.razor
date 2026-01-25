@@ -26,8 +26,17 @@
             && !AppState.IsMissingOnly
             && AppState.CurrentView == AppView.Files;
 
-            <div class="tag-item @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
-                <TagIcon Tag="@tag" />
+            string tagStyle = isActive
+            ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid;"
+            : $"border-color: {tag.ColorHex};";
+
+            <div class="tag-item @(isActive ? "active" : "")"
+                 @onclick="() => SetSearch(tag.Name)"
+                 style="@tagStyle">
+                @if (!string.IsNullOrWhiteSpace(tag.Emoji))
+                {
+                    <span class="item-emoji">@tag.Emoji</span>
+                }
                 <span class="name">@tag.Name</span>
                 <span class="count">@tag.FileCount</span>
             </div>

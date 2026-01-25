@@ -8,49 +8,57 @@
 .tag-list {
     flex: 1;
     overflow-y: auto;
+    padding: var(--space-xs);
 }
 
+/* Base tag item - compact pill with dashed outline */
 .tag-item {
-    padding: 3px 8px; /* Increased from 4px for optical centering */
+    padding: 3px 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    border-radius: 4px;
-    margin-bottom: 2px;
+    border-radius: 12px;
+    margin-bottom: 3px;
     color: var(--text-color);
-    transition: background-color 0.1s;
+    transition: background-color 0.1s, border-color 0.1s, color 0.1s;
     user-select: none;
     font-size: var(--font-size-sm);
-    line-height: 1.2;
+    line-height: 1;
+    border: 1px dashed;
 }
 
     .tag-item:hover {
         background: var(--surface-bg);
     }
 
+    /* Active state - inline style sets background */
     .tag-item.active {
-        background: var(--primary-color);
         color: white;
     }
 
-.name {
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
+        .tag-item.active .count {
+            color: rgba(255,255,255,0.9);
+        }
 
+/* Count - aligned to right */
 .count {
     font-size: 0.8em;
     color: var(--text-muted);
+    margin-left: auto;
 }
 
-.tag-item.active .count {
-    color: rgba(255,255,255,0.8);
-}
-
+/* System items (All Files, Missing) styling */
 .icon {
-    margin-right: 8px;
+    margin-right: 6px;
+    display: inline-block;
+    width: 1.2em;
+    text-align: center;
+    font-size: 1em;
+}
+
+/* Emoji in tag items */
+.item-emoji {
+    margin-right: 6px;
     display: inline-block;
     width: 1.2em;
     text-align: center;
@@ -60,5 +68,5 @@
 hr {
     border: 0;
     border-top: 1px solid var(--border-color);
-    margin: 5px 0;
+    margin: var(--space-xs) 0;
 }
