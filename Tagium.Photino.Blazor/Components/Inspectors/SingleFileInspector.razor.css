@@ -1,5 +1,6 @@
 .preview-container {
     width: 100%;
+    max-width: 100%; /* Prevent overflow in constrained flex containers */
     aspect-ratio: 16 / 9;
     background: #000;
     border-radius: 6px;
@@ -166,7 +167,7 @@ hr {
 /* Natural, readable section headings */
 h4 {
     font-size: var(--font-size-sm);
-    font-weight: normal; /* Reduced from 600 */
+    font-weight: normal;
     color: var(--text-muted);
     margin: 0 0 8px 0;
 }

@@ -5,6 +5,7 @@
     background-color: var(--panel-bg);
     color: var(--text-color);
     border-left: 1px solid var(--border-color);
+    min-width: 0; /* Allow container to shrink below intrinsic width */
 }
 
 .inspector-header {
@@ -19,7 +20,7 @@
 
 .title {
     font-weight: 600;
-    font-size: var(--font-size-xs); /* Match toolbar button size */
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     color: var(--text-muted);
 }
@@ -35,8 +36,10 @@
 .inspector-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden; /* Explicitly prevent horizontal scrolling */
     padding: var(--space-sm);
     position: relative;
+    min-width: 0; /* Critical: allows flex item to shrink below content size */
 }
 
 .state-message {
@@ -51,7 +54,7 @@
 }
 
     .state-message .icon {
-        font-size: 1.5em; /* Reduced from 2rem */
+        font-size: 1.5em;
         margin-bottom: 8px;
     }
 
@@ -64,7 +67,7 @@
     background: var(--surface-bg);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 3px 8px; /* Match toolbar compactness */
+    padding: 3px 8px;
     border-radius: 4px;
     cursor: pointer;
     margin-top: 8px;
