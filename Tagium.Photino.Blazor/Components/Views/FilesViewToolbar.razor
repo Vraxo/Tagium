@@ -1,23 +1,44 @@
-@namespace Tagium.Photino.Blazor.Components.Views
+﻿@namespace Tagium.Photino.Blazor.Components.Views
 @using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Core.Settings
 @inject SearchInput SearchInput
 @inject SettingsManager Settings
 
 <div class="files-view-toolbar">
-    <div class="left-controls">
-        <SortControls />
-    </div>
-
     <div class="search-container">
         <SearchInput @ref="SearchInput" />
     </div>
 
-    <div class="right-controls">
-        <ThumbnailSizeSlider />
+    <div class="view-options-wrapper">
+        <button class="btn-icon @(IsMenuOpen ? "active" : "")"
+                @onclick="ToggleMenu"
+                title="View Options">
+            <span>👁</span>
+        </button>
+
+        @if (IsMenuOpen)
+        {
+            <div class="view-menu-overlay" @onclick="CloseMenu"></div>
+            <div class="view-menu-dropdown">
+                <div class="menu-section">
+                    <label>Sort By</label>
+                    <SortControls />
+                </div>
+                <hr />
+                <div class="menu-section">
+                    <label>Thumbnail Size</label>
+                    <ThumbnailSizeSlider />
+                </div>
+            </div>
+        }
     </div>
 </div>
 
 @code {
+    private bool IsMenuOpen = false;
+
     public async Task FocusSearchAsync() => await SearchInput.FocusAsync();
+
+    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
+    private void CloseMenu() => IsMenuOpen = false;
 }
