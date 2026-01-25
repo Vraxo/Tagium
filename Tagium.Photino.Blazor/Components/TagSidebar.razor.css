@@ -11,7 +11,7 @@
 }
 
 .tag-item {
-    padding: 6px 8px;
+    padding: 4px 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -20,6 +20,8 @@
     color: var(--text-color);
     transition: background-color 0.1s;
     user-select: none;
+    font-size: var(--font-size-sm);
+    line-height: 1;
 }
 
     .tag-item:hover {
@@ -52,6 +54,7 @@
     display: inline-block;
     width: 1.2em;
     text-align: center;
+    font-size: 1em;
 }
 
 hr {
