@@ -33,7 +33,7 @@
                 {
                     <FilesViewToolbar />
                 }
-                
+
                 <div class="content-area">
                     @if (AppState.CurrentView == AppView.Files)
                     {
@@ -55,14 +55,27 @@
 
         <ModalHost />
         <ToastContainer />
+        @if (_importInProgress)
+        {
+            <div class="import-progress-overlay">
+                <div class="import-progress-bar" style="width: @_importProgress%"></div>
+                <span class="import-progress-text">Importing... @_importProcessed/@_importTotal</span>
+            </div>
+        }
     </div>
 </FileDropZone>
 
 @code {
+    private bool _importInProgress = false;
+    private int _importProcessed = 0;
+    private int _importTotal = 0;
+    private double _importProgress = 0;
+
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
         Library.ImportCompleted += ShowImportStatus;
+        Library.ImportProgress += UpdateImportProgress;
         AppState.OnChange += StateHasChanged;
     }
 
@@ -75,8 +88,18 @@
         }
     }
 
+    private void UpdateImportProgress(int processed, int total)
+    {
+        _importInProgress = processed < total;
+        _importProcessed = processed;
+        _importTotal = total;
+        _importProgress = (double)processed / total * 100;
+        InvokeAsync(StateHasChanged);
+    }
+
     private void ShowImportStatus(int added, int duplicates, int errors)
     {
+        _importInProgress = false;
         int total = added + duplicates + errors;
         if (total == 0) return;
 
@@ -100,6 +123,7 @@
     {
         Settings.SettingsChanged -= StateHasChanged;
         Library.ImportCompleted -= ShowImportStatus;
+        Library.ImportProgress -= UpdateImportProgress;
         AppState.OnChange -= StateHasChanged;
     }
 }

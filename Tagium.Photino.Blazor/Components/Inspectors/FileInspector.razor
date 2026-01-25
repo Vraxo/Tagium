@@ -2,10 +2,11 @@
 @using Tagium.Core.Services
 @using Tagium.Core.Models
 @using Tagium.Photino.Blazor.Services
-@using Tagium.Photino.Blazor.Components.Inspectors
-@implements IDisposable
 @inject LibraryService Library
+@inject SystemLauncherService Launcher
+@inject FileDialogService FileDialog
 @inject AppState AppState
+@inject ModalService ModalService
 
 <div class="inspector-container">
     <div class="inspector-header">

@@ -62,7 +62,6 @@ public class ThumbnailService
         return File.Exists(GetThumbnailPath(fileId));
     }
 
-    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -78,42 +77,38 @@ public class ThumbnailService
 
         string ext = Path.GetExtension(file.Path);
 
-        await Task.Run(async () =>
+        try
         {
-            try
+            if (_imageExtensions.Contains(ext))
             {
-                if (_imageExtensions.Contains(ext))
+                await GenerateImageThumbnailAsync(file.Path, destPath, size);
+            }
+            else if (_videoExtensions.Contains(ext))
+            {
+                if (_hasFFmpeg)
                 {
-                    GenerateImageThumbnail(file.Path, destPath, size);
-                }
-                else if (_videoExtensions.Contains(ext))
-                {
-                    if (_hasFFmpeg)
-                    {
-                        await GenerateVideoThumbnailAsync(file.Path, destPath, size);
-                    }
-                    else
-                    {
-                        GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
-                    }
+                    await GenerateVideoThumbnailAsync(file.Path, destPath, size);
                 }
                 else
                 {
-                    GeneratePlaceholder(destPath, size, ext.TrimStart('.').ToUpper(), SKColors.Gray);
+                    GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
                 }
             }
-            catch (Exception ex)
+            else
             {
-                Console.WriteLine($"[Thumbnail] Error for {file.Path}: {ex.Message}");
-                GeneratePlaceholder(destPath, size, "ERR", SKColors.DarkRed);
+                GeneratePlaceholder(destPath, size, ext.TrimStart('.').ToUpper(), SKColors.Gray);
             }
-        });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Thumbnail] Error for {file.Path}: {ex.Message}");
+            GeneratePlaceholder(destPath, size, "ERR", SKColors.DarkRed);
+        }
     }
 
-    [Obsolete]
-    private static void GenerateImageThumbnail(string sourcePath, string destPath, int size)
+    private static async Task GenerateImageThumbnailAsync(string sourcePath, string destPath, int size)
     {
-        using SKBitmap? original = SKBitmap.Decode(sourcePath);
+        using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath));
         if (original is null)
         {
             return;
@@ -122,7 +117,6 @@ public class ThumbnailService
         SaveResized(original, destPath, size);
     }
 
-    [Obsolete]
     private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
     {
         try
@@ -143,7 +137,7 @@ public class ThumbnailService
                 return;
             }
 
-            using SKBitmap? original = SKBitmap.Decode(tempFrame);
+            using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(tempFrame));
 
             if (original is not null)
             {

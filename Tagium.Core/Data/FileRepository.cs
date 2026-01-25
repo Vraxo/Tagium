@@ -31,6 +31,69 @@ public class FileRepository
         return files;
     }
 
+    public List<FileEntry> GetFilesWithTags(SortBy sortBy, SortDirection direction, bool includeMissing = false)
+    {
+        List<FileEntry> files = [];
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+
+        string orderBy = GetOrderByClause(sortBy, direction);
+        string missingFilter = includeMissing ? "" : "WHERE F.IsMissing = 0";
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = $@"
+            SELECT 
+                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing,
+                GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
+            FROM Files F
+            LEFT JOIN FileTags FT ON F.Id = FT.FileId
+            LEFT JOIN Tags T ON FT.TagId = T.Id
+            {missingFilter}
+            GROUP BY F.Id
+            {orderBy}";
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            var file = ReadFile(reader);
+
+            // Parse tag data if present
+            if (!reader.IsDBNull(6))
+            {
+                string tagData = reader.GetString(6);
+                file.Tags = ParseTagData(tagData);
+            }
+
+            files.Add(file);
+        }
+        return files;
+    }
+
+    private List<Tag> ParseTagData(string tagData)
+    {
+        return string.IsNullOrEmpty(tagData)
+            ? []
+            : tagData.Split(";;", StringSplitOptions.RemoveEmptyEntries)
+            .Select(ParseTagFromData)
+            .Where(t => t != null)
+            .Cast<Tag>()
+            .ToList();
+    }
+
+    private Tag? ParseTagFromData(string tagData)
+    {
+        var parts = tagData.Split(':', 4);
+        return parts.Length < 3
+            ? null
+            : new Tag
+            {
+                Id = long.Parse(parts[0]),
+                Name = parts[1],
+                ColorHex = parts[2],
+                Emoji = parts.Length > 3 && parts[3] != "" ? parts[3] : null
+            };
+    }
+
     public FileEntry? GetById(long id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
@@ -161,7 +224,8 @@ public class FileRepository
             Name = reader.GetString(2),
             Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
             DateAdded = reader.GetInt64(4),
-            IsMissing = reader.GetBoolean(5)
+            IsMissing = reader.GetBoolean(5),
+            Tags = [] // Initialize empty, will be populated by GetFilesWithTags if needed
         };
     }
 

@@ -36,3 +36,111 @@
     }
 </div>
 
+@code {
+    private List<FileEntry> Files = [];
+    private DotNetObjectReference<FileGrid>? _objRef;
+
+    protected override void OnInitialized()
+    {
+        LoadFiles();
+        AppState.OnChange += ReloadData;
+        AppState.OnSelectionChange += RefreshSelection;
+        Library.LibraryChanged += ReloadData;
+        Settings.SettingsChanged += ReloadData;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _objRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
+        }
+    }
+
+    private void ReloadData()
+    {
+        LoadFiles();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshSelection()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void LoadFiles()
+    {
+        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+    }
+
+    private void OnCardClick(MouseEventArgs e, long id)
+    {
+        AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
+    }
+
+    private void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
+    {
+        if (!file.IsMissing)
+        {
+            SystemLauncherService.OpenFile(file.Path);
+        }
+    }
+
+    [JSInvokable]
+    public void SelectFile(long id)
+    {
+        AppState.SelectFile(id, false, false);
+    }
+
+    [JSInvokable]
+    public void SelectFiles(long[] ids)
+    {
+        AppState.SetSelection(ids);
+    }
+
+    [JSInvokable]
+    public void SelectAll()
+    {
+        AppState.SetSelection(Files.Select(f => f.Id));
+    }
+
+    [JSInvokable]
+    public void ClearSelection()
+    {
+        AppState.ClearSelection();
+    }
+
+    [JSInvokable]
+    public void OnEnterKey()
+    {
+        if (AppState.SelectedFileIds.Count == 1)
+        {
+            long id = AppState.SelectedFileIds.First();
+            var file = Files.FirstOrDefault(f => f.Id == id);
+            if (file is not null && !file.IsMissing)
+            {
+                SystemLauncherService.OpenFile(file.Path);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnDeleteKey()
+    {
+        if (AppState.SelectedFileIds.Any())
+        {
+            Library.RemoveFiles(AppState.SelectedFileIds);
+            AppState.ClearSelection();
+        }
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= ReloadData;
+        AppState.OnSelectionChange -= RefreshSelection;
+        Library.LibraryChanged -= ReloadData;
+        Settings.SettingsChanged -= ReloadData;
+        _objRef?.Dispose();
+    }
+}

@@ -43,6 +43,42 @@ public class TagRepository
         return tags;
     }
 
+    public List<Tag> GetTagsByIds(IEnumerable<long> ids)
+    {
+        if (!ids.Any())
+        {
+            return [];
+        }
+
+        List<Tag> tags = [];
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount
+            FROM Tags T
+            LEFT JOIN FileTags FT ON T.Id = FT.TagId
+            WHERE T.Id IN (" + string.Join(",", ids) + @")
+            GROUP BY T.Id";
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+
+        while (reader.Read())
+        {
+            tags.Add(new Tag
+            {
+                Id = reader.GetInt64(0),
+                Name = reader.GetString(1),
+                ColorHex = reader.GetString(2),
+                Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
+                FileCount = reader.GetInt32(4)
+            });
+        }
+
+        return tags;
+    }
+
     public void Add(string name, string colorHex, string? emoji)
     {
         using SqliteConnection conn = new(_db.ConnectionString);

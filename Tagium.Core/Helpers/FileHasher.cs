@@ -4,7 +4,7 @@ namespace Tagium.Core.Helpers;
 
 public static class FileHasher
 {
-    public static string? ComputeSha256(string filePath)
+    public static async Task<string?> ComputeSha256Async(string filePath)
     {
         if (!File.Exists(filePath))
         {
@@ -15,7 +15,7 @@ public static class FileHasher
         {
             using SHA256 sha256 = SHA256.Create();
             using FileStream stream = File.OpenRead(filePath);
-            byte[] hash = sha256.ComputeHash(stream);
+            byte[] hash = await sha256.ComputeHashAsync(stream);
 
             return Convert.ToHexStringLower(hash);
         }

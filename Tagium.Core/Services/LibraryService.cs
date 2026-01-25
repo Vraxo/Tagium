@@ -30,6 +30,7 @@ public class LibraryService
 
     public event Action? LibraryChanged;
     public event Action<int, int, int>? ImportCompleted; // added, duplicates, errors
+    public event Action<int, int>? ImportProgress; // processed, total
 
     public LibraryService(
         FileRepository fileRepo,
@@ -59,13 +60,13 @@ public class LibraryService
         SortBy sort = _settingsManager.Current.FileSortBy;
         SortDirection dir = _settingsManager.Current.FileSortDirection;
 
-        if (missingOnly)
-        {
-            List<FileEntry> all = _fileRepo.GetAll(sort, dir);
-            return all.Where(f => f.IsMissing).ToList();
-        }
-
-        return string.IsNullOrWhiteSpace(searchText) ? _fileRepo.GetAll(sort, dir) : _searchRepo.Search(searchText, sort, dir);
+        return missingOnly
+            ? _fileRepo.GetFilesWithTags(sort, dir, true)
+                .Where(f => f.IsMissing)
+                .ToList()
+            : string.IsNullOrWhiteSpace(searchText)
+            ? _fileRepo.GetFilesWithTags(sort, dir)
+            : _searchRepo.Search(searchText, sort, dir);
     }
 
     public FileEntry? GetFileById(long id)
@@ -78,9 +79,9 @@ public class LibraryService
         return AddFileDetailed(path).Status == AddFileResult.Success;
     }
 
-    public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
+    public async Task<AddFileDetailedResult> AddFileDetailedAsync(string path, bool suppressNotification = false)
     {
-        string? hash = FileHasher.ComputeSha256(path);
+        string? hash = await FileHasher.ComputeSha256Async(path);
         if (hash is null)
         {
             return new AddFileDetailedResult { Status = AddFileResult.Error };
@@ -109,45 +110,64 @@ public class LibraryService
         return new AddFileDetailedResult { Status = result };
     }
 
+    // Kept for backward compatibility
+    public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
+    {
+        return AddFileDetailedAsync(path, suppressNotification).GetAwaiter().GetResult();
+    }
+
     /// <summary>
-    /// Imports multiple files asynchronously and fires the ImportCompleted event with detailed statistics.
+    /// Imports multiple files asynchronously with progress reporting and non-blocking I/O.
     /// </summary>
     public async Task ImportBatchAsync(string[] paths)
     {
-        await Task.Run(() =>
+        if (paths.Length == 0)
         {
-            int added = 0;
-            int duplicates = 0;
-            int errors = 0;
+            ImportCompleted?.Invoke(0, 0, 0);
+            return;
+        }
 
-            foreach (string path in paths)
+        const int MaxParallelism = 4; // Prevent disk overload
+        using var semaphore = new SemaphoreSlim(MaxParallelism);
+
+        var tasks = paths.Select(async (path, index) =>
+        {
+            await semaphore.WaitAsync();
+            try
             {
-                if (File.Exists(path))
+                if (!File.Exists(path))
                 {
-                    // Suppress individual refresh events for performance
-                    var result = AddFileDetailed(path, suppressNotification: true);
-                    switch (result.Status)
-                    {
-                        case AddFileResult.Success:
-                            added++;
-                            break;
-                        case AddFileResult.Duplicate:
-                            duplicates++;
-                            break;
-                        case AddFileResult.Error:
-                            errors++;
-                            break;
-                    }
+                    return (Status: AddFileResult.Error, Entry: null);
                 }
-            }
 
-            if (added > 0)
+                var result = await AddFileDetailedAsync(path, suppressNotification: true);
+
+                // Report progress every 10 files to reduce UI churn
+                if ((index + 1) % 10 == 0 || index == paths.Length - 1)
+                {
+                    ImportProgress?.Invoke(index + 1, paths.Length);
+                }
+
+                return (result.Status, result.Entry);
+            }
+            finally
             {
-                LibraryChanged?.Invoke();
+                _ = semaphore.Release();
             }
+        }).ToList();
 
-            ImportCompleted?.Invoke(added, duplicates, errors);
-        });
+        var results = await Task.WhenAll(tasks);
+
+        int added = results.Count(r => r.Status == AddFileResult.Success);
+        int duplicates = results.Count(r => r.Status == AddFileResult.Duplicate);
+        int errors = results.Count(r => r.Status == AddFileResult.Error);
+
+        if (added > 0)
+        {
+            LibraryChanged?.Invoke();
+        }
+
+        ImportCompleted?.Invoke(added, duplicates, errors);
     }
 
     // Kept for backward compatibility if needed, but redirects to async
@@ -156,7 +176,6 @@ public class LibraryService
         _ = ImportBatchAsync(paths);
     }
 
-    [Obsolete]
     public RelocateResult RelocateFile(long fileId, string newPath)
     {
         if (!File.Exists(newPath))
@@ -164,7 +183,8 @@ public class LibraryService
             return new RelocateResult { Status = RelocateResultStatus.NotFound };
         }
 
-        string? newHash = FileHasher.ComputeSha256(newPath);
+        // This is a single file operation, async not critical
+        string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
         if (newHash is null)
         {
             return new RelocateResult { Status = RelocateResultStatus.Error };
@@ -267,8 +287,7 @@ public class LibraryService
     public List<Tag> GetTagsForFile(long fileId)
     {
         List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        List<Tag> allTags = _tagRepo.GetAll();
-        return allTags.Where(t => tagIds.Contains(t.Id)).ToList();
+        return _tagRepo.GetTagsByIds(tagIds);
     }
 
     public List<Tag> GetCommonTags(IEnumerable<long> fileIds)
@@ -295,8 +314,7 @@ public class LibraryService
             }
         }
 
-        List<Tag> allTags = _tagRepo.GetAll();
-        return allTags.Where(t => commonIds.Contains(t.Id)).ToList();
+        return _tagRepo.GetTagsByIds(commonIds);
     }
 
     public void AddTag(string name)

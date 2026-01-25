@@ -44,12 +44,12 @@
         }
     }
 
-    private void ImportFiles()
+    private async Task ImportFiles()
     {
         var paths = FileDialog.OpenFiles();
         if (paths is { Length: > 0 })
         {
-            Library.ImportBatch(paths);
+            await Library.ImportBatchAsync(paths);
         }
     }
 

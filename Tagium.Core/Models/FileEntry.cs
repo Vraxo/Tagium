@@ -8,4 +8,9 @@ public class FileEntry
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
+
+    /// <summary>
+    /// Tags associated with this file. Populated on-demand via GetFilesWithTags().
+    /// </summary>
+    public List<Tag> Tags { get; set; } = [];
 }
