@@ -32,8 +32,6 @@
     }
 </div>
 
-<h3>File Details</h3>
-
 @if (File.IsMissing)
 {
     <div class="missing-warning">
@@ -114,12 +112,12 @@
 
     private void OpenFile()
     {
-            SystemLauncherService.OpenFile(File.Path);
+        SystemLauncherService.OpenFile(File.Path);
     }
 
     private void ShowInExplorer()
     {
-            SystemLauncherService.ShowInExplorer(File.Path);
+        SystemLauncherService.ShowInExplorer(File.Path);
     }
 
     private void RemoveFile()

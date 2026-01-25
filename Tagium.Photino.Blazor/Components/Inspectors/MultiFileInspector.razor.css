@@ -1,88 +1,105 @@
 .summary-text {
-        color: var(--text-muted);
-        margin-bottom: 10px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-size: var(--font-size-xs);
+}
+
+.help-text {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    margin: -4px 0 8px 0;
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
     }
 
-    .help-text {
-        font-size: 0.8em;
-        color: var(--text-muted);
-        margin: -5px 0 10px 0;
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background: var(--danger-hover);
     }
 
-    .actions-row {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 15px;
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.empty-tag {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-size-xs);
+}
+
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
+
+    .tag-pill:hover {
+        background: var(--border-color);
     }
 
-    .btn {
-        background: var(--surface-bg);
-        color: var(--text-color);
-        border: 1px solid var(--border-color);
-        padding: 5px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.9em;
-        flex: 1;
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
     }
 
-        .btn:hover {
-            background: var(--border-color);
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
         }
 
-    .btn-danger {
-        background: var(--danger-color);
-        border-color: var(--danger-color);
-        color: white;
-    }
+/* Subtle separator styling */
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
 
-        .btn-danger:hover {
-            background: var(--danger-hover);
-        }
-
-    .tags-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-    }
-
-    .empty-tag {
-        color: var(--text-muted);
-        font-style: italic;
-        font-size: 0.9em;
-    }
-
-    .tag-pill {
-        background: var(--surface-bg);
-        padding: 3px 8px;
-        border-radius: 12px;
-        font-size: 0.9em;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        user-select: none;
-        border: 1px solid var(--border-color);
-        transition: background-color 0.1s;
-    }
-
-        .tag-pill:hover {
-            background: var(--border-color);
-        }
-
-        .tag-pill .remove {
-            margin-left: 5px;
-            color: var(--danger-color);
-            font-weight: bold;
-        }
-
-        .tag-pill.add {
-            background: transparent;
-            border-style: dashed;
-            opacity: 0.8;
-        }
-
-            .tag-pill.add:hover {
-                background: var(--surface-bg);
-                border-style: solid;
-                opacity: 1;
-            }
+/* Natural, readable section headings */
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal; /* Matches single inspector */
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}

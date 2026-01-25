@@ -9,8 +9,8 @@
     --text-muted: #9E9E9E;
     --primary-color: #42a5f5;
     --primary-hover: #1e88e5;
-    --danger-color: #e57373;
-    --danger-hover: #ef5350;
+    --danger-color: #d32f2f; /* Vibrant red */
+    --danger-hover: #b71c1c; /* Deeper red on hover */
     /* Spacing & Sizing Tokens */
     --space-xs: 4px;
     --space-sm: 8px;

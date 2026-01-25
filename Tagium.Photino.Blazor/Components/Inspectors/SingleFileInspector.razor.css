@@ -1,156 +1,172 @@
 .preview-container {
-        width: 100%;
-        aspect-ratio: 16 / 9;
-        background: #000;
-        border-radius: 6px;
-        margin-bottom: 15px;
-        overflow: hidden;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        border: 1px solid var(--border-color);
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid var(--border-color);
+}
+
+.preview-media {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.preview-placeholder {
+    font-size: 2em;
+    color: var(--border-color);
+}
+
+    .preview-placeholder.error {
+        color: var(--danger-color);
     }
 
-    .preview-media {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-    }
+.prop-row {
+    margin-bottom: 8px;
+}
 
-    .preview-placeholder {
-        font-size: 3em;
-        color: var(--border-color);
-    }
-
-        .preview-placeholder.error {
-            color: var(--danger-color);
-        }
-
-    .prop-row {
-        margin-bottom: 10px;
-    }
-
-        .prop-row label {
-            display: block;
-            font-size: 0.8em;
-            color: var(--text-muted);
-        }
-
-    .path {
-        word-break: break-all;
-        font-size: 0.9em;
-        font-family: monospace;
+    .prop-row label {
+        display: block;
+        font-size: var(--font-size-xs);
         color: var(--text-muted);
     }
 
-    .actions-row {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 15px;
+.path {
+    word-break: break-all;
+    font-size: var(--font-size-xs);
+    font-family: monospace;
+    color: var(--text-muted);
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
     }
 
-    .btn {
-        background: var(--surface-bg);
-        color: var(--text-color);
-        border: 1px solid var(--border-color);
-        padding: 5px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.9em;
-        flex: 1;
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
-        .btn:hover {
-            background: var(--border-color);
-        }
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
 
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-    .btn-danger {
-        background: var(--danger-color);
-        border-color: var(--danger-color);
-        color: white;
+    .btn-danger:hover {
+        background: var(--danger-hover);
     }
 
-        .btn-danger:hover {
-            background: var(--danger-hover);
-        }
+.btn-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
 
-    .btn-primary {
-        background: var(--primary-color);
-        border-color: var(--primary-color);
-        color: white;
+    .btn-primary:hover {
+        background: var(--primary-hover);
     }
 
-        .btn-primary:hover {
-            background: var(--primary-hover);
-        }
+.btn-small {
+    font-size: var(--font-size-xs);
+    padding: 2px 6px;
+}
 
-    .btn-small {
-        font-size: 0.8em;
-        padding: 4px 8px;
+.missing-warning {
+    background: rgba(198, 40, 40, 0.15);
+    border: 1px solid var(--danger-color);
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+    .missing-warning h4 {
+        margin: 0 0 4px 0;
+        color: var(--danger-color);
+        font-size: var(--font-size-sm);
     }
 
-    .missing-warning {
-        background: rgba(198, 40, 40, 0.15); /* Keep partially transparent red */
-        border: 1px solid var(--danger-color);
-        padding: 10px;
-        border-radius: 4px;
-        margin-bottom: 15px;
+    .missing-warning p {
+        margin: 0 0 8px 0;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
     }
 
-        .missing-warning h4 {
-            margin: 0 0 5px 0;
-            color: var(--danger-color);
-            font-size: 1em;
-        }
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
 
-        .missing-warning p {
-            margin: 0 0 10px 0;
-            font-size: 0.9em;
-            color: var(--text-muted);
-        }
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
 
-    .tags-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
+    .tag-pill:hover {
+        background: var(--border-color);
     }
 
-    .tag-pill {
-        background: var(--surface-bg);
-        padding: 3px 8px;
-        border-radius: 12px;
-        font-size: 0.9em;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        user-select: none;
-        border: 1px solid var(--border-color);
-        transition: background-color 0.1s;
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
     }
 
-        .tag-pill:hover {
-            background: var(--border-color);
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
         }
 
-        .tag-pill .remove {
-            margin-left: 5px;
-            color: var(--danger-color);
-            font-weight: bold;
-        }
+/* Subtle separator styling */
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
 
-        .tag-pill.add {
-            background: transparent;
-            border-style: dashed;
-            opacity: 0.8;
-        }
-
-            .tag-pill.add:hover {
-                background: var(--surface-bg);
-                border-style: solid;
-                opacity: 1;
-            }
+/* Natural, readable section headings */
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal; /* Reduced from 600 */
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
