@@ -8,7 +8,4 @@ public class FileEntry
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
-
-    // Loaded on demand
-    public List<Tag> Tags { get; set; } = [];
 }

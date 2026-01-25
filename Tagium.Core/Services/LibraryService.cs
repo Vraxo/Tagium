@@ -316,20 +316,4 @@ public class LibraryService
         _tagRepo.Delete(id);
         LibraryChanged?.Invoke();
     }
-
-    // --- Thumbnails ---
-
-    [Obsolete]
-    public void EnsureThumbnails(IEnumerable<FileEntry> files)
-    {
-        foreach (FileEntry file in files)
-        {
-            if (_thumbnailService.HasThumbnail(file.Id))
-            {
-                continue;
-            }
-
-            _ = _thumbnailService.GenerateThumbnailAsync(file);
-        }
-    }
 }
