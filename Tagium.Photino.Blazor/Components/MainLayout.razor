@@ -35,14 +35,25 @@
                 }
 
                 <div class="content-area">
-                    @if (AppState.CurrentView == AppView.Files)
-                    {
-                        <FileGrid />
-                    }
-                    else if (AppState.CurrentView == AppView.Tags)
-                    {
-                        <TagManagerView />
-                    }
+                    <ErrorBoundary>
+                        <ChildContent>
+                            @if (AppState.CurrentView == AppView.Files)
+                            {
+                                <FileGrid />
+                            }
+                            else if (AppState.CurrentView == AppView.Tags)
+                            {
+                                <TagManagerView />
+                            }
+                        </ChildContent>
+                        <ErrorContent Context="ex">
+                            <div class="error-boundary-fallback">
+                                <h3>⚠️ Something went wrong</h3>
+                                <p>@ex.Message</p>
+                                <button class="btn btn-primary" @onclick="ReloadCurrentView">Reload</button>
+                            </div>
+                        </ErrorContent>
+                    </ErrorBoundary>
                 </div>
             </main>
 
@@ -83,7 +94,6 @@
     {
         if (firstRender)
         {
-            // Resizer script handles widths
             await JS.InvokeVoidAsync("layoutResizer.init", "sidebar-panel", "splitter-left", "inspector-panel", "splitter-right");
         }
     }
@@ -117,6 +127,13 @@
         else type = ToastType.Info;
 
         Toast.Show(message, type);
+    }
+
+    private void ReloadCurrentView()
+    {
+        AppState.SetSearch("");
+        AppState.ClearSelection();
+        Library.Refresh();
     }
 
     public void Dispose()
