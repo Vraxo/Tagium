@@ -13,7 +13,7 @@
 }
 
 /* ====== Pill Mode (Modern) ====== */
-::deep .pill .tag-item {
+::deep .tag-item.pill {
     padding: 3px 8px;
     cursor: pointer;
     display: flex;
@@ -28,25 +28,25 @@
     border: 1px dashed;
 }
 
-    ::deep .pill .tag-item:hover {
+    ::deep .tag-item.pill:hover {
         background: var(--surface-bg);
     }
 
-    ::deep .pill .tag-item.active {
+    ::deep .tag-item.pill.active {
         color: white;
     }
 
-::deep .pill .count {
-    font-size: 0.8em;
-    margin-left: auto;
-}
+    ::deep .tag-item.pill .count {
+        font-size: 0.8em;
+        margin-left: auto;
+    }
 
-::deep .pill .item-emoji {
-    margin-right: 6px;
-}
+    ::deep .tag-item.pill .item-emoji {
+        margin-right: 6px;
+    }
 
 /* ====== Legacy Mode (Minimal Circles) ====== */
-::deep .legacy .tag-item {
+::deep .tag-item.legacy {
     padding: 3px 8px;
     cursor: pointer;
     display: flex;
@@ -61,40 +61,41 @@
     border: none;
 }
 
-    ::deep .legacy .tag-item:hover {
+    ::deep .tag-item.legacy:hover {
         background: var(--surface-bg);
     }
 
-    ::deep .legacy .tag-item.active {
+    ::deep .tag-item.legacy.active {
         background: var(--primary-color);
         color: white;
     }
 
-::deep .legacy .tag-color {
-    width: 5px !important;
-    height: 5px !important;
-    border-radius: 50%;
-    margin-right: 8px;
-    flex-shrink: 0;
-    border: 1px solid rgba(255,255,255,0.1);
-}
+    ::deep .tag-item.legacy .count {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        margin-left: auto;
+    }
 
-::deep .legacy .tag-emoji {
-    margin-right: 8px;
-    width: 1.2em;
-    text-align: center;
-    font-size: var(--font-size-sm);
-}
-
-::deep .legacy .count {
-    font-size: 0.8em;
-    color: var(--text-muted);
-    margin-left: auto;
-}
+    ::deep .tag-item.legacy .tag-emoji {
+        margin-right: 8px;
+        width: 1.2em;
+        text-align: center;
+        font-size: var(--font-size-sm);
+    }
 
 /* ====== Shared Styles ====== */
 ::deep .system-item {
     border: none !important;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    padding: 3px 8px;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s;
 }
 
     ::deep .system-item.active {
