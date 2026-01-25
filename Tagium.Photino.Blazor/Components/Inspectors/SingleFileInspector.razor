@@ -65,7 +65,7 @@
         <span class="tag-pill"
               style="border-color: @tag.ColorHex"
               @onclick="() => RemoveTag(tag.Id)">
-            <TagIcon Tag="@tag" />
+            <TagIcon Tag="@tag" ShowIcon="false" />
             @tag.Name <span class="remove">&times;</span>
         </span>
     }

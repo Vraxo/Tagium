@@ -123,7 +123,7 @@
 
 .tag-pill {
     background: var(--surface-bg);
-    padding: 2px 6px;
+    padding: 3px 6px; /* Increased from 2px for better optical centering */
     border-radius: 12px;
     font-size: var(--font-size-xs);
     cursor: pointer;
@@ -132,6 +132,7 @@
     user-select: none;
     border: 1px solid var(--border-color);
     transition: background-color 0.1s;
+    line-height: 1; /* Force consistent baseline */
 }
 
     .tag-pill:hover {
@@ -142,6 +143,9 @@
         margin-left: 4px;
         color: var(--danger-color);
         font-weight: bold;
+        display: flex; /* Ensure perfect vertical alignment */
+        align-items: center;
+        line-height: 1;
     }
 
     .tag-pill.add {

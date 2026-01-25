@@ -183,8 +183,6 @@
     cursor: pointer;
     padding: 0 var(--space-xs);
     line-height: 1;
+    display: flex; /* Ensure vertical centering */
+    align-items: center;
 }
-
-    .btn-icon.delete:hover {
-        color: var(--danger-hover);
-    }

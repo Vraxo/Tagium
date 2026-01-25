@@ -25,7 +25,7 @@
             <span class="tag-pill"
                   style="border-color: @tag.ColorHex"
                   @onclick="() => BulkRemoveTag(tag.Id)">
-                <TagIcon Tag="@tag" />
+                <TagIcon Tag="@tag" ShowIcon="false" />
                 @tag.Name <span class="remove">&times;</span>
             </span>
         }
@@ -46,8 +46,8 @@
         <span class="tag-pill add"
               style="border-color: @tag.ColorHex"
               @onclick="() => BulkAddTag(tag.Id)">
-            <TagIcon Tag="@tag" />
-            + @tag.Name
+            <TagIcon Tag="@tag" ShowIcon="false" />
+            @tag.Name
         </span>
     }
 </div>

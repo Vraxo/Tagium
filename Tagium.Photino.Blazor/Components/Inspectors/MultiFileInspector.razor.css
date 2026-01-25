@@ -31,6 +31,11 @@
         background: var(--border-color);
     }
 
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
 .btn-danger {
     background: var(--danger-color);
     border-color: var(--danger-color);
@@ -55,7 +60,7 @@
 
 .tag-pill {
     background: var(--surface-bg);
-    padding: 2px 6px;
+    padding: 3px 6px; /* Increased from 2px for better optical centering */
     border-radius: 12px;
     font-size: var(--font-size-xs);
     cursor: pointer;
@@ -64,6 +69,7 @@
     user-select: none;
     border: 1px solid var(--border-color);
     transition: background-color 0.1s;
+    line-height: 1; /* Force consistent baseline */
 }
 
     .tag-pill:hover {
@@ -74,6 +80,9 @@
         margin-left: 4px;
         color: var(--danger-color);
         font-weight: bold;
+        display: flex; /* Ensure perfect vertical alignment */
+        align-items: center;
+        line-height: 1;
     }
 
     .tag-pill.add {
@@ -99,7 +108,7 @@ hr {
 /* Natural, readable section headings */
 h4 {
     font-size: var(--font-size-sm);
-    font-weight: normal; /* Matches single inspector */
+    font-weight: normal;
     color: var(--text-muted);
     margin: 0 0 8px 0;
 }
