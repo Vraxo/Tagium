@@ -14,11 +14,17 @@ public partial class TagSidebar
     private bool IsMissingActive => AppState.IsMissingOnly
         && AppState.CurrentView == AppView.Files;
 
+    private string GetDisplayModeClass()
+    {
+        return Settings.Current.TagSidebarStyle.ToString().ToLowerInvariant();
+    }
+
     protected override void OnInitialized()
     {
         Tags = Library.GetTags();
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += RefreshData;
+        Settings.SettingsChanged += StateHasChanged;
     }
 
     private void RefreshData()
@@ -36,5 +42,6 @@ public partial class TagSidebar
     {
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= RefreshData;
+        Settings.SettingsChanged -= StateHasChanged;
     }
 }

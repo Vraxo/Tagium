@@ -6,6 +6,24 @@
 
 <div class="modal-header">Preferences</div>
 <div class="modal-body">
+    <h4>Tag Sidebar Style</h4>
+    <p class="hint">Choose how tags appear in the sidebar.</p>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="tagSidebarStyle"
+                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.Pill)"
+                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.Pill))" />
+            Colored Pills
+        </label>
+        <label>
+            <input type="radio"
+                   name="tagSidebarStyle"
+                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)"
+                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.MinimalCircle))" />
+            Minimal Circles
+        </label>
+    </div>
 
     <h4>Emoji Set</h4>
     <p class="hint">Requires restart to fully apply font changes.</p>
@@ -25,13 +43,17 @@
             Apple Color Emoji
         </label>
     </div>
-
 </div>
 <div class="modal-footer">
     <button class="btn" @onclick="Close">Close</button>
 </div>
 
 @code {
+    private void UpdateTagSidebarStyle(TagSidebarDisplayMode mode)
+    {
+        Settings.Update(s => s.TagSidebarStyle = mode);
+    }
+
     private void UpdateEmojiSet(EmojiSet set)
     {
         Settings.Update(s => s.EmojiPreference = set);

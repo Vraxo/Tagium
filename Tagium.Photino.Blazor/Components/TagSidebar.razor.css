@@ -1,4 +1,4 @@
-.sidebar-container {
+﻿.sidebar-container {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -11,8 +11,8 @@
     padding: var(--space-xs);
 }
 
-/* Base tag item - compact pill with dashed outline */
-.tag-item {
+/* ====== Pill Mode (Modern) ====== */
+.pill .tag-item {
     padding: 3px 8px;
     cursor: pointer;
     display: flex;
@@ -27,37 +27,80 @@
     border: 1px dashed;
 }
 
-    .tag-item:hover {
+    .pill .tag-item:hover {
         background: var(--surface-bg);
     }
 
-    /* Active state - inline style sets background */
-    .tag-item.active {
+    .pill .tag-item.active {
         color: white;
     }
 
-        .tag-item.active .count {
-            color: rgba(255,255,255,0.9);
-        }
+.pill .count {
+    font-size: 0.8em;
+    margin-left: auto;
+}
 
-/* Count - aligned to right */
-.count {
+.pill .item-emoji {
+    margin-right: 6px;
+}
+
+/* ====== Legacy Mode (Minimal Circles) ====== */
+.legacy .tag-item {
+    padding: 3px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    color: var(--text-color);
+    transition: background-color 0.1s;
+    user-select: none;
+    font-size: var(--font-size-sm);
+    line-height: 1.2;
+    border: none; /* No border in legacy mode */
+}
+
+    .legacy .tag-item:hover {
+        background: var(--surface-bg);
+    }
+
+    .legacy .tag-item.active {
+        background: var(--primary-color);
+        color: white;
+    }
+
+.legacy .tag-color {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.legacy .tag-emoji {
+    margin-right: 8px;
+    width: 1.2em;
+    text-align: center;
+}
+
+.legacy .count {
     font-size: 0.8em;
     color: var(--text-muted);
     margin-left: auto;
 }
 
-/* System items (All Files, Missing) styling */
-.icon {
-    margin-right: 6px;
-    display: inline-block;
-    width: 1.2em;
-    text-align: center;
-    font-size: 1em;
+/* ====== Shared Styles ====== */
+.system-item {
+    border: none !important; /* System items never have borders */
 }
 
-/* Emoji in tag items */
-.item-emoji {
+    .system-item.active {
+        background: var(--primary-color) !important;
+        color: white !important;
+    }
+
+.icon {
     margin-right: 6px;
     display: inline-block;
     width: 1.2em;
