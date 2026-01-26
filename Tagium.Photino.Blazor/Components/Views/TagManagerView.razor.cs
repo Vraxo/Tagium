@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Tagium.Core.Models;
+using Tagium.Core.Settings;
 
 namespace Tagium.Photino.Blazor.Components.Views;
 
@@ -37,13 +39,19 @@ public partial class TagManagerView
     protected override void OnInitialized()
     {
         RefreshTags();
-        Library.LibraryChanged += RefreshTags;
+        Library.LibraryChanged += RefreshData;
+        Settings.SettingsChanged += StateHasChanged;
+    }
+
+    private void RefreshData()
+    {
+        RefreshTags();
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void RefreshTags()
     {
-        Tags = Library.GetTags();
-        _ = InvokeAsync(StateHasChanged);
+        Tags = Library.GetTags(Settings.Current.TagSortBy, Settings.Current.TagSortDirection);
     }
 
     private void HandleKeyUp(KeyboardEventArgs e)
@@ -85,18 +93,13 @@ public partial class TagManagerView
 
     private void UpdateTagEmoji(Tag tag, string? newEmoji)
     {
-        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji)
-            ? null
-            : newEmoji;
-
+        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji;
         Library.UpdateTag(tag);
     }
 
     private void ToggleColorPicker(long id)
     {
-        ActiveColorPickerId = ActiveColorPickerId == id
-            ? null
-            : id;
+        ActiveColorPickerId = ActiveColorPickerId == id ? null : id;
     }
 
     private void UpdateTagColor(Tag tag, string color)
@@ -106,8 +109,27 @@ public partial class TagManagerView
         ActiveColorPickerId = null;
     }
 
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<TagSortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.TagSortBy = result);
+            RefreshTags();
+        }
+    }
+
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.TagSortDirection = result);
+            RefreshTags();
+        }
+    }
+
     public void Dispose()
     {
-        Library.LibraryChanged -= RefreshTags;
+        Library.LibraryChanged -= RefreshData;
+        Settings.SettingsChanged -= StateHasChanged;
     }
 }

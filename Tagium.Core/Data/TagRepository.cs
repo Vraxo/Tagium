@@ -1,5 +1,6 @@
 ﻿using Microsoft.Data.Sqlite;
 using Tagium.Core.Models;
+using Tagium.Core.Settings;
 
 namespace Tagium.Core.Data;
 
@@ -12,19 +13,20 @@ public class TagRepository
         _db = db;
     }
 
-    public List<Tag> GetAll()
+    public List<Tag> GetAll(TagSortBy sortBy = TagSortBy.Name, SortDirection direction = SortDirection.Asc)
     {
         List<Tag> tags = [];
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
+        string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        cmd.CommandText = $@"
             SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id
-            ORDER BY T.Name";
+            {orderBy}";
 
         using SqliteDataReader reader = cmd.ExecuteReader();
 
@@ -41,6 +43,18 @@ public class TagRepository
         }
 
         return tags;
+    }
+
+    private static string GetOrderByClause(TagSortBy sortBy, SortDirection direction)
+    {
+        string col = sortBy switch
+        {
+            TagSortBy.FileCount => "FileCount",
+            _ => "T.Name"
+        };
+
+        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
+        return $"ORDER BY {col} {dir}, T.Name ASC";
     }
 
     public List<Tag> GetTagsByIds(IEnumerable<long> ids)

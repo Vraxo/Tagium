@@ -5,19 +5,9 @@ using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
 
-public enum RelocateResultStatus { Success, Duplicate, Error, NotFound }
+public record RelocateResult(RelocateResultStatus Status, FileEntry? ConflictingFile);
 
-public class RelocateResult
-{
-    public RelocateResultStatus Status { get; set; }
-    public FileEntry? ConflictingFile { get; set; }
-}
-
-public class AddFileDetailedResult
-{
-    public AddFileResult Status { get; set; }
-    public FileEntry? Entry { get; set; }
-}
+public record AddFileDetailedResult(AddFileResult Status, FileEntry? Entry);
 
 public class LibraryService
 {
@@ -84,14 +74,14 @@ public class LibraryService
         string? hash = await FileHasher.ComputeSha256Async(path);
         if (hash is null)
         {
-            return new AddFileDetailedResult { Status = AddFileResult.Error };
+            return new AddFileDetailedResult(AddFileResult.Error, null);
         }
 
         // Check for existing by hash first to return the entry
         FileEntry? existing = _fileRepo.GetByHash(hash);
         if (existing is not null)
         {
-            return new AddFileDetailedResult { Status = AddFileResult.Duplicate, Entry = existing };
+            return new AddFileDetailedResult(AddFileResult.Duplicate, existing);
         }
 
         AddFileResult result = _fileRepo.Add(path, hash);
@@ -104,10 +94,10 @@ public class LibraryService
             }
             // Fetch the newly added entry
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
-            return new AddFileDetailedResult { Status = AddFileResult.Success, Entry = newEntry };
+            return new AddFileDetailedResult(AddFileResult.Success, newEntry);
         }
 
-        return new AddFileDetailedResult { Status = result };
+        return new AddFileDetailedResult(result, null);
     }
 
     // Kept for backward compatibility
@@ -180,27 +170,27 @@ public class LibraryService
     {
         if (!File.Exists(newPath))
         {
-            return new RelocateResult { Status = RelocateResultStatus.NotFound };
+            return new RelocateResult(RelocateResultStatus.NotFound, null);
         }
 
         // This is a single file operation, async not critical
         string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
         if (newHash is null)
         {
-            return new RelocateResult { Status = RelocateResultStatus.Error };
+            return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
         // Check if the new file is already in the database
         FileEntry? existing = _fileRepo.GetByHash(newHash);
         if (existing is not null && existing.Id != fileId)
         {
-            return new RelocateResult { Status = RelocateResultStatus.Duplicate, ConflictingFile = existing };
+            return new RelocateResult(RelocateResultStatus.Duplicate, existing);
         }
 
         FileEntry? file = _fileRepo.GetById(fileId);
         if (file is null)
         {
-            return new RelocateResult { Status = RelocateResultStatus.Error };
+            return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
         file.Path = newPath;
@@ -214,7 +204,7 @@ public class LibraryService
         _ = _thumbnailService.GenerateThumbnailAsync(file);
 
         LibraryChanged?.Invoke();
-        return new RelocateResult { Status = RelocateResultStatus.Success };
+        return new RelocateResult(RelocateResultStatus.Success, null);
     }
 
     public void RemoveFile(long fileId)
@@ -282,6 +272,11 @@ public class LibraryService
     public List<Tag> GetTags()
     {
         return _tagRepo.GetAll();
+    }
+
+    public List<Tag> GetTags(TagSortBy sortBy, SortDirection direction)
+    {
+        return _tagRepo.GetAll(sortBy, direction);
     }
 
     public List<Tag> GetTagsForFile(long fileId)

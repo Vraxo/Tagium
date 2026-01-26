@@ -1,7 +1,10 @@
 ﻿@namespace Tagium.Photino.Blazor.Components.Views
 @using Tagium.Core.Services
 @using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
 @inject LibraryService Library
+@inject SettingsManager Settings
 
 <div class="tag-manager-view">
     <div class="header-row">
@@ -10,6 +13,17 @@
             <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
             <button class="btn-primary" @onclick="AddTag">Add</button>
         </div>
+    </div>
+
+    <div class="sort-controls">
+        <select @onchange="OnSortByChange" value="@Settings.Current.TagSortBy">
+            <option value="@TagSortBy.Name">Name</option>
+            <option value="@TagSortBy.FileCount">File Count</option>
+        </select>
+        <select @onchange="OnSortDirChange" value="@Settings.Current.TagSortDirection">
+            <option value="@SortDirection.Asc">Asc</option>
+            <option value="@SortDirection.Desc">Desc</option>
+        </select>
     </div>
 
     <div class="tag-list">

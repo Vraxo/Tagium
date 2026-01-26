@@ -8,4 +8,6 @@ public class Settings
     public SortBy FileSortBy { get; set; } = SortBy.DateAdded;
     public SortDirection FileSortDirection { get; set; } = SortDirection.Desc;
     public TagSidebarDisplayMode TagSidebarStyle { get; set; } = TagSidebarDisplayMode.Pill;
+    public TagSortBy TagSortBy { get; set; } = TagSortBy.Name;
+    public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
 }
