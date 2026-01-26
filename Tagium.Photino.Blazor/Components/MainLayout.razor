@@ -22,11 +22,14 @@
 
         <!-- Main Workspace (Sidebars + Content) -->
         <div class="workspace-layout">
-            <aside id="sidebar-panel" class="left-panel">
-                <TagSidebar />
-            </aside>
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <aside id="sidebar-panel" class="left-panel">
+                    <TagSidebar />
+                </aside>
 
-            <div id="splitter-left" class="splitter"></div>
+                <div id="splitter-left" class="splitter"></div>
+            }
 
             <main class="center-panel">
                 @if (AppState.CurrentView == AppView.Files)
@@ -57,11 +60,14 @@
                 </div>
             </main>
 
-            <div id="splitter-right" class="splitter"></div>
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <div id="splitter-right" class="splitter"></div>
 
-            <aside id="inspector-panel" class="right-panel">
-                <FileInspector />
-            </aside>
+                <aside id="inspector-panel" class="right-panel">
+                    <FileInspector />
+                </aside>
+            }
         </div>
 
         <ModalHost />
