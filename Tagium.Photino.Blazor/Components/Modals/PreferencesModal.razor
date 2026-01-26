@@ -48,19 +48,3 @@
     <button class="btn" @onclick="Close">Close</button>
 </div>
 
-@code {
-    private void UpdateTagSidebarStyle(TagSidebarDisplayMode mode)
-    {
-        Settings.Update(s => s.TagSidebarStyle = mode);
-    }
-
-    private void UpdateEmojiSet(EmojiSet set)
-    {
-        Settings.Update(s => s.EmojiPreference = set);
-    }
-
-    private void Close()
-    {
-        ModalService.Close();
-    }
-}

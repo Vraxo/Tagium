@@ -8,7 +8,7 @@ public class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        var appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
+        PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
 
         // Register Services
         ServiceRegistrar.ConfigureServices(appBuilder.Services);
@@ -16,7 +16,7 @@ public class Program
         // Register Root Component
         appBuilder.RootComponents.Add<App>("#app");
 
-        var app = appBuilder.Build();
+        PhotinoBlazorApp app = appBuilder.Build();
 
         // Pass ServiceProvider to static SchemeHandler
         SchemeHandlers.ServiceProvider = app.Services;

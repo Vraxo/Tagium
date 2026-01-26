@@ -34,11 +34,3 @@
     </div>
 </div>
 
-@code {
-    private bool IsMenuOpen = false;
-
-    public async Task FocusSearchAsync() => await SearchInput.FocusAsync();
-
-    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
-    private void CloseMenu() => IsMenuOpen = false;
-}

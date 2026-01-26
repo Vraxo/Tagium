@@ -13,21 +13,3 @@
         <option value="@SortDirection.Desc">Desc</option>
     </select>
 </div>
-
-@code {
-    private void OnSortByChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortBy = result);
-        }
-    }
-
-    private void OnSortDirChange(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
-        {
-            Settings.Update(s => s.FileSortDirection = result);
-        }
-    }
-}
