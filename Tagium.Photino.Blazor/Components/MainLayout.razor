@@ -8,6 +8,7 @@
 @using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Photino.Blazor.Components.Inspectors
 @using Tagium.Photino.Blazor.Services.Toasting
+@implements IDisposable
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
@@ -34,7 +35,7 @@
             <main class="center-panel">
                 @if (AppState.CurrentView == AppView.Files)
                 {
-                    <FilesViewToolbar />
+                    <FilesViewToolbar @ref="_filesViewToolbar" />
                 }
 
                 <div class="content-area">

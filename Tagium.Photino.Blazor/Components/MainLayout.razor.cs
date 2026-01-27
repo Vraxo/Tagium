@@ -1,15 +1,18 @@
 using Microsoft.JSInterop;
+using Tagium.Photino.Blazor.Components.Views;
 using Tagium.Photino.Blazor.Services;
 using Tagium.Photino.Blazor.Services.Toasting;
 
 namespace Tagium.Photino.Blazor.Components;
 
-public partial class MainLayout
+public partial class MainLayout : IDisposable
 {
     private bool _importInProgress = false;
     private int _importProcessed = 0;
     private int _importTotal = 0;
     private double _importProgress = 0;
+    private DotNetObjectReference<MainLayout>? _objRef;
+    private FilesViewToolbar? _filesViewToolbar;
 
     protected override void OnInitialized()
     {
@@ -26,12 +29,44 @@ public partial class MainLayout
             return;
         }
 
+        _objRef = DotNetObjectReference.Create(this);
+
         await JS.InvokeVoidAsync(
             "layoutResizer.init",
             "sidebar-panel",
             "splitter-left",
             "inspector-panel",
             "splitter-right");
+
+        await JS.InvokeVoidAsync("globalShortcuts.init", _objRef);
+    }
+
+    [JSInvokable]
+    public async Task HandleGlobalKeyDown(string key, bool ctrlOrMeta, bool shiftKey)
+    {
+        if (!ctrlOrMeta)
+        {
+            return;
+        }
+
+        switch (key.ToLower())
+        {
+            case "z":
+                AppState.Undo();
+                break;
+            case "f":
+                if (_filesViewToolbar != null)
+                {
+                    await _filesViewToolbar.FocusSearchAsync();
+                }
+                break;
+            case "t":
+                AppState.SwitchView(AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags);
+                break;
+            case "r":
+                Library.Refresh();
+                break;
+        }
     }
 
     private void UpdateImportProgress(int processed, int total)
@@ -88,5 +123,7 @@ public partial class MainLayout
         Library.ImportCompleted -= ShowImportStatus;
         Library.ImportProgress -= UpdateImportProgress;
         AppState.OnChange -= StateHasChanged;
+
+        _objRef?.Dispose();
     }
 }

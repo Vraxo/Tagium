@@ -830,6 +830,7 @@ public class Tag
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
+using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
@@ -846,6 +847,7 @@ public class LibraryService
     private readonly FileSearchRepository _searchRepo;
     private readonly ThumbnailService _thumbnailService;
     private readonly SettingsManager _settingsManager;
+    private readonly UndoService _undoService;
 
     public event Action? LibraryChanged;
     public event Action<int, int, int>? ImportCompleted; // added, duplicates, errors
@@ -857,7 +859,8 @@ public class LibraryService
         FileTagRepository fileTagRepo,
         FileSearchRepository searchRepo,
         ThumbnailService thumbnailService,
-        SettingsManager settingsManager)
+        SettingsManager settingsManager,
+        UndoService undoService)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
@@ -865,11 +868,19 @@ public class LibraryService
         _searchRepo = searchRepo;
         _thumbnailService = thumbnailService;
         _settingsManager = settingsManager;
+        _undoService = undoService;
     }
 
     public void Refresh()
     {
         LibraryChanged?.Invoke();
+    }
+
+    public bool CanUndo => _undoService.CanUndo;
+
+    public void Undo()
+    {
+        _undoService.Undo();
     }
 
     // --- Files ---
@@ -1058,41 +1069,111 @@ public class LibraryService
 
     public void AddTagToFile(long fileId, long tagId)
     {
+        // Record which files didn't have this tag before adding
+        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        bool alreadyHadTag = existingIds.Contains(tagId);
+
         _fileTagRepo.AddTagToFile(fileId, tagId);
+
+        if (!alreadyHadTag)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                [fileId],
+                wasAdding: true));
+        }
+
         LibraryChanged?.Invoke();
     }
 
     public void AddTagToFiles(IEnumerable<long> fileIds, long tagId)
     {
-        if (!fileIds.Any())
+        List<long> ids = fileIds.ToList();
+        if (ids.Count == 0)
         {
             return;
         }
 
-        foreach (long id in fileIds)
+        // Determine which files actually receive the tag (didn't have it before)
+        List<long> modifiedFiles = [];
+        foreach (long id in ids)
         {
+            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            if (!existing.Contains(tagId))
+            {
+                modifiedFiles.Add(id);
+            }
+
             _fileTagRepo.AddTagToFile(id, tagId);
         }
+
+        if (modifiedFiles.Count != 0)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                modifiedFiles,
+                wasAdding: true));
+        }
+
         LibraryChanged?.Invoke();
     }
 
     public void RemoveTagFromFile(long fileId, long tagId)
     {
+        // Record if file had this tag before removing
+        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        bool hadTag = existingIds.Contains(tagId);
+
         _fileTagRepo.RemoveTagFromFile(fileId, tagId);
+
+        if (hadTag)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                [fileId],
+                wasAdding: false));
+        }
+
         LibraryChanged?.Invoke();
     }
 
     public void RemoveTagFromFiles(IEnumerable<long> fileIds, long tagId)
     {
-        if (!fileIds.Any())
+        List<long> ids = fileIds.ToList();
+        if (ids.Count == 0)
         {
             return;
         }
 
-        foreach (long id in fileIds)
+        // Determine which files actually lose the tag (had it before)
+        List<long> modifiedFiles = [];
+        foreach (long id in ids)
         {
+            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            if (existing.Contains(tagId))
+            {
+                modifiedFiles.Add(id);
+            }
+
             _fileTagRepo.RemoveTagFromFile(id, tagId);
         }
+
+        if (modifiedFiles.Count != 0)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                modifiedFiles,
+                wasAdding: false));
+        }
+
         LibraryChanged?.Invoke();
     }
 
@@ -2010,6 +2091,131 @@ public class LibraryIntegrityService
 
 ---
 
+### `Tagium.Core\Services\Undo\IUndoCommand.cs`
+
+```csharp
+namespace Tagium.Core.Services.Undo;
+
+public interface IUndoCommand
+{
+    void Undo();
+}
+```
+
+---
+
+### `Tagium.Core\Services\Undo\TagAssignmentUndoCommand.cs`
+
+```csharp
+using Tagium.Core.Data;
+
+namespace Tagium.Core.Services.Undo;
+
+public class TagAssignmentUndoCommand : IUndoCommand
+{
+    private readonly FileTagRepository _fileTagRepo;
+    private readonly Action _onChanged;
+    private readonly long _tagId;
+    private readonly List<long> _fileIds;
+    private readonly bool _wasAdding;
+
+    public TagAssignmentUndoCommand(
+        FileTagRepository fileTagRepo,
+        Action onChanged,
+        long tagId,
+        IEnumerable<long> fileIds,
+        bool wasAdding)
+    {
+        _fileTagRepo = fileTagRepo;
+        _onChanged = onChanged;
+        _tagId = tagId;
+        _fileIds = fileIds.ToList();
+        _wasAdding = wasAdding;
+    }
+
+    public void Undo()
+    {
+        foreach (long fileId in _fileIds)
+        {
+            if (_wasAdding)
+            {
+                _fileTagRepo.RemoveTagFromFile(fileId, _tagId);
+            }
+            else
+            {
+                _fileTagRepo.AddTagToFile(fileId, _tagId);
+            }
+        }
+
+        _onChanged();
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\Undo\UndoService.cs`
+
+```csharp
+namespace Tagium.Core.Services.Undo;
+
+public class UndoService
+{
+    private readonly Stack<IUndoCommand> _history = new();
+    private const int MaxHistory = 50;
+    private bool _isExecutingUndo;
+
+    public bool CanUndo => _history.Count > 0 && !_isExecutingUndo;
+
+    public void Push(IUndoCommand command)
+    {
+        if (_isExecutingUndo)
+        {
+            return;
+        }
+
+        if (_history.Count >= MaxHistory)
+        {
+            // Remove oldest to prevent unbounded growth
+            var temp = _history.ToArray();
+            _history.Clear();
+            for (int i = temp.Length - 2; i >= 0; i--)
+            {
+                _history.Push(temp[i]);
+            }
+        }
+
+        _history.Push(command);
+    }
+
+    public void Undo()
+    {
+        if (!CanUndo)
+        {
+            return;
+        }
+
+        _isExecutingUndo = true;
+        try
+        {
+            IUndoCommand command = _history.Pop();
+            command.Undo();
+        }
+        finally
+        {
+            _isExecutingUndo = false;
+        }
+    }
+
+    public void Clear()
+    {
+        _history.Clear();
+    }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Program.cs`
 
 ```csharp
@@ -2139,6 +2345,26 @@ public class Program
 </div>
 
 @code {
+    private void OpenDataTools() =>
+        ModalService.Show("Data Management", @<DataManagementModal />);
+
+    private void OpenPreferences() =>
+        ModalService.Show("Preferences", @<PreferencesModal />);
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\AppToolbar.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components.Web;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class AppToolbar
+{
     private async void OnKeyDown(KeyboardEventArgs e)
     {
         if (e.CtrlKey || e.MetaKey)
@@ -2154,6 +2380,9 @@ public class Program
                 case "r":
                     Library.Refresh();
                     break;
+                case "z":
+                    AppState.Undo();
+                    break;
             }
         }
     }
@@ -2167,16 +2396,12 @@ public class Program
         }
     }
 
-    private void ToggleTagView() =>
+    private void ToggleTagView()
+    {
         AppState.SwitchView(
             AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
         );
-
-    private void OpenDataTools() =>
-        ModalService.Show("Data Management", @<DataManagementModal />);
-
-    private void OpenPreferences() =>
-        ModalService.Show("Preferences", @<PreferencesModal />);
+    }
 
     public void Dispose() { }
 }
@@ -3314,12 +3539,16 @@ public partial class ToastContainer
 ### `Tagium.Photino.Blazor\Services\AppState.cs`
 
 ```csharp
+using Tagium.Core.Services;
+
 namespace Tagium.Photino.Blazor.Services;
 
 public enum AppView { Files, Tags }
 
 public class AppState
 {
+    private readonly LibraryService _library;
+
     // State
     public AppView CurrentView { get; private set; } = AppView.Files;
     public string SearchText { get; private set; } = "";
@@ -3330,6 +3559,11 @@ public class AppState
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
+    public AppState(LibraryService library)
+    {
+        _library = library;
+    }
+
     public void SwitchView(AppView view)
     {
         if (CurrentView == view)
@@ -3339,6 +3573,11 @@ public class AppState
 
         CurrentView = view;
         NotifyStateChanged();
+    }
+
+    public void Undo()
+    {
+        _library.Undo();
     }
 
     public void SetSearch(string text)
@@ -3748,6 +3987,7 @@ using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
 using Tagium.Core.Services.DataMerge;
 using Tagium.Core.Services.LibraryItengrity;
+using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Components.Shared;
 using Tagium.Photino.Blazor.Services;
@@ -3768,6 +4008,9 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<FileRepository>();
         _ = services.AddSingleton<FileTagRepository>();
         _ = services.AddSingleton<FileSearchRepository>();
+
+        // Core - Undo
+        _ = services.AddSingleton<UndoService>();
 
         // Core - Services
         _ = services.AddSingleton<ThumbnailService>();

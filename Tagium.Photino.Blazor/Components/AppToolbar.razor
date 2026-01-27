@@ -7,10 +7,8 @@
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
 @inject AppState AppState
-@inject SearchInput SearchInput
-@implements IDisposable
 
-<div class="toolbar" @onkeydown="OnKeyDown" tabindex="-1">
+<div class="toolbar">
     <button class="btn btn-primary" @onclick="ImportFiles">Add Files</button>
     <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
             @onclick="ToggleTagView">

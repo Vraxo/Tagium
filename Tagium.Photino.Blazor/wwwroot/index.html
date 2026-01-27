@@ -47,6 +47,25 @@
 </head>
 <body>
     <div id="app">Loading...</div>
+    <script>
+        window.globalShortcuts = {
+            init: function (dotNetRef) {
+                document.addEventListener('keydown', function (e) {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
+                        return;
+                    }
+
+                    if (e.ctrlKey || e.metaKey) {
+                        const key = e.key.toLowerCase();
+                        if (['z', 'f', 't', 'r'].includes(key)) {
+                            e.preventDefault();
+                            dotNetRef.invokeMethodAsync('HandleGlobalKeyDown', key, e.ctrlKey || e.metaKey, e.shiftKey);
+                        }
+                    }
+                });
+            }
+        };
+    </script>
     <script src="_framework/blazor.webview.js"></script>
     <script src="js/dragdrop.js"></script>
     <script src="js/grid.js"></script>
