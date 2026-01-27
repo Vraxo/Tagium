@@ -25,44 +25,9 @@
 </div>
 
 @code {
-    private async void OnKeyDown(KeyboardEventArgs e)
-    {
-        if (e.CtrlKey || e.MetaKey)
-        {
-            switch (e.Key.ToLower())
-            {
-                case "f":
-                    await SearchInput.FocusAsync();
-                    break;
-                case "t":
-                    ToggleTagView();
-                    break;
-                case "r":
-                    Library.Refresh();
-                    break;
-            }
-        }
-    }
-
-    private async Task ImportFiles()
-    {
-        var paths = FileDialog.OpenFiles();
-        if (paths is { Length: > 0 })
-        {
-            await Library.ImportBatchAsync(paths);
-        }
-    }
-
-    private void ToggleTagView() =>
-        AppState.SwitchView(
-            AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
-        );
-
     private void OpenDataTools() =>
         ModalService.Show("Data Management", @<DataManagementModal />);
 
     private void OpenPreferences() =>
         ModalService.Show("Preferences", @<PreferencesModal />);
-
-    public void Dispose() { }
 }

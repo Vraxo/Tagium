@@ -48,7 +48,7 @@ public partial class DataManagementModal
 
     private void MergeDb()
     {
-        string[]? files = FileDialog.OpenFiles();
+        string[]? files = Services.FileDialogService.OpenFiles();
 
         if (files is null || files.Length == 0)
         {
@@ -62,7 +62,7 @@ public partial class DataManagementModal
 
     private void RestoreDb()
     {
-        string[]? files = FileDialog.OpenFiles();
+        string[]? files = Services.FileDialogService.OpenFiles();
 
         if (files is null || files.Length == 0)
         {

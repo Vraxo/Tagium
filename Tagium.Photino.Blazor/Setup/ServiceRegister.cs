@@ -4,6 +4,7 @@ using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
 using Tagium.Core.Services.DataMerge;
 using Tagium.Core.Services.LibraryItengrity;
+using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Components.Shared;
 using Tagium.Photino.Blazor.Services;
@@ -24,6 +25,9 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<FileRepository>();
         _ = services.AddSingleton<FileTagRepository>();
         _ = services.AddSingleton<FileSearchRepository>();
+
+        // Core - Undo
+        _ = services.AddSingleton<UndoService>();
 
         // Core - Services
         _ = services.AddSingleton<ThumbnailService>();

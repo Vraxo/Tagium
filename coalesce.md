@@ -562,6 +562,7 @@ public class FileTagRepository
 ```csharp
 using Microsoft.Data.Sqlite;
 using Tagium.Core.Models;
+using Tagium.Core.Settings;
 
 namespace Tagium.Core.Data;
 
@@ -574,19 +575,20 @@ public class TagRepository
         _db = db;
     }
 
-    public List<Tag> GetAll()
+    public List<Tag> GetAll(TagSortBy sortBy = TagSortBy.Name, SortDirection direction = SortDirection.Asc)
     {
         List<Tag> tags = [];
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
+        string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        cmd.CommandText = $@"
             SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id
-            ORDER BY T.Name";
+            {orderBy}";
 
         using SqliteDataReader reader = cmd.ExecuteReader();
 
@@ -603,6 +605,18 @@ public class TagRepository
         }
 
         return tags;
+    }
+
+    private static string GetOrderByClause(TagSortBy sortBy, SortDirection direction)
+    {
+        string col = sortBy switch
+        {
+            TagSortBy.FileCount => "FileCount",
+            _ => "T.Name"
+        };
+
+        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
+        return $"ORDER BY {col} {dir}, T.Name ASC";
     }
 
     public List<Tag> GetTagsByIds(IEnumerable<long> ids)
@@ -820,19 +834,9 @@ using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
 
-public enum RelocateResultStatus { Success, Duplicate, Error, NotFound }
+public record RelocateResult(RelocateResultStatus Status, FileEntry? ConflictingFile);
 
-public class RelocateResult
-{
-    public RelocateResultStatus Status { get; set; }
-    public FileEntry? ConflictingFile { get; set; }
-}
-
-public class AddFileDetailedResult
-{
-    public AddFileResult Status { get; set; }
-    public FileEntry? Entry { get; set; }
-}
+public record AddFileDetailedResult(AddFileResult Status, FileEntry? Entry);
 
 public class LibraryService
 {
@@ -899,14 +903,14 @@ public class LibraryService
         string? hash = await FileHasher.ComputeSha256Async(path);
         if (hash is null)
         {
-            return new AddFileDetailedResult { Status = AddFileResult.Error };
+            return new AddFileDetailedResult(AddFileResult.Error, null);
         }
 
         // Check for existing by hash first to return the entry
         FileEntry? existing = _fileRepo.GetByHash(hash);
         if (existing is not null)
         {
-            return new AddFileDetailedResult { Status = AddFileResult.Duplicate, Entry = existing };
+            return new AddFileDetailedResult(AddFileResult.Duplicate, existing);
         }
 
         AddFileResult result = _fileRepo.Add(path, hash);
@@ -919,10 +923,10 @@ public class LibraryService
             }
             // Fetch the newly added entry
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
-            return new AddFileDetailedResult { Status = AddFileResult.Success, Entry = newEntry };
+            return new AddFileDetailedResult(AddFileResult.Success, newEntry);
         }
 
-        return new AddFileDetailedResult { Status = result };
+        return new AddFileDetailedResult(result, null);
     }
 
     // Kept for backward compatibility
@@ -995,27 +999,27 @@ public class LibraryService
     {
         if (!File.Exists(newPath))
         {
-            return new RelocateResult { Status = RelocateResultStatus.NotFound };
+            return new RelocateResult(RelocateResultStatus.NotFound, null);
         }
 
         // This is a single file operation, async not critical
         string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
         if (newHash is null)
         {
-            return new RelocateResult { Status = RelocateResultStatus.Error };
+            return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
         // Check if the new file is already in the database
         FileEntry? existing = _fileRepo.GetByHash(newHash);
         if (existing is not null && existing.Id != fileId)
         {
-            return new RelocateResult { Status = RelocateResultStatus.Duplicate, ConflictingFile = existing };
+            return new RelocateResult(RelocateResultStatus.Duplicate, existing);
         }
 
         FileEntry? file = _fileRepo.GetById(fileId);
         if (file is null)
         {
-            return new RelocateResult { Status = RelocateResultStatus.Error };
+            return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
         file.Path = newPath;
@@ -1029,7 +1033,7 @@ public class LibraryService
         _ = _thumbnailService.GenerateThumbnailAsync(file);
 
         LibraryChanged?.Invoke();
-        return new RelocateResult { Status = RelocateResultStatus.Success };
+        return new RelocateResult(RelocateResultStatus.Success, null);
     }
 
     public void RemoveFile(long fileId)
@@ -1099,6 +1103,11 @@ public class LibraryService
         return _tagRepo.GetAll();
     }
 
+    public List<Tag> GetTags(TagSortBy sortBy, SortDirection direction)
+    {
+        return _tagRepo.GetAll(sortBy, direction);
+    }
+
     public List<Tag> GetTagsForFile(long fileId)
     {
         List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
@@ -1150,6 +1159,16 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 }
+```
+
+---
+
+### `Tagium.Core\Services\RelocateResultStatus.cs`
+
+```csharp
+namespace Tagium.Core.Services;
+
+public enum RelocateResultStatus { Success, Duplicate, Error, NotFound }
 ```
 
 ---
@@ -1392,6 +1411,8 @@ public class Settings
     public SortBy FileSortBy { get; set; } = SortBy.DateAdded;
     public SortDirection FileSortDirection { get; set; } = SortDirection.Desc;
     public TagSidebarDisplayMode TagSidebarStyle { get; set; } = TagSidebarDisplayMode.Pill;
+    public TagSortBy TagSortBy { get; set; } = TagSortBy.Name;
+    public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
 }
 ```
 
@@ -1533,6 +1554,20 @@ public enum TagSidebarDisplayMode
 {
     Pill,
     MinimalCircle
+}
+```
+
+---
+
+### `Tagium.Core\Settings\TagSortBy.cs`
+
+```csharp
+namespace Tagium.Core.Settings;
+
+public enum TagSortBy
+{
+    Name,
+    FileCount
 }
 ```
 
@@ -1988,7 +2023,7 @@ public class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        var appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
+        PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
 
         // Register Services
         ServiceRegistrar.ConfigureServices(appBuilder.Services);
@@ -1996,7 +2031,7 @@ public class Program
         // Register Root Component
         appBuilder.RootComponents.Add<App>("#app");
 
-        var app = appBuilder.Build();
+        PhotinoBlazorApp app = appBuilder.Build();
 
         // Pass ServiceProvider to static SchemeHandler
         SchemeHandlers.ServiceProvider = app.Services;
@@ -2125,7 +2160,7 @@ public class Program
 
     private async Task ImportFiles()
     {
-        var paths = FileDialog.OpenFiles();
+        var paths = FileDialogService.OpenFiles();
         if (paths is { Length: > 0 })
         {
             await Library.ImportBatchAsync(paths);
@@ -2207,13 +2242,6 @@ public class Program
 
 ---
 
-### `Tagium.Photino.Blazor\Components\Component.razor`
-
-```
-```
-
----
-
 ### `Tagium.Photino.Blazor\Components\FileGrid.razor`
 
 ```
@@ -2255,13 +2283,29 @@ public class Program
     }
 </div>
 
-@code {
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileGrid.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.JSInterop;
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class FileGrid
+{
     private List<FileEntry> Files = [];
     private DotNetObjectReference<FileGrid>? _objRef;
 
     protected override void OnInitialized()
     {
         LoadFiles();
+
         AppState.OnChange += ReloadData;
         AppState.OnSelectionChange += RefreshSelection;
         Library.LibraryChanged += ReloadData;
@@ -2270,22 +2314,24 @@ public class Program
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (!firstRender)
         {
-            _objRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
+            return;
         }
+
+        _objRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
     }
 
     private void ReloadData()
     {
         LoadFiles();
-        InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void RefreshSelection()
     {
-        InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void LoadFiles()
@@ -2298,12 +2344,14 @@ public class Program
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
 
-    private void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
+    private static void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
     {
-        if (!file.IsMissing)
+        if (file.IsMissing)
         {
-            SystemLauncherService.OpenFile(file.Path);
+            return;
         }
+
+        SystemLauncherService.OpenFile(file.Path);
     }
 
     [JSInvokable]
@@ -2333,25 +2381,32 @@ public class Program
     [JSInvokable]
     public void OnEnterKey()
     {
-        if (AppState.SelectedFileIds.Count == 1)
+        if (AppState.SelectedFileIds.Count != 1)
         {
-            long id = AppState.SelectedFileIds.First();
-            var file = Files.FirstOrDefault(f => f.Id == id);
-            if (file is not null && !file.IsMissing)
-            {
-                SystemLauncherService.OpenFile(file.Path);
-            }
+            return;
         }
+
+        long id = AppState.SelectedFileIds.First();
+        FileEntry? file = Files.FirstOrDefault(f => f.Id == id);
+
+        if (file is null || file.IsMissing)
+        {
+            return;
+        }
+
+        SystemLauncherService.OpenFile(file.Path);
     }
 
     [JSInvokable]
     public void OnDeleteKey()
     {
-        if (AppState.SelectedFileIds.Any())
+        if (AppState.SelectedFileIds.Count == 0)
         {
-            Library.RemoveFiles(AppState.SelectedFileIds);
-            AppState.ClearSelection();
+            return;
         }
+
+        Library.RemoveFiles(AppState.SelectedFileIds);
+        AppState.ClearSelection();
     }
 
     public void Dispose()
@@ -2360,6 +2415,7 @@ public class Program
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
         Settings.SettingsChanged -= ReloadData;
+
         _objRef?.Dispose();
     }
 }
@@ -2478,11 +2534,14 @@ public class Program
 
         <!-- Main Workspace (Sidebars + Content) -->
         <div class="workspace-layout">
-            <aside id="sidebar-panel" class="left-panel">
-                <TagSidebar />
-            </aside>
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <aside id="sidebar-panel" class="left-panel">
+                    <TagSidebar />
+                </aside>
 
-            <div id="splitter-left" class="splitter"></div>
+                <div id="splitter-left" class="splitter"></div>
+            }
 
             <main class="center-panel">
                 @if (AppState.CurrentView == AppView.Files)
@@ -2513,11 +2572,14 @@ public class Program
                 </div>
             </main>
 
-            <div id="splitter-right" class="splitter"></div>
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <div id="splitter-right" class="splitter"></div>
 
-            <aside id="inspector-panel" class="right-panel">
-                <FileInspector />
-            </aside>
+                <aside id="inspector-panel" class="right-panel">
+                    <FileInspector />
+                </aside>
+            }
         </div>
 
         <ModalHost />
@@ -2531,8 +2593,21 @@ public class Program
         }
     </div>
 </FileDropZone>
+```
 
-@code {
+---
+
+### `Tagium.Photino.Blazor\Components\MainLayout.razor.cs`
+
+```csharp
+using Microsoft.JSInterop;
+using Tagium.Photino.Blazor.Services;
+using Tagium.Photino.Blazor.Services.Toasting;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class MainLayout
+{
     private bool _importInProgress = false;
     private int _importProcessed = 0;
     private int _importTotal = 0;
@@ -2548,10 +2623,17 @@ public class Program
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (!firstRender)
         {
-            await JS.InvokeVoidAsync("layoutResizer.init", "sidebar-panel", "splitter-left", "inspector-panel", "splitter-right");
+            return;
         }
+
+        await JS.InvokeVoidAsync(
+            "layoutResizer.init",
+            "sidebar-panel",
+            "splitter-left",
+            "inspector-panel",
+            "splitter-right");
     }
 
     private void UpdateImportProgress(int processed, int total)
@@ -2560,28 +2642,38 @@ public class Program
         _importProcessed = processed;
         _importTotal = total;
         _importProgress = (double)processed / total * 100;
-        InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void ShowImportStatus(int added, int duplicates, int errors)
     {
         _importInProgress = false;
         int total = added + duplicates + errors;
-        if (total == 0) return;
+        if (total == 0)
+        {
+            return;
+        }
 
         List<string> parts = [];
 
-        if (added > 0) parts.Add($"{added} added");
-        if (duplicates > 0) parts.Add($"{duplicates} duplicate{(duplicates == 1 ? "" : "s")}");
-        if (errors > 0) parts.Add($"{errors} failed");
+        if (added > 0)
+        {
+            parts.Add($"{added} added");
+        }
+
+        if (duplicates > 0)
+        {
+            parts.Add($"{duplicates} duplicate{(duplicates == 1 ? "" : "s")}");
+        }
+
+        if (errors > 0)
+        {
+            parts.Add($"{errors} failed");
+        }
 
         string message = $"Import: {string.Join(", ", parts)}";
 
-        ToastType type;
-        if (errors > 0) type = ToastType.Error;
-        else if (added > 0) type = ToastType.Success;
-        else type = ToastType.Info;
-
+        ToastType type = errors > 0 ? ToastType.Error : added > 0 ? ToastType.Success : ToastType.Info;
         Toast.Show(message, type);
     }
 
@@ -2737,10 +2829,19 @@ public class Program
         </div>
     </div>
 }
+```
 
+---
 
+### `Tagium.Photino.Blazor\Components\ModalHost.razor.cs`
 
-@code {
+```csharp
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class ModalHost
+{
     private bool IsVisible => ModalService.Content is not null;
 
     protected override void OnInitialized()
@@ -2964,7 +3065,7 @@ public partial class TagSidebar
 }
 
 /* ====== Pill Mode (Modern) ====== */
-::deep .pill .tag-item {
+::deep .tag-item.pill {
     padding: 3px 8px;
     cursor: pointer;
     display: flex;
@@ -2979,25 +3080,25 @@ public partial class TagSidebar
     border: 1px dashed;
 }
 
-    ::deep .pill .tag-item:hover {
+    ::deep .tag-item.pill:hover {
         background: var(--surface-bg);
     }
 
-    ::deep .pill .tag-item.active {
+    ::deep .tag-item.pill.active {
         color: white;
     }
 
-::deep .pill .count {
-    font-size: 0.8em;
-    margin-left: auto;
-}
+    ::deep .tag-item.pill .count {
+        font-size: 0.8em;
+        margin-left: auto;
+    }
 
-::deep .pill .item-emoji {
-    margin-right: 6px;
-}
+    ::deep .tag-item.pill .item-emoji {
+        margin-right: 6px;
+    }
 
 /* ====== Legacy Mode (Minimal Circles) ====== */
-::deep .legacy .tag-item {
+::deep .tag-item.legacy {
     padding: 3px 8px;
     cursor: pointer;
     display: flex;
@@ -3012,40 +3113,41 @@ public partial class TagSidebar
     border: none;
 }
 
-    ::deep .legacy .tag-item:hover {
+    ::deep .tag-item.legacy:hover {
         background: var(--surface-bg);
     }
 
-    ::deep .legacy .tag-item.active {
+    ::deep .tag-item.legacy.active {
         background: var(--primary-color);
         color: white;
     }
 
-::deep .legacy .tag-color {
-    width: 5px !important;
-    height: 5px !important;
-    border-radius: 50%;
-    margin-right: 8px;
-    flex-shrink: 0;
-    border: 1px solid rgba(255,255,255,0.1);
-}
+    ::deep .tag-item.legacy .count {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        margin-left: auto;
+    }
 
-::deep .legacy .tag-emoji {
-    margin-right: 8px;
-    width: 1.2em;
-    text-align: center;
-    font-size: var(--font-size-sm);
-}
-
-::deep .legacy .count {
-    font-size: 0.8em;
-    color: var(--text-muted);
-    margin-left: auto;
-}
+    ::deep .tag-item.legacy .tag-emoji {
+        margin-right: 8px;
+        width: 1.2em;
+        text-align: center;
+        font-size: var(--font-size-sm);
+    }
 
 /* ====== Shared Styles ====== */
 ::deep .system-item {
     border: none !important;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    padding: 3px 8px;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s;
 }
 
     ::deep .system-item.active {
@@ -3330,14 +3432,13 @@ namespace Tagium.Photino.Blazor.Services;
 
 public class FileDialogService
 {
-    public string[]? OpenFiles()
+    public static string[]? OpenFiles()
     {
-        // Nfd.OpenDialogMultiple returns a path set, or throws/returns error status.
-        // We wrap it to return a safe string array or null.
-
         NfdStatus result = Nfd.OpenDialogMultiple(out string[] paths, null, null);
 
-        return result == NfdStatus.Ok ? paths : null;
+        return result == NfdStatus.Ok
+            ? paths
+            : null;
     }
 }
 ```
@@ -3519,7 +3620,13 @@ public class SystemLauncherService
         {
             // Select the file in explorer
             string argument = $"/select,\"{path}\"";
-            _ = Process.Start(new ProcessStartInfo("explorer.exe", argument) { UseShellExecute = true });
+
+            ProcessStartInfo processStartInfo = new("explorer.exe", argument)
+            {
+                UseShellExecute = true
+            };
+
+            _ = Process.Start(processStartInfo);
         }
         catch (Exception ex)
         {
@@ -3748,13 +3855,6 @@ public static class ServiceRegistrar
 
 ---
 
-### `Tagium.Photino.Blazor\Components\Inspectors\Component.razor`
-
-```
-```
-
----
-
 ### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor`
 
 ```
@@ -3808,18 +3908,24 @@ public static class ServiceRegistrar
         }
     </div>
 </div>
+```
 
-@code {
-    private enum InspectorMode { None, Single, Multi }
+---
 
+### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor.cs`
+
+```csharp
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components.Inspectors;
+
+public partial class FileInspector
+{
     private InspectorMode SelectionMode = InspectorMode.None;
     private FileEntry? SelectedFile;
     private bool HasRenderError = false;
-
-    // Single Mode Data
     private List<Tag> AssignedTags = [];
-
-    // Multi Mode Data
     private List<Tag> CommonTags = [];
     private List<Tag> AvailableTags = [];
 
@@ -3830,8 +3936,15 @@ public static class ServiceRegistrar
         UpdateView();
     }
 
-    private void OnSelectionChanged() => InvokeAsync(UpdateView);
-    private void OnLibraryChanged() => InvokeAsync(UpdateView);
+    private void OnSelectionChanged()
+    {
+        _ = InvokeAsync(UpdateView);
+    }
+
+    private void OnLibraryChanged()
+    {
+        _ = InvokeAsync(UpdateView);
+    }
 
     private void UpdateView()
     {
@@ -3882,9 +3995,9 @@ public static class ServiceRegistrar
 
     private List<Tag> GetAvailableTags(List<Tag> existingTags)
     {
-        var allTags = Library.GetTags();
-        var existingIds = existingTags.Select(t => t.Id).ToHashSet();
-        return allTags.Where(t => !existingIds.Contains(t.Id)).ToList();
+        List<Tag> allTags = Library.GetTags();
+        HashSet<long> existingIds = [.. existingTags.Select(t => t.Id)];
+        return [.. allTags.Where(t => !existingIds.Contains(t.Id))];
     }
 
     public void Dispose()
@@ -3978,6 +4091,19 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Inspectors\InspectorMode.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Components.Inspectors;
+
+public partial class FileInspector
+{
+    private enum InspectorMode { None, Single, Multi }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor`
 
 ```
@@ -4035,7 +4161,21 @@ public static class ServiceRegistrar
     }
 </div>
 
-@code {
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components.Inspectors;
+
+public partial class MultiFileInspector
+{
     [Parameter] public List<Tag> CommonTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
 
@@ -4313,7 +4453,7 @@ h4 {
 
     private void RelocateFile()
     {
-        var files = FileDialog.OpenFiles();
+        var files = FileDialogService.OpenFiles();
         if (files is not null && files.Length > 0)
         {
             var result = Library.RelocateFile(File.Id, files[0]);
@@ -4580,7 +4720,21 @@ h4 {
     </div>
 </div>
 
-@code {
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor.cs`
+
+```csharp
+using Tagium.Core.Services.DataMerge;
+using Tagium.Core.Services.LibraryItengrity;
+using Tagium.Photino.Blazor.Services.Toasting;
+
+namespace Tagium.Photino.Blazor.Components.Modals;
+
+public partial class DataManagementModal
+{
     private IntegrityScanResult? ScanResult;
     private MergeResult? MergeResult;
 
@@ -4623,34 +4777,40 @@ h4 {
 
     private void MergeDb()
     {
-        var files = FileDialog.OpenFiles();
-        if (files is not null && files.Length > 0)
+        string[]? files = Services.FileDialogService.OpenFiles();
+
+        if (files is null || files.Length == 0)
         {
-            MergeResult = MergeService.Merge(files[0]);
-            Library.Refresh();
-            Toast.Show("Merge complete.", ToastType.Success);
+            return;
         }
+
+        MergeResult = MergeService.Merge(files[0]);
+        Library.Refresh();
+        Toast.Show("Merge complete.", ToastType.Success);
     }
 
     private void RestoreDb()
     {
-        var files = FileDialog.OpenFiles();
-        if (files is not null && files.Length > 0)
-        {
-            string source = files[0];
-            string dest = DbManager.ConnectionString.Replace("Data Source=", "");
+        string[]? files = Services.FileDialogService.OpenFiles();
 
-            try
-            {
-                // This is a risky operation while the app is running, but standard for this simple app type.
-                // SQLite usually allows it if no write transaction is active.
-                File.Copy(source, dest, true);
-                Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
-            }
-            catch (Exception ex)
-            {
-                Toast.Show($"Restore failed: {ex.Message}", ToastType.Error);
-            }
+        if (files is null || files.Length == 0)
+        {
+            return;
+        }
+
+        string source = files[0];
+        string dest = DbManager.ConnectionString.Replace("Data Source=", "");
+
+        try
+        {
+            // This is a risky operation while the app is running, but standard for this simple app type.
+            // SQLite usually allows it if no write transaction is active.
+            File.Copy(source, dest, true);
+            Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Restore failed: {ex.Message}", ToastType.Error);
         }
     }
 }
@@ -4751,8 +4911,23 @@ h4 {
     </div>
 </div>
 
-@code {
-    [Parameter, EditorRequired] public required FileEntry ExistingFile { get; set; }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components.Modals;
+
+public partial class DuplicateFileModal
+{
+    [Parameter, EditorRequired]
+    public required FileEntry ExistingFile { get; set; }
 
     private void ShowExisting()
     {
@@ -4878,7 +5053,20 @@ h4 {
     <button class="btn" @onclick="Close">Close</button>
 </div>
 
-@code {
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor.cs`
+
+```csharp
+using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components.Modals;
+
+public partial class PreferencesModal
+{
     private void UpdateTagSidebarStyle(TagSidebarDisplayMode mode)
     {
         Settings.Update(s => s.TagSidebarStyle = mode);
@@ -4966,10 +5154,22 @@ h4 {
         }
     </div>
 </div>
+```
 
+---
 
+### `Tagium.Photino.Blazor\Components\Shared\FileDropZone.razor.cs`
 
-@code {
+```csharp
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.AspNetCore.Components.Web;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components.Shared;
+
+public partial class FileDropZone
+{
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private bool _isDragging = false;
@@ -4984,17 +5184,26 @@ h4 {
     private void OnDragEnter(DragEventArgs e)
     {
         _dragCounter++;
-        if (_dragCounter == 1) _isDragging = true;
+
+        if (_dragCounter != 1)
+        {
+            return;
+        }
+
+        _isDragging = true;
     }
 
     private void OnDragLeave(DragEventArgs e)
     {
         _dragCounter--;
-        if (_dragCounter <= 0)
+
+        if (_dragCounter > 0)
         {
-            _dragCounter = 0;
-            _isDragging = false;
+            return;
         }
+
+        _dragCounter = 0;
+        _isDragging = false;
     }
 
     private async Task HandleFileDrop(InputFileChangeEventArgs e)
@@ -5010,10 +5219,12 @@ h4 {
         _isProcessing = false;
         StateHasChanged();
 
-        if (importedPaths.Length > 0)
+        if (importedPaths.Length == 0)
         {
-            await Library.ImportBatchAsync(importedPaths);
+            return;
         }
+
+        await Library.ImportBatchAsync(importedPaths);
     }
 
     public void Dispose()
@@ -5092,8 +5303,19 @@ h4 {
         disabled="@Disabled">
     @ChildContent
 </button>
+```
 
-@code {
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+
+namespace Tagium.Photino.Blazor.Components.Shared;
+
+public partial class IconButton
+{
     [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public string Class { get; set; } = "";
@@ -5150,8 +5372,20 @@ h4 {
        @oninput="OnInput"
        @ref="_inputElement"
        aria-label="Search files" />
+```
 
-@code {
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\SearchInput.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components.Shared;
+
+public partial class SearchInput
+{
     private CancellationTokenSource? _debounceCts;
     private string _value = "";
     private ElementReference _inputElement;
@@ -5186,7 +5420,10 @@ h4 {
         }
     }
 
-    public async Task FocusAsync() => await _inputElement.FocusAsync();
+    public async Task FocusAsync()
+    {
+        await _inputElement.FocusAsync();
+    }
 
     public void Dispose()
     {
@@ -5246,22 +5483,38 @@ h4 {
         <option value="@SortDirection.Desc">Desc</option>
     </select>
 </div>
+```
 
-@code {
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Settings;
+
+namespace Tagium.Photino.Blazor.Components.Shared;
+
+public partial class SortControls
+{
     private void OnSortByChange(ChangeEventArgs e)
     {
-        if (Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
+        if (!Enum.TryParse<SortBy>(e.Value?.ToString(), out var result))
         {
-            Settings.Update(s => s.FileSortBy = result);
+            return;
         }
+
+        Settings.Update(s => s.FileSortBy = result);
     }
 
     private void OnSortDirChange(ChangeEventArgs e)
     {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        if (!Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
         {
-            Settings.Update(s => s.FileSortDirection = result);
+            return;
         }
+
+        Settings.Update(s => s.FileSortDirection = result);
     }
 }
 ```
@@ -5313,7 +5566,20 @@ select {
     }
 }
 
-@code {
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Models;
+
+namespace Tagium.Photino.Blazor.Components.Shared;
+
+public partial class TagIcon
+{
     [Parameter, EditorRequired] public required Tag Tag { get; set; }
     [Parameter] public bool ShowIcon { get; set; } = true;
 }
@@ -5335,8 +5601,8 @@ select {
 
     .tag-color {
         display: inline-block;
-        width: 12px;
-        height: 12px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         margin-right: 8px;
         flex-shrink: 0;
@@ -5361,16 +5627,33 @@ select {
            aria-label="Thumbnail size" />
 </div>
 
-@code {
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\ThumbnailSizeSlider.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+
+namespace Tagium.Photino.Blazor.Components.Shared;
+
+public partial class ThumbnailSizeSlider
+{
     private void OnInput(ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?.ToString(), out int val))
+        if (!int.TryParse(e.Value?.ToString(), out int val))
         {
-            Settings.Update(s => s.ThumbnailSize = val, save: false);
+            return;
         }
+
+        Settings.Update(s => s.ThumbnailSize = val, save: false);
     }
 
-    private void OnCommit(ChangeEventArgs e) => Settings.Save();
+    private void OnCommit(ChangeEventArgs e)
+    {
+        Settings.Save();
+    }
 }
 ```
 
@@ -5462,13 +5745,35 @@ input[type=range] {
     </div>
 </div>
 
-@code {
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor.cs`
+
+```csharp
+using Tagium.Photino.Blazor.Components.Shared;
+
+namespace Tagium.Photino.Blazor.Components.Views;
+
+public partial class FilesViewToolbar
+{
     private bool IsMenuOpen = false;
 
-    public async Task FocusSearchAsync() => await SearchInput.FocusAsync();
+    public async Task FocusSearchAsync()
+    {
+        await SearchInput.FocusAsync();
+    }
 
-    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
-    private void CloseMenu() => IsMenuOpen = false;
+    private void ToggleMenu()
+    {
+        IsMenuOpen = !IsMenuOpen;
+    }
+
+    private void CloseMenu()
+    {
+        IsMenuOpen = false;
+    }
 }
 ```
 
@@ -5591,7 +5896,10 @@ hr {
 @namespace Tagium.Photino.Blazor.Components.Views
 @using Tagium.Core.Services
 @using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
 @inject LibraryService Library
+@inject SettingsManager Settings
 
 <div class="tag-manager-view">
     <div class="header-row">
@@ -5600,6 +5908,17 @@ hr {
             <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
             <button class="btn-primary" @onclick="AddTag">Add</button>
         </div>
+    </div>
+
+    <div class="sort-controls">
+        <select @onchange="OnSortByChange" value="@Settings.Current.TagSortBy">
+            <option value="@TagSortBy.Name">Name</option>
+            <option value="@TagSortBy.FileCount">File Count</option>
+        </select>
+        <select @onchange="OnSortDirChange" value="@Settings.Current.TagSortDirection">
+            <option value="@SortDirection.Asc">Asc</option>
+            <option value="@SortDirection.Desc">Desc</option>
+        </select>
     </div>
 
     <div class="tag-list">
@@ -5653,8 +5972,10 @@ hr {
 ### `Tagium.Photino.Blazor\Components\Views\TagManagerView.razor.cs`
 
 ```csharp
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Tagium.Core.Models;
+using Tagium.Core.Settings;
 
 namespace Tagium.Photino.Blazor.Components.Views;
 
@@ -5692,13 +6013,19 @@ public partial class TagManagerView
     protected override void OnInitialized()
     {
         RefreshTags();
-        Library.LibraryChanged += RefreshTags;
+        Library.LibraryChanged += RefreshData;
+        Settings.SettingsChanged += StateHasChanged;
+    }
+
+    private void RefreshData()
+    {
+        RefreshTags();
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void RefreshTags()
     {
-        Tags = Library.GetTags();
-        _ = InvokeAsync(StateHasChanged);
+        Tags = Library.GetTags(Settings.Current.TagSortBy, Settings.Current.TagSortDirection);
     }
 
     private void HandleKeyUp(KeyboardEventArgs e)
@@ -5740,18 +6067,13 @@ public partial class TagManagerView
 
     private void UpdateTagEmoji(Tag tag, string? newEmoji)
     {
-        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji)
-            ? null
-            : newEmoji;
-
+        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji;
         Library.UpdateTag(tag);
     }
 
     private void ToggleColorPicker(long id)
     {
-        ActiveColorPickerId = ActiveColorPickerId == id
-            ? null
-            : id;
+        ActiveColorPickerId = ActiveColorPickerId == id ? null : id;
     }
 
     private void UpdateTagColor(Tag tag, string color)
@@ -5761,9 +6083,28 @@ public partial class TagManagerView
         ActiveColorPickerId = null;
     }
 
+    private void OnSortByChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<TagSortBy>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.TagSortBy = result);
+            RefreshTags();
+        }
+    }
+
+    private void OnSortDirChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        {
+            Settings.Update(s => s.TagSortDirection = result);
+            RefreshTags();
+        }
+    }
+
     public void Dispose()
     {
-        Library.LibraryChanged -= RefreshTags;
+        Library.LibraryChanged -= RefreshData;
+        Settings.SettingsChanged -= StateHasChanged;
     }
 }
 ```
@@ -5831,6 +6172,29 @@ public partial class TagManagerView
     .btn-primary:hover {
         background: var(--primary-hover);
     }
+
+.sort-controls {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-sm);
+    padding: var(--space-xs);
+    background: var(--panel-bg);
+    border-radius: 4px;
+}
+
+    .sort-controls select {
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: var(--font-size-sm);
+        outline: none;
+    }
+
+        .sort-controls select:hover {
+            border-color: #555;
+        }
 
 .tag-list {
     flex: 1;
@@ -5958,7 +6322,7 @@ public partial class TagManagerView
     cursor: pointer;
     padding: 0 var(--space-xs);
     line-height: 1;
-    display: flex; /* Ensure vertical centering */
+    display: flex;
     align-items: center;
 }
 ```

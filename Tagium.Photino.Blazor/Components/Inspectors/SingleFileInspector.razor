@@ -128,7 +128,7 @@
 
     private void RelocateFile()
     {
-        var files = FileDialog.OpenFiles();
+        var files = FileDialogService.OpenFiles();
         if (files is not null && files.Length > 0)
         {
             var result = Library.RelocateFile(File.Id, files[0]);

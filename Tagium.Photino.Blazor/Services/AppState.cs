@@ -1,9 +1,13 @@
-﻿namespace Tagium.Photino.Blazor.Services;
+﻿using Tagium.Core.Services;
+
+namespace Tagium.Photino.Blazor.Services;
 
 public enum AppView { Files, Tags }
 
 public class AppState
 {
+    private readonly LibraryService _library;
+
     // State
     public AppView CurrentView { get; private set; } = AppView.Files;
     public string SearchText { get; private set; } = "";
@@ -14,6 +18,11 @@ public class AppState
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
+    public AppState(LibraryService library)
+    {
+        _library = library;
+    }
+
     public void SwitchView(AppView view)
     {
         if (CurrentView == view)
@@ -23,6 +32,11 @@ public class AppState
 
         CurrentView = view;
         NotifyStateChanged();
+    }
+
+    public void Undo()
+    {
+        _library.Undo();
     }
 
     public void SetSearch(string text)

@@ -32,7 +32,13 @@ public class SystemLauncherService
         {
             // Select the file in explorer
             string argument = $"/select,\"{path}\"";
-            _ = Process.Start(new ProcessStartInfo("explorer.exe", argument) { UseShellExecute = true });
+
+            ProcessStartInfo processStartInfo = new("explorer.exe", argument)
+            {
+                UseShellExecute = true
+            };
+
+            _ = Process.Start(processStartInfo);
         }
         catch (Exception ex)
         {

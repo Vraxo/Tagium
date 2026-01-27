@@ -1,6 +1,7 @@
 ﻿using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
+using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
@@ -17,6 +18,7 @@ public class LibraryService
     private readonly FileSearchRepository _searchRepo;
     private readonly ThumbnailService _thumbnailService;
     private readonly SettingsManager _settingsManager;
+    private readonly UndoService _undoService;
 
     public event Action? LibraryChanged;
     public event Action<int, int, int>? ImportCompleted; // added, duplicates, errors
@@ -28,7 +30,8 @@ public class LibraryService
         FileTagRepository fileTagRepo,
         FileSearchRepository searchRepo,
         ThumbnailService thumbnailService,
-        SettingsManager settingsManager)
+        SettingsManager settingsManager,
+        UndoService undoService)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
@@ -36,11 +39,19 @@ public class LibraryService
         _searchRepo = searchRepo;
         _thumbnailService = thumbnailService;
         _settingsManager = settingsManager;
+        _undoService = undoService;
     }
 
     public void Refresh()
     {
         LibraryChanged?.Invoke();
+    }
+
+    public bool CanUndo => _undoService.CanUndo;
+
+    public void Undo()
+    {
+        _undoService.Undo();
     }
 
     // --- Files ---
@@ -229,41 +240,111 @@ public class LibraryService
 
     public void AddTagToFile(long fileId, long tagId)
     {
+        // Record which files didn't have this tag before adding
+        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        bool alreadyHadTag = existingIds.Contains(tagId);
+
         _fileTagRepo.AddTagToFile(fileId, tagId);
+
+        if (!alreadyHadTag)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                [fileId],
+                wasAdding: true));
+        }
+
         LibraryChanged?.Invoke();
     }
 
     public void AddTagToFiles(IEnumerable<long> fileIds, long tagId)
     {
-        if (!fileIds.Any())
+        List<long> ids = fileIds.ToList();
+        if (ids.Count == 0)
         {
             return;
         }
 
-        foreach (long id in fileIds)
+        // Determine which files actually receive the tag (didn't have it before)
+        List<long> modifiedFiles = [];
+        foreach (long id in ids)
         {
+            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            if (!existing.Contains(tagId))
+            {
+                modifiedFiles.Add(id);
+            }
+
             _fileTagRepo.AddTagToFile(id, tagId);
         }
+
+        if (modifiedFiles.Count != 0)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                modifiedFiles,
+                wasAdding: true));
+        }
+
         LibraryChanged?.Invoke();
     }
 
     public void RemoveTagFromFile(long fileId, long tagId)
     {
+        // Record if file had this tag before removing
+        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        bool hadTag = existingIds.Contains(tagId);
+
         _fileTagRepo.RemoveTagFromFile(fileId, tagId);
+
+        if (hadTag)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                [fileId],
+                wasAdding: false));
+        }
+
         LibraryChanged?.Invoke();
     }
 
     public void RemoveTagFromFiles(IEnumerable<long> fileIds, long tagId)
     {
-        if (!fileIds.Any())
+        List<long> ids = fileIds.ToList();
+        if (ids.Count == 0)
         {
             return;
         }
 
-        foreach (long id in fileIds)
+        // Determine which files actually lose the tag (had it before)
+        List<long> modifiedFiles = [];
+        foreach (long id in ids)
         {
+            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            if (existing.Contains(tagId))
+            {
+                modifiedFiles.Add(id);
+            }
+
             _fileTagRepo.RemoveTagFromFile(id, tagId);
         }
+
+        if (modifiedFiles.Count != 0)
+        {
+            _undoService.Push(new TagAssignmentUndoCommand(
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                tagId,
+                modifiedFiles,
+                wasAdding: false));
+        }
+
         LibraryChanged?.Invoke();
     }
 
