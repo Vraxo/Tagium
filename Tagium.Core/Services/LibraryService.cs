@@ -73,6 +73,7 @@ public class LibraryService
         return _fileRepo.GetById(id);
     }
 
+    [Obsolete]
     public bool AddFile(string path)
     {
         return AddFileDetailed(path).Status == AddFileResult.Success;
@@ -97,15 +98,16 @@ public class LibraryService
 
         if (result == AddFileResult.Success)
         {
-            if (!suppressNotification)
-            {
-                LibraryChanged?.Invoke();
-            }
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
 
             if (newEntry is not null)
             {
-                _ = _thumbnailService.GenerateThumbnailAsync(newEntry);
+                await _thumbnailService.GenerateThumbnailAsync(newEntry);
+            }
+
+            if (!suppressNotification)
+            {
+                LibraryChanged?.Invoke();
             }
 
             return new AddFileDetailedResult(AddFileResult.Success, newEntry);
@@ -171,6 +173,7 @@ public class LibraryService
         ImportCompleted?.Invoke(added, duplicates, errors);
     }
 
+    [Obsolete]
     public void ImportBatch(string[] paths)
     {
         _ = ImportBatchAsync(paths);

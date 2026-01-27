@@ -59,23 +59,55 @@ public class DatabaseManager
         using SqliteConnection connection = new(ConnectionString);
         connection.Open();
 
-        // Enable Write-Ahead Logging for better concurrency and performance
         using (SqliteCommand walCmd = connection.CreateCommand())
         {
             walCmd.CommandText = "PRAGMA journal_mode = WAL;";
             _ = walCmd.ExecuteNonQuery();
         }
 
+        int userVersion = GetUserVersion(connection);
+
+        if (userVersion == 0)
+        {
+            // Fresh database - create V2 schema directly
+            CreateV2Schema(connection);
+            SetUserVersion(connection, 2);
+        }
+        else if (userVersion == 1)
+        {
+            // Existing V1 database with integer IDs - migrate to V2
+            MigrateV1ToV2(connection);
+            SetUserVersion(connection, 2);
+        }
+        // else version 2+ - schema already current
+    }
+
+    private static int GetUserVersion(SqliteConnection conn)
+    {
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt32(cmd.ExecuteScalar() ?? 0);
+    }
+
+    private static void SetUserVersion(SqliteConnection conn, int version)
+    {
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = $"PRAGMA user_version = {version};";
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    private static void CreateV2Schema(SqliteConnection connection)
+    {
         string schema = @"
             CREATE TABLE IF NOT EXISTS Tags (
-                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Id TEXT PRIMARY KEY,
                 Name TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 ColorHex TEXT NOT NULL DEFAULT '#757575',
                 Emoji TEXT NULL
             );
 
             CREATE TABLE IF NOT EXISTS Files (
-                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Id TEXT PRIMARY KEY,
                 Path TEXT NOT NULL UNIQUE,
                 Name TEXT NOT NULL DEFAULT '',
                 Hash TEXT NULL,
@@ -84,8 +116,8 @@ public class DatabaseManager
             );
 
             CREATE TABLE IF NOT EXISTS FileTags (
-                FileId INTEGER NOT NULL,
-                TagId INTEGER NOT NULL,
+                FileId TEXT NOT NULL,
+                TagId TEXT NOT NULL,
                 FOREIGN KEY(FileId) REFERENCES Files(Id) ON DELETE CASCADE,
                 FOREIGN KEY(TagId) REFERENCES Tags(Id) ON DELETE CASCADE,
                 PRIMARY KEY (FileId, TagId)
@@ -95,6 +127,177 @@ public class DatabaseManager
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = schema;
         _ = command.ExecuteNonQuery();
+    }
+
+    private static void MigrateV1ToV2(SqliteConnection connection)
+    {
+        using SqliteTransaction transaction = connection.BeginTransaction();
+
+        try
+        {
+            // Rename old tables
+            using (SqliteCommand cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = transaction;
+                cmd.CommandText = @"
+                    ALTER TABLE Tags RENAME TO Tags_Old;
+                    ALTER TABLE Files RENAME TO Files_Old;
+                    ALTER TABLE FileTags RENAME TO FileTags_Old;
+                ";
+                _ = cmd.ExecuteNonQuery();
+            }
+
+            // Create new schema
+            CreateV2Schema(connection);
+
+            // Maps to track old int IDs -> new UUIDs
+            Dictionary<long, string> tagIdMap = [];
+            Dictionary<long, string> fileIdMap = [];
+
+            // Migrate Tags
+            using (SqliteCommand selectCmd = connection.CreateCommand())
+            {
+                selectCmd.Transaction = transaction;
+                selectCmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags_Old";
+                using SqliteDataReader reader = selectCmd.ExecuteReader();
+
+                using SqliteCommand insertCmd = connection.CreateCommand();
+                insertCmd.Transaction = transaction;
+                insertCmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji) VALUES (@Id, @Name, @Color, @Emoji)";
+
+                var idParam = insertCmd.Parameters.Add("@Id", (SqliteType)System.Data.DbType.String);
+                var nameParam = insertCmd.Parameters.Add("@Name", (SqliteType)System.Data.DbType.String);
+                var colorParam = insertCmd.Parameters.Add("@Color", (SqliteType)System.Data.DbType.String);
+                var emojiParam = insertCmd.Parameters.Add("@Emoji", (SqliteType)System.Data.DbType.String);
+
+                while (reader.Read())
+                {
+                    long oldId = reader.GetInt64(0);
+                    string newId = Guid.NewGuid().ToString("N");
+                    tagIdMap[oldId] = newId;
+
+                    idParam.Value = newId;
+                    nameParam.Value = reader.GetString(1);
+                    colorParam.Value = reader.GetString(2);
+                    emojiParam.Value = reader.IsDBNull(3) ? DBNull.Value : reader.GetString(3);
+                    _ = insertCmd.ExecuteNonQuery();
+                }
+            }
+
+            // Migrate Files
+            using (SqliteCommand selectCmd = connection.CreateCommand())
+            {
+                selectCmd.Transaction = transaction;
+                selectCmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files_Old";
+                using SqliteDataReader reader = selectCmd.ExecuteReader();
+
+                using SqliteCommand insertCmd = connection.CreateCommand();
+                insertCmd.Transaction = transaction;
+                insertCmd.CommandText = "INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing) VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing)";
+
+                var idParam = insertCmd.Parameters.Add("@Id", (SqliteType)System.Data.DbType.String);
+                var pathParam = insertCmd.Parameters.Add("@Path", (SqliteType)System.Data.DbType.String);
+                var nameParam = insertCmd.Parameters.Add("@Name", (SqliteType)System.Data.DbType.String);
+                var hashParam = insertCmd.Parameters.Add("@Hash", (SqliteType)System.Data.DbType.String);
+                var dateParam = insertCmd.Parameters.Add("@DateAdded", (SqliteType)System.Data.DbType.Int64);
+                var missingParam = insertCmd.Parameters.Add("@IsMissing", (SqliteType)System.Data.DbType.Int32);
+
+                while (reader.Read())
+                {
+                    long oldId = reader.GetInt64(0);
+                    string newId = Guid.NewGuid().ToString("N");
+                    fileIdMap[oldId] = newId;
+
+                    idParam.Value = newId;
+                    pathParam.Value = reader.GetString(1);
+                    nameParam.Value = reader.GetString(2);
+                    hashParam.Value = reader.IsDBNull(3) ? DBNull.Value : reader.GetString(3);
+                    dateParam.Value = reader.GetInt64(4);
+                    missingParam.Value = reader.GetBoolean(5) ? 1 : 0;
+                    _ = insertCmd.ExecuteNonQuery();
+                }
+            }
+
+            // Migrate FileTags
+            using (SqliteCommand selectCmd = connection.CreateCommand())
+            {
+                selectCmd.Transaction = transaction;
+                selectCmd.CommandText = "SELECT FileId, TagId FROM FileTags_Old";
+                using SqliteDataReader reader = selectCmd.ExecuteReader();
+
+                using SqliteCommand insertCmd = connection.CreateCommand();
+                insertCmd.Transaction = transaction;
+                insertCmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
+
+                var fileIdParam = insertCmd.Parameters.Add("@FileId", (SqliteType)System.Data.DbType.String);
+                var tagIdParam = insertCmd.Parameters.Add("@TagId", (SqliteType)System.Data.DbType.String);
+
+                while (reader.Read())
+                {
+                    long oldFileId = reader.GetInt64(0);
+                    long oldTagId = reader.GetInt64(1);
+
+                    if (fileIdMap.TryGetValue(oldFileId, out string? newFileId) &&
+                        tagIdMap.TryGetValue(oldTagId, out string? newTagId))
+                    {
+                        fileIdParam.Value = newFileId;
+                        tagIdParam.Value = newTagId;
+                        _ = insertCmd.ExecuteNonQuery();
+                    }
+                }
+            }
+
+            // Drop old tables
+            using (SqliteCommand cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = transaction;
+                cmd.CommandText = @"
+                    DROP TABLE Tags_Old;
+                    DROP TABLE Files_Old;
+                    DROP TABLE FileTags_Old;
+                ";
+                _ = cmd.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+
+            // Rename thumbnail files
+            RenameThumbnails(fileIdMap);
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    private static void RenameThumbnails(Dictionary<long, string> fileIdMap)
+    {
+        string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+        if (!Directory.Exists(cacheDir))
+        {
+            return;
+        }
+
+        foreach (var kvp in fileIdMap)
+        {
+            string oldPath = Path.Combine(cacheDir, $"{kvp.Key}.png");
+            string newPath = Path.Combine(cacheDir, $"{kvp.Value}.png");
+
+            if (!File.Exists(oldPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                File.Move(oldPath, newPath, overwrite: true);
+            }
+            catch
+            {
+                // Best effort - thumbnails can be regenerated
+            }
+        }
     }
 }
 ```
@@ -163,7 +366,6 @@ public class FileRepository
         {
             var file = ReadFile(reader);
 
-            // Parse tag data if present
             if (!reader.IsDBNull(6))
             {
                 string tagData = reader.GetString(6);
@@ -189,24 +391,24 @@ public class FileRepository
     private Tag? ParseTagFromData(string tagData)
     {
         var parts = tagData.Split(':', 4);
-        return parts.Length < 3
+        return parts.Length < 3 || !Guid.TryParse(parts[0], out var tagId)
             ? null
             : new Tag
             {
-                Id = long.Parse(parts[0]),
+                Id = tagId,
                 Name = parts[1],
                 ColorHex = parts[2],
                 Emoji = parts.Length > 3 && parts[3] != "" ? parts[3] : null
             };
     }
 
-    public FileEntry? GetById(long id)
+    public FileEntry? GetById(Guid id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
         return reader.Read() ? ReadFile(reader) : null;
@@ -226,7 +428,6 @@ public class FileRepository
 
     public AddFileResult Add(string path, string hash)
     {
-        // Optimization: Checking hash first avoids expensive INSERT attempt if logic dictates hash uniqueness
         if (GetByHash(hash) is not null)
         {
             return AddFileResult.Duplicate;
@@ -237,9 +438,11 @@ public class FileRepository
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Path, Name, Hash, DateAdded) 
-            VALUES (@Path, @Name, @Hash, strftime('%s','now'))";
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded) 
+            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'))";
 
+        Guid newId = Guid.NewGuid();
+        _ = cmd.Parameters.AddWithValue("@Id", newId.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", path);
         _ = cmd.Parameters.AddWithValue("@Name", Path.GetFileName(path));
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
@@ -251,13 +454,32 @@ public class FileRepository
         }
         catch (SqliteException)
         {
-            // UNIQUE constraint violation on Path returns duplicate/error
             return AddFileResult.Duplicate;
         }
         catch
         {
             return AddFileResult.Error;
         }
+    }
+
+    public void Restore(FileEntry entry)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing) 
+            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing)";
+
+        _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
+        _ = cmd.Parameters.AddWithValue("@Path", entry.Path);
+        _ = cmd.Parameters.AddWithValue("@Name", entry.Name);
+        _ = cmd.Parameters.AddWithValue("@Hash", (object?)entry.Hash ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@DateAdded", entry.DateAdded);
+        _ = cmd.Parameters.AddWithValue("@IsMissing", entry.IsMissing ? 1 : 0);
+
+        _ = cmd.ExecuteNonQuery();
     }
 
     public void Update(FileEntry file)
@@ -270,7 +492,7 @@ public class FileRepository
             SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing 
             WHERE Id = @Id";
 
-        _ = cmd.Parameters.AddWithValue("@Id", file.Id);
+        _ = cmd.Parameters.AddWithValue("@Id", file.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", file.Path);
         _ = cmd.Parameters.AddWithValue("@Name", file.Name);
         _ = cmd.Parameters.AddWithValue("@Hash", (object?)file.Hash ?? DBNull.Value);
@@ -279,34 +501,29 @@ public class FileRepository
         _ = cmd.ExecuteNonQuery();
     }
 
-    public void Remove(long id)
+    public void Remove(Guid id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
-    public void SetMissingStatus(IEnumerable<long> fileIds, bool isMissing)
+    public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
-        if (!fileIds.Any())
-        {
-            return;
-        }
-
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteTransaction trans = conn.BeginTransaction();
 
-        foreach (long id in fileIds)
+        foreach (Guid id in fileIds)
         {
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.Transaction = trans;
             cmd.CommandText = "UPDATE Files SET IsMissing = @IsMissing WHERE Id = @Id";
             _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
-            _ = cmd.Parameters.AddWithValue("@Id", id);
+            _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
             _ = cmd.ExecuteNonQuery();
         }
         trans.Commit();
@@ -325,13 +542,13 @@ public class FileRepository
     {
         return new FileEntry
         {
-            Id = reader.GetInt64(0),
+            Id = Guid.Parse(reader.GetString(0)),
             Path = reader.GetString(1),
             Name = reader.GetString(2),
             Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
             DateAdded = reader.GetInt64(4),
             IsMissing = reader.GetBoolean(5),
-            Tags = [] // Initialize empty, will be populated by GetFilesWithTags if needed
+            Tags = []
         };
     }
 
@@ -378,7 +595,6 @@ public class FileSearchRepository
             return [];
         }
 
-        // Split tokens and separate into positive (include) and negative (exclude) terms
         string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         List<string> includeTerms = [];
@@ -405,16 +621,11 @@ public class FileSearchRepository
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
 
-        // Dynamic SQL Construction
-        // We want files that match ALL include terms (AND) and match NO exclude terms (NOT OR).
-        // A match is defined as: Name matches OR Path matches OR Any Tag Name matches.
-
         StringBuilder query = new();
         _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing");
         _ = query.AppendLine("FROM Files F");
         _ = query.AppendLine("WHERE 1=1");
 
-        // 1. Process Includes (AND logic)
         for (int i = 0; i < includeTerms.Count; i++)
         {
             string paramName = $"@in{i}";
@@ -422,7 +633,6 @@ public class FileSearchRepository
 
             _ = cmd.Parameters.AddWithValue(paramName, termPattern);
 
-            // "Exists a tag matching term" subquery
             string tagSubQuery = $@"
                 EXISTS (
                     SELECT 1 FROM FileTags FT 
@@ -433,7 +643,6 @@ public class FileSearchRepository
             _ = query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
         }
 
-        // 2. Process Excludes (NOT logic)
         for (int i = 0; i < excludeTerms.Count; i++)
         {
             string paramName = $"@ex{i}";
@@ -451,7 +660,6 @@ public class FileSearchRepository
             _ = query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
         }
 
-        // 3. Sorting
         _ = query.AppendLine(GetOrderByClause(sortBy, sortDirection));
 
         cmd.CommandText = query.ToString();
@@ -463,7 +671,7 @@ public class FileSearchRepository
         {
             files.Add(new FileEntry
             {
-                Id = reader.GetInt64(0),
+                Id = Guid.Parse(reader.GetString(0)),
                 Path = reader.GetString(1),
                 Name = reader.GetString(2),
                 Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
@@ -508,46 +716,46 @@ public class FileTagRepository
         _db = db;
     }
 
-    public void AddTagToFile(long fileId, long tagId)
+    public void AddTagToFile(Guid fileId, Guid tagId)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
-        _ = cmd.Parameters.AddWithValue("@FileId", fileId);
-        _ = cmd.Parameters.AddWithValue("@TagId", tagId);
+        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
+        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
-    public void RemoveTagFromFile(long fileId, long tagId)
+    public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
-        _ = cmd.Parameters.AddWithValue("@FileId", fileId);
-        _ = cmd.Parameters.AddWithValue("@TagId", tagId);
+        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
+        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
-    public List<long> GetTagIdsForFile(long fileId)
+    public List<Guid> GetTagIdsForFile(Guid fileId)
     {
-        List<long> ids = [];
+        List<Guid> ids = [];
 
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT TagId FROM FileTags WHERE FileId = @FileId";
-        _ = cmd.Parameters.AddWithValue("@FileId", fileId);
+        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
 
         while (reader.Read())
         {
-            ids.Add(reader.GetInt64(0));
+            ids.Add(Guid.Parse(reader.GetString(0)));
         }
 
         return ids;
@@ -594,14 +802,7 @@ public class TagRepository
 
         while (reader.Read())
         {
-            tags.Add(new Tag
-            {
-                Id = reader.GetInt64(0),
-                Name = reader.GetString(1),
-                ColorHex = reader.GetString(2),
-                Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
-                FileCount = reader.GetInt32(4)
-            });
+            tags.Add(ReadTag(reader));
         }
 
         return tags;
@@ -619,9 +820,10 @@ public class TagRepository
         return $"ORDER BY {col} {dir}, T.Name ASC";
     }
 
-    public List<Tag> GetTagsByIds(IEnumerable<long> ids)
+    public List<Tag> GetTagsByIds(IEnumerable<Guid> ids)
     {
-        if (!ids.Any())
+        List<Guid> idList = ids.ToList();
+        if (idList.Count == 0)
         {
             return [];
         }
@@ -631,25 +833,19 @@ public class TagRepository
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
+        // SQLite can handle 'guid'|'guid'|... syntax for IN clause with TEXT
         cmd.CommandText = @"
             SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
-            WHERE T.Id IN (" + string.Join(",", ids) + @")
+            WHERE T.Id IN (" + string.Join(",", idList.Select(id => $"'{id:N}'")) + @")
             GROUP BY T.Id";
 
         using SqliteDataReader reader = cmd.ExecuteReader();
 
         while (reader.Read())
         {
-            tags.Add(new Tag
-            {
-                Id = reader.GetInt64(0),
-                Name = reader.GetString(1),
-                ColorHex = reader.GetString(2),
-                Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
-                FileCount = reader.GetInt32(4)
-            });
+            tags.Add(ReadTag(reader));
         }
 
         return tags;
@@ -660,7 +856,8 @@ public class TagRepository
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO Tags (Name, ColorHex, Emoji) VALUES (@Name, @Color, @Emoji)";
+        cmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji) VALUES (@Id, @Name, @Color, @Emoji)";
+        _ = cmd.Parameters.AddWithValue("@Id", Guid.NewGuid().ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Name", name);
         _ = cmd.Parameters.AddWithValue("@Color", colorHex);
         _ = cmd.Parameters.AddWithValue("@Emoji", (object?)emoji ?? DBNull.Value);
@@ -678,7 +875,7 @@ public class TagRepository
             SET Name = @Name, ColorHex = @Color, Emoji = @Emoji 
             WHERE Id = @Id";
 
-        _ = cmd.Parameters.AddWithValue("@Id", tag.Id);
+        _ = cmd.Parameters.AddWithValue("@Id", tag.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Name", tag.Name);
         _ = cmd.Parameters.AddWithValue("@Color", tag.ColorHex);
         _ = cmd.Parameters.AddWithValue("@Emoji", (object?)tag.Emoji ?? DBNull.Value);
@@ -686,14 +883,26 @@ public class TagRepository
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore name collision */ }
     }
 
-    public void Delete(long id)
+    public void Delete(Guid id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Tags WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
         _ = cmd.ExecuteNonQuery();
+    }
+
+    private static Tag ReadTag(SqliteDataReader reader)
+    {
+        return new Tag
+        {
+            Id = Guid.Parse(reader.GetString(0)),
+            Name = reader.GetString(1),
+            ColorHex = reader.GetString(2),
+            Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
+            FileCount = reader.GetInt32(4)
+        };
     }
 }
 ```
@@ -784,16 +993,12 @@ namespace Tagium.Core.Models;
 
 public class FileEntry
 {
-    public long Id { get; set; }
+    public Guid Id { get; set; }
     public required string Path { get; set; }
     public required string Name { get; set; }
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
-
-    /// <summary>
-    /// Tags associated with this file. Populated on-demand via GetFilesWithTags().
-    /// </summary>
     public List<Tag> Tags { get; set; } = [];
 }
 ```
@@ -807,12 +1012,10 @@ namespace Tagium.Core.Models;
 
 public class Tag
 {
-    public long Id { get; set; }
+    public Guid Id { get; set; }
     public required string Name { get; set; }
     public string ColorHex { get; set; } = "#757575";
     public string? Emoji { get; set; }
-
-    // Computed property for UI convenience, populated by join queries
     public int FileCount { get; set; }
 
     public override string ToString()
@@ -850,8 +1053,8 @@ public class LibraryService
     private readonly UndoService _undoService;
 
     public event Action? LibraryChanged;
-    public event Action<int, int, int>? ImportCompleted; // added, duplicates, errors
-    public event Action<int, int>? ImportProgress; // processed, total
+    public event Action<int, int, int>? ImportCompleted;
+    public event Action<int, int>? ImportProgress;
 
     public LibraryService(
         FileRepository fileRepo,
@@ -883,8 +1086,6 @@ public class LibraryService
         _undoService.Undo();
     }
 
-    // --- Files ---
-
     public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
     {
         SortBy sort = _settingsManager.Current.FileSortBy;
@@ -899,7 +1100,7 @@ public class LibraryService
             : _searchRepo.Search(searchText, sort, dir);
     }
 
-    public FileEntry? GetFileById(long id)
+    public FileEntry? GetFileById(Guid id)
     {
         return _fileRepo.GetById(id);
     }
@@ -909,6 +1110,7 @@ public class LibraryService
         return AddFileDetailed(path).Status == AddFileResult.Success;
     }
 
+    [Obsolete]
     public async Task<AddFileDetailedResult> AddFileDetailedAsync(string path, bool suppressNotification = false)
     {
         string? hash = await FileHasher.ComputeSha256Async(path);
@@ -917,7 +1119,6 @@ public class LibraryService
             return new AddFileDetailedResult(AddFileResult.Error, null);
         }
 
-        // Check for existing by hash first to return the entry
         FileEntry? existing = _fileRepo.GetByHash(hash);
         if (existing is not null)
         {
@@ -932,23 +1133,26 @@ public class LibraryService
             {
                 LibraryChanged?.Invoke();
             }
-            // Fetch the newly added entry
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
+
+            if (newEntry is not null)
+            {
+                _ = _thumbnailService.GenerateThumbnailAsync(newEntry);
+            }
+
             return new AddFileDetailedResult(AddFileResult.Success, newEntry);
         }
 
         return new AddFileDetailedResult(result, null);
     }
 
-    // Kept for backward compatibility
+    [Obsolete]
     public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
     {
         return AddFileDetailedAsync(path, suppressNotification).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    /// Imports multiple files asynchronously with progress reporting and non-blocking I/O.
-    /// </summary>
+    [Obsolete]
     public async Task ImportBatchAsync(string[] paths)
     {
         if (paths.Length == 0)
@@ -957,7 +1161,7 @@ public class LibraryService
             return;
         }
 
-        const int MaxParallelism = 4; // Prevent disk overload
+        const int MaxParallelism = 4;
         using var semaphore = new SemaphoreSlim(MaxParallelism);
 
         var tasks = paths.Select(async (path, index) =>
@@ -972,7 +1176,6 @@ public class LibraryService
 
                 var result = await AddFileDetailedAsync(path, suppressNotification: true);
 
-                // Report progress every 10 files to reduce UI churn
                 if ((index + 1) % 10 == 0 || index == paths.Length - 1)
                 {
                     ImportProgress?.Invoke(index + 1, paths.Length);
@@ -1000,27 +1203,25 @@ public class LibraryService
         ImportCompleted?.Invoke(added, duplicates, errors);
     }
 
-    // Kept for backward compatibility if needed, but redirects to async
     public void ImportBatch(string[] paths)
     {
         _ = ImportBatchAsync(paths);
     }
 
-    public RelocateResult RelocateFile(long fileId, string newPath)
+    [Obsolete]
+    public RelocateResult RelocateFile(Guid fileId, string newPath)
     {
         if (!File.Exists(newPath))
         {
             return new RelocateResult(RelocateResultStatus.NotFound, null);
         }
 
-        // This is a single file operation, async not critical
         string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
         if (newHash is null)
         {
             return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
-        // Check if the new file is already in the database
         FileEntry? existing = _fileRepo.GetByHash(newHash);
         if (existing is not null && existing.Id != fileId)
         {
@@ -1040,37 +1241,72 @@ public class LibraryService
 
         _fileRepo.Update(file);
 
-        // Regenerate thumbnail for the new path
         _ = _thumbnailService.GenerateThumbnailAsync(file);
 
         LibraryChanged?.Invoke();
         return new RelocateResult(RelocateResultStatus.Success, null);
     }
 
-    public void RemoveFile(long fileId)
+    public void RemoveFile(Guid fileId)
     {
-        _fileRepo.Remove(fileId);
-        LibraryChanged?.Invoke();
-    }
-
-    public void RemoveFiles(IEnumerable<long> fileIds)
-    {
-        if (!fileIds.Any())
+        var file = _fileRepo.GetById(fileId);
+        if (file is null)
         {
             return;
         }
 
-        foreach (long id in fileIds)
-        {
-            _fileRepo.Remove(id);
-        }
+        var tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+
+        _undoService.Push(new FileDeletionUndoCommand(
+            _fileRepo,
+            _fileTagRepo,
+            () => LibraryChanged?.Invoke(),
+            [(file, tagIds)]));
+
+        _fileRepo.Remove(fileId);
         LibraryChanged?.Invoke();
     }
 
-    public void AddTagToFile(long fileId, long tagId)
+    public void RemoveFiles(IEnumerable<Guid> fileIds)
     {
-        // Record which files didn't have this tag before adding
-        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        var idsList = fileIds.ToList();
+        if (idsList.Count == 0)
+        {
+            return;
+        }
+
+        var deletedItems = new List<(FileEntry file, List<Guid> tagIds)>();
+
+        foreach (var id in idsList)
+        {
+            var file = _fileRepo.GetById(id);
+            if (file is not null)
+            {
+                var tags = _fileTagRepo.GetTagIdsForFile(id);
+                deletedItems.Add((file, tags));
+            }
+        }
+
+        if (deletedItems.Count != 0)
+        {
+            _undoService.Push(new FileDeletionUndoCommand(
+                _fileRepo,
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                deletedItems));
+        }
+
+        foreach (var id in idsList)
+        {
+            _fileRepo.Remove(id);
+        }
+
+        LibraryChanged?.Invoke();
+    }
+
+    public void AddTagToFile(Guid fileId, Guid tagId)
+    {
+        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
         bool alreadyHadTag = existingIds.Contains(tagId);
 
         _fileTagRepo.AddTagToFile(fileId, tagId);
@@ -1088,19 +1324,18 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void AddTagToFiles(IEnumerable<long> fileIds, long tagId)
+    public void AddTagToFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<long> ids = fileIds.ToList();
+        List<Guid> ids = fileIds.ToList();
         if (ids.Count == 0)
         {
             return;
         }
 
-        // Determine which files actually receive the tag (didn't have it before)
-        List<long> modifiedFiles = [];
-        foreach (long id in ids)
+        List<Guid> modifiedFiles = [];
+        foreach (Guid id in ids)
         {
-            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            List<Guid> existing = _fileTagRepo.GetTagIdsForFile(id);
             if (!existing.Contains(tagId))
             {
                 modifiedFiles.Add(id);
@@ -1122,10 +1357,9 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void RemoveTagFromFile(long fileId, long tagId)
+    public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
-        // Record if file had this tag before removing
-        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
         bool hadTag = existingIds.Contains(tagId);
 
         _fileTagRepo.RemoveTagFromFile(fileId, tagId);
@@ -1143,19 +1377,18 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void RemoveTagFromFiles(IEnumerable<long> fileIds, long tagId)
+    public void RemoveTagFromFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<long> ids = fileIds.ToList();
+        List<Guid> ids = fileIds.ToList();
         if (ids.Count == 0)
         {
             return;
         }
 
-        // Determine which files actually lose the tag (had it before)
-        List<long> modifiedFiles = [];
-        foreach (long id in ids)
+        List<Guid> modifiedFiles = [];
+        foreach (Guid id in ids)
         {
-            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            List<Guid> existing = _fileTagRepo.GetTagIdsForFile(id);
             if (existing.Contains(tagId))
             {
                 modifiedFiles.Add(id);
@@ -1177,8 +1410,6 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    // --- Tags ---
-
     public List<Tag> GetTags()
     {
         return _tagRepo.GetAll();
@@ -1189,30 +1420,27 @@ public class LibraryService
         return _tagRepo.GetAll(sortBy, direction);
     }
 
-    public List<Tag> GetTagsForFile(long fileId)
+    public List<Tag> GetTagsForFile(Guid fileId)
     {
-        List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
         return _tagRepo.GetTagsByIds(tagIds);
     }
 
-    public List<Tag> GetCommonTags(IEnumerable<long> fileIds)
+    public List<Tag> GetCommonTags(IEnumerable<Guid> fileIds)
     {
-        List<long> ids = fileIds.ToList();
+        List<Guid> ids = fileIds.ToList();
         if (ids.Count == 0)
         {
             return [];
         }
 
-        // Start with tags of first file
-        HashSet<long> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
+        HashSet<Guid> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
 
-        // Intersect with remaining files
         for (int i = 1; i < ids.Count; i++)
         {
-            List<long> tags = _fileTagRepo.GetTagIdsForFile(ids[i]);
+            List<Guid> tags = _fileTagRepo.GetTagIdsForFile(ids[i]);
             commonIds.IntersectWith(tags);
 
-            // Optimization: If intersection is empty, no need to continue
             if (commonIds.Count == 0)
             {
                 break;
@@ -1234,7 +1462,7 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void DeleteTag(long id)
+    public void DeleteTag(Guid id)
     {
         _tagRepo.Delete(id);
         LibraryChanged?.Invoke();
@@ -1294,7 +1522,6 @@ public class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
-        // Check for FFmpeg binaries
         string ffmpegPath = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
         string ffprobePath = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
 
@@ -1311,16 +1538,17 @@ public class ThumbnailService
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
     }
 
-    public string GetThumbnailPath(long fileId)
+    public string GetThumbnailPath(Guid fileId)
     {
-        return Path.Combine(_cacheDir, $"{fileId}.png");
+        return Path.Combine(_cacheDir, $"{fileId:N}.png");
     }
 
-    public bool HasThumbnail(long fileId)
+    public bool HasThumbnail(Guid fileId)
     {
         return File.Exists(GetThumbnailPath(fileId));
     }
 
+    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -1365,6 +1593,7 @@ public class ThumbnailService
         }
     }
 
+    [Obsolete]
     private static async Task GenerateImageThumbnailAsync(string sourcePath, string destPath, int size)
     {
         using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath));
@@ -1376,6 +1605,7 @@ public class ThumbnailService
         SaveResized(original, destPath, size);
     }
 
+    [Obsolete]
     private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
     {
         try
@@ -1704,7 +1934,7 @@ public class DataExportService
     public async Task ExportCsvAsync(string path)
     {
         DatabaseExport data = BuildExportData();
-        Dictionary<long, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
+        Dictionary<Guid, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
         StringBuilder sb = new();
 
         _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,Tags");
@@ -1728,7 +1958,7 @@ public class DataExportService
 
         foreach (FileEntry f in files)
         {
-            List<long> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
+            List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
 
             export.Files.Add(new FileExportData
             {
@@ -1760,13 +1990,13 @@ namespace Tagium.Core.Services.DataExport;
 
 public class FileExportData
 {
-    public long Id { get; set; }
+    public Guid Id { get; set; }
     public required string Path { get; set; }
     public required string Name { get; set; }
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
-    public List<long> TagIds { get; set; } = [];
+    public List<Guid> TagIds { get; set; } = [];
 }
 ```
 
@@ -1784,7 +2014,6 @@ namespace Tagium.Core.Services.DataMerge;
 
 public class DatabaseMergeService
 {
-    private readonly DatabaseManager _targetDb;
     private readonly FileRepository _targetFileRepo;
     private readonly TagRepository _targetTagRepo;
     private readonly FileTagRepository _targetFileTagRepo;
@@ -1795,7 +2024,6 @@ public class DatabaseMergeService
         TagRepository targetTagRepo,
         FileTagRepository targetFileTagRepo)
     {
-        _targetDb = targetDb;
         _targetFileRepo = targetFileRepo;
         _targetTagRepo = targetTagRepo;
         _targetFileTagRepo = targetFileTagRepo;
@@ -1805,114 +2033,79 @@ public class DatabaseMergeService
     {
         MergeResult result = new();
 
-        // Connect to source DB manually
         string sourceConnString = $"Data Source={sourceDbPath}";
         using SqliteConnection sourceConn = new(sourceConnString);
         sourceConn.Open();
 
-        // 1. Load Source Data
         List<Tag> sourceTags = LoadTags(sourceConn);
         List<FileEntry> sourceFiles = LoadFiles(sourceConn);
-        Dictionary<long, List<long>> sourceFileTagMap = LoadFileTags(sourceConn);
+        Dictionary<Guid, List<Guid>> sourceFileTagMap = LoadFileTags(sourceConn);
 
-        // 2. Load Target Data
         Dictionary<string, Tag> targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, FileEntry> targetFiles = _targetFileRepo.GetAll(SortBy.Path, SortDirection.Asc)
             .Where(f => f.Hash is not null)
             .ToDictionary(f => f.Hash!);
 
-        // 3. Merge Tags
-        Dictionary<long, long> tagIdMap = MergeTags(result, sourceTags, targetTags);
-
-        // 4. Merge Files & Associations
-        MergeFilesAndAssociations(result, sourceFiles, sourceFileTagMap, targetFiles, tagIdMap);
-
-        return result;
-    }
-
-    private void MergeFilesAndAssociations(
-        MergeResult result,
-        List<FileEntry> sourceFiles,
-        Dictionary<long, List<long>> sourceFileTagMap,
-        Dictionary<string, FileEntry> targetFiles,
-        Dictionary<long, long> tagIdMap)
-    {
-        foreach (FileEntry sFile in sourceFiles)
-        {
-            if (sFile.Hash is null)
-            {
-                continue;
-            }
-
-            long targetFileId;
-
-            if (targetFiles.TryGetValue(sFile.Hash, out FileEntry? existingFile))
-            {
-                targetFileId = existingFile.Id;
-            }
-            else
-            {
-                // Add File
-                _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
-                // Re-fetch to get ID. Optimization: Repo.Add should return ID/Entry.
-                // Fallback:
-                FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
-                if (added is null)
-                {
-                    continue; // Failed to add
-                }
-
-                targetFileId = added.Id;
-                result.NewFiles++;
-            }
-
-            // Merge Associations
-            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
-            {
-                continue;
-            }
-
-            foreach (long sTagId in sTagIds)
-            {
-                if (!tagIdMap.TryGetValue(sTagId, out long targetTagId))
-                {
-                    continue;
-                }
-                // Repository handles "INSERT OR IGNORE"
-                _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
-                // We assume success, hard to count actual "new" without checking first.
-                // We'll just increment. Real logic would check existence.
-                result.NewAssociations++;
-            }
-        }
-    }
-
-    private Dictionary<long, long> MergeTags(MergeResult result, List<Tag> sourceTags, Dictionary<string, Tag> targetTags)
-    {
-        Dictionary<long, long> tagIdMap = []; // SourceId -> TargetId
-
+        // Merge Tags - UUIDs allow direct insertion, no ID remapping needed
         foreach (Tag sTag in sourceTags)
         {
-            if (targetTags.TryGetValue(sTag.Name, out Tag? existing))
-            {
-                tagIdMap[sTag.Id] = existing.Id;
-            }
-            else
+            if (!targetTags.ContainsKey(sTag.Name))
             {
                 _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
-                // Need to fetch the new ID. For simplicity, we reload tags or assume Add returns ID.
-                // Current repo doesn't return ID. Let's re-fetch.
-                Tag newTag = _targetTagRepo.GetAll().First(t => t.Name == sTag.Name);
-                targetTags[newTag.Name] = newTag;
-                tagIdMap[sTag.Id] = newTag.Id;
                 result.NewTags++;
             }
         }
 
-        return tagIdMap;
+        // Refresh target tags to get new ones with their UUIDs
+        targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+        // Merge Files
+        foreach (FileEntry sFile in sourceFiles)
+        {
+            if (sFile.Hash is null || targetFiles.ContainsKey(sFile.Hash))
+            {
+                continue;
+            }
+
+            _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
+            result.NewFiles++;
+
+            // Get the newly added file to establish associations
+            FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
+            if (added is null)
+            {
+                continue;
+            }
+
+            // Merge Associations
+            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<Guid>? sTagIds))
+            {
+                continue;
+            }
+
+            foreach (Guid sTagId in sTagIds)
+            {
+                // Find corresponding tag in source by ID, then match by name to target
+                var sourceTag = sourceTags.FirstOrDefault(t => t.Id == sTagId);
+                if (sourceTag is null)
+                {
+                    continue;
+                }
+
+                var targetTag = targetTags.GetValueOrDefault(sourceTag.Name);
+                if (targetTag is null)
+                {
+                    continue;
+                }
+
+                _targetFileTagRepo.AddTagToFile(added.Id, targetTag.Id);
+                result.NewAssociations++;
+            }
+        }
+
+        return result;
     }
 
-    // Mini-loaders for the external DB connection
     private static List<Tag> LoadTags(SqliteConnection conn)
     {
         List<Tag> list = [];
@@ -1925,13 +2118,10 @@ public class DatabaseMergeService
         {
             list.Add(new Tag
             {
-                Id = r.GetInt64(0),
+                Id = Guid.Parse(r.GetString(0)),
                 Name = r.GetString(1),
                 ColorHex = r.GetString(2),
-
-                Emoji = r.IsDBNull(3)
-                    ? null
-                    : r.GetString(3)
+                Emoji = r.IsDBNull(3) ? null : r.GetString(3)
             });
         }
 
@@ -1951,7 +2141,7 @@ public class DatabaseMergeService
         {
             list.Add(new()
             {
-                Id = r.GetInt64(0),
+                Id = Guid.Parse(r.GetString(0)),
                 Path = r.GetString(1),
                 Name = r.GetString(2),
                 Hash = r.IsDBNull(3) ? null : r.GetString(3),
@@ -1963,9 +2153,9 @@ public class DatabaseMergeService
         return list;
     }
 
-    private static Dictionary<long, List<long>> LoadFileTags(SqliteConnection conn)
+    private static Dictionary<Guid, List<Guid>> LoadFileTags(SqliteConnection conn)
     {
-        Dictionary<long, List<long>> map = [];
+        Dictionary<Guid, List<Guid>> map = [];
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
@@ -1974,10 +2164,10 @@ public class DatabaseMergeService
 
         while (r.Read())
         {
-            long fid = r.GetInt64(0);
-            long tid = r.GetInt64(1);
+            Guid fid = Guid.Parse(r.GetString(0));
+            Guid tid = Guid.Parse(r.GetString(1));
 
-            if (!map.TryGetValue(fid, out List<long>? value))
+            if (!map.TryGetValue(fid, out List<Guid>? value))
             {
                 value = [];
                 map[fid] = value;
@@ -2043,12 +2233,11 @@ public class LibraryIntegrityService
 
     public async Task<IntegrityScanResult> ScanAsync()
     {
-        // Get all files sorted by path for potential optimization, though mostly IO bound
         List<FileEntry> allFiles = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
         IntegrityScanResult result = new() { FilesScanned = allFiles.Count };
 
-        List<long> toMarkMissing = [];
-        List<long> toMarkFound = [];
+        List<Guid> toMarkMissing = [];
+        List<Guid> toMarkFound = [];
 
         await Task.Run(() =>
         {
@@ -2091,6 +2280,52 @@ public class LibraryIntegrityService
 
 ---
 
+### `Tagium.Core\Services\Undo\FileDeletionUndoCommand.cs`
+
+```csharp
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+
+namespace Tagium.Core.Services.Undo;
+
+public class FileDeletionUndoCommand : IUndoCommand
+{
+    private readonly FileRepository _fileRepo;
+    private readonly FileTagRepository _fileTagRepo;
+    private readonly Action _onChanged;
+    private readonly List<(FileEntry file, List<Guid> tagIds)> _deletedItems;
+
+    public FileDeletionUndoCommand(
+        FileRepository fileRepo,
+        FileTagRepository fileTagRepo,
+        Action onChanged,
+        List<(FileEntry file, List<Guid> tagIds)> deletedItems)
+    {
+        _fileRepo = fileRepo;
+        _fileTagRepo = fileTagRepo;
+        _onChanged = onChanged;
+        _deletedItems = deletedItems;
+    }
+
+    public void Undo()
+    {
+        foreach (var (file, tagIds) in _deletedItems)
+        {
+            _fileRepo.Restore(file);
+
+            foreach (var tagId in tagIds)
+            {
+                _fileTagRepo.AddTagToFile(file.Id, tagId);
+            }
+        }
+
+        _onChanged();
+    }
+}
+```
+
+---
+
 ### `Tagium.Core\Services\Undo\IUndoCommand.cs`
 
 ```csharp
@@ -2115,15 +2350,15 @@ public class TagAssignmentUndoCommand : IUndoCommand
 {
     private readonly FileTagRepository _fileTagRepo;
     private readonly Action _onChanged;
-    private readonly long _tagId;
-    private readonly List<long> _fileIds;
+    private readonly Guid _tagId;
+    private readonly List<Guid> _fileIds;
     private readonly bool _wasAdding;
 
     public TagAssignmentUndoCommand(
         FileTagRepository fileTagRepo,
         Action onChanged,
-        long tagId,
-        IEnumerable<long> fileIds,
+        Guid tagId,
+        IEnumerable<Guid> fileIds,
         bool wasAdding)
     {
         _fileTagRepo = fileTagRepo;
@@ -2135,7 +2370,7 @@ public class TagAssignmentUndoCommand : IUndoCommand
 
     public void Undo()
     {
-        foreach (long fileId in _fileIds)
+        foreach (Guid fileId in _fileIds)
         {
             if (_wasAdding)
             {
@@ -2495,7 +2730,7 @@ using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
-public partial class FileGrid
+public partial class FileGrid : IDisposable
 {
     private List<FileEntry> Files = [];
     private DotNetObjectReference<FileGrid>? _objRef;
@@ -2537,7 +2772,7 @@ public partial class FileGrid
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
     }
 
-    private void OnCardClick(MouseEventArgs e, long id)
+    private void OnCardClick(MouseEventArgs e, Guid id)
     {
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
@@ -2553,14 +2788,18 @@ public partial class FileGrid
     }
 
     [JSInvokable]
-    public void SelectFile(long id)
+    public void SelectFile(string idStr)
     {
-        AppState.SelectFile(id, false, false);
+        if (Guid.TryParse(idStr, out var id))
+        {
+            AppState.SelectFile(id, false, false);
+        }
     }
 
     [JSInvokable]
-    public void SelectFiles(long[] ids)
+    public void SelectFiles(string[] idStrs)
     {
+        var ids = idStrs.Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null).Where(g => g.HasValue).Select(g => g!.Value);
         AppState.SetSelection(ids);
     }
 
@@ -2584,7 +2823,7 @@ public partial class FileGrid
             return;
         }
 
-        long id = AppState.SelectedFileIds.First();
+        Guid id = AppState.SelectedFileIds.First();
         FileEntry? file = Files.FirstOrDefault(f => f.Id == id);
 
         if (file is null || file.IsMissing)
@@ -3560,13 +3799,11 @@ public class AppState
 {
     private readonly LibraryService _library;
 
-    // State
     public AppView CurrentView { get; private set; } = AppView.Files;
     public string SearchText { get; private set; } = "";
     public bool IsMissingOnly { get; private set; }
-    public HashSet<long> SelectedFileIds { get; private set; } = [];
+    public HashSet<Guid> SelectedFileIds { get; private set; } = [];
 
-    // Events
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
@@ -3619,7 +3856,7 @@ public class AppState
         NotifyStateChanged();
     }
 
-    public void SelectFile(long id, bool multiSelect, bool rangeSelect)
+    public void SelectFile(Guid id, bool multiSelect, bool rangeSelect)
     {
         if (!multiSelect)
         {
@@ -3636,11 +3873,11 @@ public class AppState
         NotifySelectionChanged();
     }
 
-    public void SetSelection(IEnumerable<long> ids)
+    public void SetSelection(IEnumerable<Guid> ids)
     {
         SelectedFileIds.Clear();
 
-        foreach (long id in ids)
+        foreach (Guid id in ids)
         {
             _ = SelectedFileIds.Add(id);
         }
@@ -3900,8 +4137,6 @@ namespace Tagium.Photino.Blazor.Setup;
 
 public static class SchemeHandlers
 {
-    // We need access to the repository to look up file paths by ID.
-    // Since this is a static callback, we need a reference to the ServiceProvider.
     public static IServiceProvider? ServiceProvider { get; set; }
 
     public static Stream HandleTagiumScheme(object sender, string scheme, string url, out string contentType)
@@ -3909,13 +4144,11 @@ public static class SchemeHandlers
         contentType = "text/plain";
         Uri uri = new(url);
 
-        // 1. Thumbnail Handler
         if (uri.Host.Equals("thumbnail", StringComparison.OrdinalIgnoreCase))
         {
             return HandleThumbnail(uri, out contentType);
         }
 
-        // 2. Preview Handler
         return uri.Host.Equals("preview", StringComparison.OrdinalIgnoreCase) ? HandlePreview(uri, out contentType) : Stream.Null;
     }
 
@@ -3924,20 +4157,15 @@ public static class SchemeHandlers
         contentType = "image/png";
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
-        if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
+        if (segments.Length == 0 || !Guid.TryParse(segments[0], out Guid fileId))
         {
             return Stream.Null;
         }
 
         string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
-        string path = Path.Combine(cacheDir, $"{fileId}.png");
+        string path = Path.Combine(cacheDir, $"{fileId:N}.png");
 
-        if (!File.Exists(path))
-        {
-            return null!; // 404
-        }
-
-        return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        return !File.Exists(path) ? null! : (Stream)new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
     }
 
     private static Stream HandlePreview(Uri uri, out string contentType)
@@ -3950,18 +4178,17 @@ public static class SchemeHandlers
         }
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
-        if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
+        if (segments.Length == 0 || !Guid.TryParse(segments[0], out Guid fileId))
         {
             return Stream.Null;
         }
 
-        // Resolve the file path from the database
         var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
         FileEntry? entry = fileRepo.GetById(fileId);
 
         if (entry is null || !File.Exists(entry.Path))
         {
-            return null!; // 404
+            return null!;
         }
 
         contentType = GetMimeType(Path.GetExtension(entry.Path));
@@ -3980,7 +4207,7 @@ public static class SchemeHandlers
             ".mp4" => "video/mp4",
             ".webm" => "video/webm",
             ".mov" => "video/quicktime",
-            ".mkv" => "video/x-matroska", // Browsers struggle with this, but WebView might try
+            ".mkv" => "video/x-matroska",
             _ => "application/octet-stream"
         };
     }
@@ -4233,7 +4460,7 @@ public partial class FileInspector
             }
             else if (count == 1)
             {
-                long id = AppState.SelectedFileIds.First();
+                Guid id = AppState.SelectedFileIds.First();
                 SelectedFile = Library.GetFileById(id);
 
                 if (SelectedFile is not null)
@@ -4244,7 +4471,6 @@ public partial class FileInspector
                 }
                 else
                 {
-                    // Stale ID, treat as none
                     SelectionMode = InspectorMode.None;
                 }
             }
@@ -4269,7 +4495,7 @@ public partial class FileInspector
     private List<Tag> GetAvailableTags(List<Tag> existingTags)
     {
         List<Tag> allTags = Library.GetTags();
-        HashSet<long> existingIds = [.. existingTags.Select(t => t.Id)];
+        HashSet<Guid> existingIds = [.. existingTags.Select(t => t.Id)];
         return [.. allTags.Where(t => !existingIds.Contains(t.Id))];
     }
 
@@ -4452,12 +4678,12 @@ public partial class MultiFileInspector
     [Parameter] public List<Tag> CommonTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
 
-    private void BulkAddTag(long tagId)
+    private void BulkAddTag(Guid tagId)
     {
         Library.AddTagToFiles(AppState.SelectedFileIds, tagId);
     }
 
-    private void BulkRemoveTag(long tagId)
+    private void BulkRemoveTag(Guid tagId)
     {
         Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
     }
@@ -4698,12 +4924,12 @@ h4 {
         return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
     }
 
-    private void AddTag(long tagId)
+    private void AddTag(Guid tagId)
     {
         Library.AddTagToFile(File.Id, tagId);
     }
 
-    private void RemoveTag(long tagId)
+    private void RemoveTag(Guid tagId)
     {
         Library.RemoveTagFromFile(File.Id, tagId);
     }
@@ -5204,11 +5430,8 @@ public partial class DuplicateFileModal
 
     private void ShowExisting()
     {
-        // Clear filters to ensure the file is visible
         AppState.SetSearch("");
         AppState.SetMissingOnly(false);
-
-        // Select the file
         AppState.SelectFile(ExistingFile.Id, false, false);
 
         ModalService.Close();
@@ -6256,7 +6479,7 @@ public partial class TagManagerView
 {
     private List<Tag> Tags = [];
     private string NewTagName = "";
-    private long? ActiveColorPickerId = null;
+    private Guid? ActiveColorPickerId = null;
 
     private static readonly List<string> Palette =
     [
@@ -6322,7 +6545,7 @@ public partial class TagManagerView
         NewTagName = "";
     }
 
-    private void DeleteTag(long id)
+    private void DeleteTag(Guid id)
     {
         Library.DeleteTag(id);
     }
@@ -6344,7 +6567,7 @@ public partial class TagManagerView
         Library.UpdateTag(tag);
     }
 
-    private void ToggleColorPicker(long id)
+    private void ToggleColorPicker(Guid id)
     {
         ActiveColorPickerId = ActiveColorPickerId == id ? null : id;
     }
