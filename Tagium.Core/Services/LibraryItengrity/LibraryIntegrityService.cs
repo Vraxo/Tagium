@@ -15,12 +15,11 @@ public class LibraryIntegrityService
 
     public async Task<IntegrityScanResult> ScanAsync()
     {
-        // Get all files sorted by path for potential optimization, though mostly IO bound
         List<FileEntry> allFiles = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
         IntegrityScanResult result = new() { FilesScanned = allFiles.Count };
 
-        List<long> toMarkMissing = [];
-        List<long> toMarkFound = [];
+        List<Guid> toMarkMissing = [];
+        List<Guid> toMarkFound = [];
 
         await Task.Run(() =>
         {

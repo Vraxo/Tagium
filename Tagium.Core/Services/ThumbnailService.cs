@@ -35,7 +35,6 @@ public class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
-        // Check for FFmpeg binaries
         string ffmpegPath = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
         string ffprobePath = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
 
@@ -52,16 +51,17 @@ public class ThumbnailService
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
     }
 
-    public string GetThumbnailPath(long fileId)
+    public string GetThumbnailPath(Guid fileId)
     {
-        return Path.Combine(_cacheDir, $"{fileId}.png");
+        return Path.Combine(_cacheDir, $"{fileId:N}.png");
     }
 
-    public bool HasThumbnail(long fileId)
+    public bool HasThumbnail(Guid fileId)
     {
         return File.Exists(GetThumbnailPath(fileId));
     }
 
+    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -106,6 +106,7 @@ public class ThumbnailService
         }
     }
 
+    [Obsolete]
     private static async Task GenerateImageThumbnailAsync(string sourcePath, string destPath, int size)
     {
         using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath));
@@ -117,6 +118,7 @@ public class ThumbnailService
         SaveResized(original, destPath, size);
     }
 
+    [Obsolete]
     private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
     {
         try

@@ -57,7 +57,6 @@ public class FileRepository
         {
             var file = ReadFile(reader);
 
-            // Parse tag data if present
             if (!reader.IsDBNull(6))
             {
                 string tagData = reader.GetString(6);
@@ -83,24 +82,24 @@ public class FileRepository
     private Tag? ParseTagFromData(string tagData)
     {
         var parts = tagData.Split(':', 4);
-        return parts.Length < 3
+        return parts.Length < 3 || !Guid.TryParse(parts[0], out var tagId)
             ? null
             : new Tag
             {
-                Id = long.Parse(parts[0]),
+                Id = tagId,
                 Name = parts[1],
                 ColorHex = parts[2],
                 Emoji = parts.Length > 3 && parts[3] != "" ? parts[3] : null
             };
     }
 
-    public FileEntry? GetById(long id)
+    public FileEntry? GetById(Guid id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
         return reader.Read() ? ReadFile(reader) : null;
@@ -120,7 +119,6 @@ public class FileRepository
 
     public AddFileResult Add(string path, string hash)
     {
-        // Optimization: Checking hash first avoids expensive INSERT attempt if logic dictates hash uniqueness
         if (GetByHash(hash) is not null)
         {
             return AddFileResult.Duplicate;
@@ -131,9 +129,11 @@ public class FileRepository
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Path, Name, Hash, DateAdded) 
-            VALUES (@Path, @Name, @Hash, strftime('%s','now'))";
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded) 
+            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'))";
 
+        Guid newId = Guid.NewGuid();
+        _ = cmd.Parameters.AddWithValue("@Id", newId.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", path);
         _ = cmd.Parameters.AddWithValue("@Name", Path.GetFileName(path));
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
@@ -145,7 +145,6 @@ public class FileRepository
         }
         catch (SqliteException)
         {
-            // UNIQUE constraint violation on Path returns duplicate/error
             return AddFileResult.Duplicate;
         }
         catch
@@ -164,7 +163,7 @@ public class FileRepository
             SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing 
             WHERE Id = @Id";
 
-        _ = cmd.Parameters.AddWithValue("@Id", file.Id);
+        _ = cmd.Parameters.AddWithValue("@Id", file.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", file.Path);
         _ = cmd.Parameters.AddWithValue("@Name", file.Name);
         _ = cmd.Parameters.AddWithValue("@Hash", (object?)file.Hash ?? DBNull.Value);
@@ -173,34 +172,29 @@ public class FileRepository
         _ = cmd.ExecuteNonQuery();
     }
 
-    public void Remove(long id)
+    public void Remove(Guid id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
-    public void SetMissingStatus(IEnumerable<long> fileIds, bool isMissing)
+    public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
-        if (!fileIds.Any())
-        {
-            return;
-        }
-
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteTransaction trans = conn.BeginTransaction();
 
-        foreach (long id in fileIds)
+        foreach (Guid id in fileIds)
         {
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.Transaction = trans;
             cmd.CommandText = "UPDATE Files SET IsMissing = @IsMissing WHERE Id = @Id";
             _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
-            _ = cmd.Parameters.AddWithValue("@Id", id);
+            _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
             _ = cmd.ExecuteNonQuery();
         }
         trans.Commit();
@@ -219,13 +213,13 @@ public class FileRepository
     {
         return new FileEntry
         {
-            Id = reader.GetInt64(0),
+            Id = Guid.Parse(reader.GetString(0)),
             Path = reader.GetString(1),
             Name = reader.GetString(2),
             Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
             DateAdded = reader.GetInt64(4),
             IsMissing = reader.GetBoolean(5),
-            Tags = [] // Initialize empty, will be populated by GetFilesWithTags if needed
+            Tags = []
         };
     }
 

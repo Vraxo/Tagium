@@ -100,12 +100,12 @@
         return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
     }
 
-    private void AddTag(long tagId)
+    private void AddTag(Guid tagId)
     {
         Library.AddTagToFile(File.Id, tagId);
     }
 
-    private void RemoveTag(long tagId)
+    private void RemoveTag(Guid tagId)
     {
         Library.RemoveTagFromFile(File.Id, tagId);
     }

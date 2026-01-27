@@ -6,15 +6,15 @@ public class TagAssignmentUndoCommand : IUndoCommand
 {
     private readonly FileTagRepository _fileTagRepo;
     private readonly Action _onChanged;
-    private readonly long _tagId;
-    private readonly List<long> _fileIds;
+    private readonly Guid _tagId;
+    private readonly List<Guid> _fileIds;
     private readonly bool _wasAdding;
 
     public TagAssignmentUndoCommand(
         FileTagRepository fileTagRepo,
         Action onChanged,
-        long tagId,
-        IEnumerable<long> fileIds,
+        Guid tagId,
+        IEnumerable<Guid> fileIds,
         bool wasAdding)
     {
         _fileTagRepo = fileTagRepo;
@@ -26,7 +26,7 @@ public class TagAssignmentUndoCommand : IUndoCommand
 
     public void Undo()
     {
-        foreach (long fileId in _fileIds)
+        foreach (Guid fileId in _fileIds)
         {
             if (_wasAdding)
             {

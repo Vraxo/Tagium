@@ -7,7 +7,6 @@ namespace Tagium.Core.Services.DataMerge;
 
 public class DatabaseMergeService
 {
-    private readonly DatabaseManager _targetDb;
     private readonly FileRepository _targetFileRepo;
     private readonly TagRepository _targetTagRepo;
     private readonly FileTagRepository _targetFileTagRepo;
@@ -18,7 +17,6 @@ public class DatabaseMergeService
         TagRepository targetTagRepo,
         FileTagRepository targetFileTagRepo)
     {
-        _targetDb = targetDb;
         _targetFileRepo = targetFileRepo;
         _targetTagRepo = targetTagRepo;
         _targetFileTagRepo = targetFileTagRepo;
@@ -28,114 +26,79 @@ public class DatabaseMergeService
     {
         MergeResult result = new();
 
-        // Connect to source DB manually
         string sourceConnString = $"Data Source={sourceDbPath}";
         using SqliteConnection sourceConn = new(sourceConnString);
         sourceConn.Open();
 
-        // 1. Load Source Data
         List<Tag> sourceTags = LoadTags(sourceConn);
         List<FileEntry> sourceFiles = LoadFiles(sourceConn);
-        Dictionary<long, List<long>> sourceFileTagMap = LoadFileTags(sourceConn);
+        Dictionary<Guid, List<Guid>> sourceFileTagMap = LoadFileTags(sourceConn);
 
-        // 2. Load Target Data
         Dictionary<string, Tag> targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, FileEntry> targetFiles = _targetFileRepo.GetAll(SortBy.Path, SortDirection.Asc)
             .Where(f => f.Hash is not null)
             .ToDictionary(f => f.Hash!);
 
-        // 3. Merge Tags
-        Dictionary<long, long> tagIdMap = MergeTags(result, sourceTags, targetTags);
-
-        // 4. Merge Files & Associations
-        MergeFilesAndAssociations(result, sourceFiles, sourceFileTagMap, targetFiles, tagIdMap);
-
-        return result;
-    }
-
-    private void MergeFilesAndAssociations(
-        MergeResult result,
-        List<FileEntry> sourceFiles,
-        Dictionary<long, List<long>> sourceFileTagMap,
-        Dictionary<string, FileEntry> targetFiles,
-        Dictionary<long, long> tagIdMap)
-    {
-        foreach (FileEntry sFile in sourceFiles)
-        {
-            if (sFile.Hash is null)
-            {
-                continue;
-            }
-
-            long targetFileId;
-
-            if (targetFiles.TryGetValue(sFile.Hash, out FileEntry? existingFile))
-            {
-                targetFileId = existingFile.Id;
-            }
-            else
-            {
-                // Add File
-                _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
-                // Re-fetch to get ID. Optimization: Repo.Add should return ID/Entry.
-                // Fallback:
-                FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
-                if (added is null)
-                {
-                    continue; // Failed to add
-                }
-
-                targetFileId = added.Id;
-                result.NewFiles++;
-            }
-
-            // Merge Associations
-            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<long>? sTagIds))
-            {
-                continue;
-            }
-
-            foreach (long sTagId in sTagIds)
-            {
-                if (!tagIdMap.TryGetValue(sTagId, out long targetTagId))
-                {
-                    continue;
-                }
-                // Repository handles "INSERT OR IGNORE"
-                _targetFileTagRepo.AddTagToFile(targetFileId, targetTagId);
-                // We assume success, hard to count actual "new" without checking first.
-                // We'll just increment. Real logic would check existence.
-                result.NewAssociations++;
-            }
-        }
-    }
-
-    private Dictionary<long, long> MergeTags(MergeResult result, List<Tag> sourceTags, Dictionary<string, Tag> targetTags)
-    {
-        Dictionary<long, long> tagIdMap = []; // SourceId -> TargetId
-
+        // Merge Tags - UUIDs allow direct insertion, no ID remapping needed
         foreach (Tag sTag in sourceTags)
         {
-            if (targetTags.TryGetValue(sTag.Name, out Tag? existing))
-            {
-                tagIdMap[sTag.Id] = existing.Id;
-            }
-            else
+            if (!targetTags.ContainsKey(sTag.Name))
             {
                 _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
-                // Need to fetch the new ID. For simplicity, we reload tags or assume Add returns ID.
-                // Current repo doesn't return ID. Let's re-fetch.
-                Tag newTag = _targetTagRepo.GetAll().First(t => t.Name == sTag.Name);
-                targetTags[newTag.Name] = newTag;
-                tagIdMap[sTag.Id] = newTag.Id;
                 result.NewTags++;
             }
         }
 
-        return tagIdMap;
+        // Refresh target tags to get new ones with their UUIDs
+        targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+        // Merge Files
+        foreach (FileEntry sFile in sourceFiles)
+        {
+            if (sFile.Hash is null || targetFiles.ContainsKey(sFile.Hash))
+            {
+                continue;
+            }
+
+            _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
+            result.NewFiles++;
+
+            // Get the newly added file to establish associations
+            FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
+            if (added is null)
+            {
+                continue;
+            }
+
+            // Merge Associations
+            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<Guid>? sTagIds))
+            {
+                continue;
+            }
+
+            foreach (Guid sTagId in sTagIds)
+            {
+                // Find corresponding tag in source by ID, then match by name to target
+                var sourceTag = sourceTags.FirstOrDefault(t => t.Id == sTagId);
+                if (sourceTag is null)
+                {
+                    continue;
+                }
+
+                var targetTag = targetTags.GetValueOrDefault(sourceTag.Name);
+                if (targetTag is null)
+                {
+                    continue;
+                }
+
+                _targetFileTagRepo.AddTagToFile(added.Id, targetTag.Id);
+                result.NewAssociations++;
+            }
+        }
+
+        return result;
     }
 
-    // Mini-loaders for the external DB connection
     private static List<Tag> LoadTags(SqliteConnection conn)
     {
         List<Tag> list = [];
@@ -148,13 +111,10 @@ public class DatabaseMergeService
         {
             list.Add(new Tag
             {
-                Id = r.GetInt64(0),
+                Id = Guid.Parse(r.GetString(0)),
                 Name = r.GetString(1),
                 ColorHex = r.GetString(2),
-
-                Emoji = r.IsDBNull(3)
-                    ? null
-                    : r.GetString(3)
+                Emoji = r.IsDBNull(3) ? null : r.GetString(3)
             });
         }
 
@@ -174,7 +134,7 @@ public class DatabaseMergeService
         {
             list.Add(new()
             {
-                Id = r.GetInt64(0),
+                Id = Guid.Parse(r.GetString(0)),
                 Path = r.GetString(1),
                 Name = r.GetString(2),
                 Hash = r.IsDBNull(3) ? null : r.GetString(3),
@@ -186,9 +146,9 @@ public class DatabaseMergeService
         return list;
     }
 
-    private static Dictionary<long, List<long>> LoadFileTags(SqliteConnection conn)
+    private static Dictionary<Guid, List<Guid>> LoadFileTags(SqliteConnection conn)
     {
-        Dictionary<long, List<long>> map = [];
+        Dictionary<Guid, List<Guid>> map = [];
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
@@ -197,10 +157,10 @@ public class DatabaseMergeService
 
         while (r.Read())
         {
-            long fid = r.GetInt64(0);
-            long tid = r.GetInt64(1);
+            Guid fid = Guid.Parse(r.GetString(0));
+            Guid tid = Guid.Parse(r.GetString(1));
 
-            if (!map.TryGetValue(fid, out List<long>? value))
+            if (!map.TryGetValue(fid, out List<Guid>? value))
             {
                 value = [];
                 map[fid] = value;

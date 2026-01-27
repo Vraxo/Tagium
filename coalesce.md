@@ -2327,10 +2327,8 @@ public class Program
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
 @inject AppState AppState
-@inject SearchInput SearchInput
-@implements IDisposable
 
-<div class="toolbar" @onkeydown="OnKeyDown" tabindex="-1">
+<div class="toolbar">
     <button class="btn btn-primary" @onclick="ImportFiles">Add Files</button>
     <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
             @onclick="ToggleTagView">
@@ -2358,35 +2356,12 @@ public class Program
 ### `Tagium.Photino.Blazor\Components\AppToolbar.razor.cs`
 
 ```csharp
-using Microsoft.AspNetCore.Components.Web;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
 public partial class AppToolbar
 {
-    private async void OnKeyDown(KeyboardEventArgs e)
-    {
-        if (e.CtrlKey || e.MetaKey)
-        {
-            switch (e.Key.ToLower())
-            {
-                case "f":
-                    await SearchInput.FocusAsync();
-                    break;
-                case "t":
-                    ToggleTagView();
-                    break;
-                case "r":
-                    Library.Refresh();
-                    break;
-                case "z":
-                    AppState.Undo();
-                    break;
-            }
-        }
-    }
-
     private async Task ImportFiles()
     {
         var paths = FileDialogService.OpenFiles();
@@ -2402,8 +2377,6 @@ public partial class AppToolbar
             AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
         );
     }
-
-    public void Dispose() { }
 }
 ```
 
@@ -2745,6 +2718,7 @@ public partial class FileGrid
 @using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Photino.Blazor.Components.Inspectors
 @using Tagium.Photino.Blazor.Services.Toasting
+@implements IDisposable
 @inject LibraryService Library
 @inject SettingsManager Settings
 @inject ModalService ModalService
@@ -2771,7 +2745,7 @@ public partial class FileGrid
             <main class="center-panel">
                 @if (AppState.CurrentView == AppView.Files)
                 {
-                    <FilesViewToolbar />
+                    <FilesViewToolbar @ref="_filesViewToolbar" />
                 }
 
                 <div class="content-area">
@@ -2826,17 +2800,20 @@ public partial class FileGrid
 
 ```csharp
 using Microsoft.JSInterop;
+using Tagium.Photino.Blazor.Components.Views;
 using Tagium.Photino.Blazor.Services;
 using Tagium.Photino.Blazor.Services.Toasting;
 
 namespace Tagium.Photino.Blazor.Components;
 
-public partial class MainLayout
+public partial class MainLayout : IDisposable
 {
     private bool _importInProgress = false;
     private int _importProcessed = 0;
     private int _importTotal = 0;
     private double _importProgress = 0;
+    private DotNetObjectReference<MainLayout>? _objRef;
+    private FilesViewToolbar? _filesViewToolbar;
 
     protected override void OnInitialized()
     {
@@ -2853,12 +2830,44 @@ public partial class MainLayout
             return;
         }
 
+        _objRef = DotNetObjectReference.Create(this);
+
         await JS.InvokeVoidAsync(
             "layoutResizer.init",
             "sidebar-panel",
             "splitter-left",
             "inspector-panel",
             "splitter-right");
+
+        await JS.InvokeVoidAsync("globalShortcuts.init", _objRef);
+    }
+
+    [JSInvokable]
+    public async Task HandleGlobalKeyDown(string key, bool ctrlOrMeta, bool shiftKey)
+    {
+        if (!ctrlOrMeta)
+        {
+            return;
+        }
+
+        switch (key.ToLower())
+        {
+            case "z":
+                AppState.Undo();
+                break;
+            case "f":
+                if (_filesViewToolbar != null)
+                {
+                    await _filesViewToolbar.FocusSearchAsync();
+                }
+                break;
+            case "t":
+                AppState.SwitchView(AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags);
+                break;
+            case "r":
+                Library.Refresh();
+                break;
+        }
     }
 
     private void UpdateImportProgress(int processed, int total)
@@ -2915,6 +2924,8 @@ public partial class MainLayout
         Library.ImportCompleted -= ShowImportStatus;
         Library.ImportProgress -= UpdateImportProgress;
         AppState.OnChange -= StateHasChanged;
+
+        _objRef?.Dispose();
     }
 }
 ```
@@ -4088,6 +4099,25 @@ public static class ServiceRegistrar
 </head>
 <body>
     <div id="app">Loading...</div>
+    <script>
+        window.globalShortcuts = {
+            init: function (dotNetRef) {
+                document.addEventListener('keydown', function (e) {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
+                        return;
+                    }
+
+                    if (e.ctrlKey || e.metaKey) {
+                        const key = e.key.toLowerCase();
+                        if (['z', 'f', 't', 'r'].includes(key)) {
+                            e.preventDefault();
+                            dotNetRef.invokeMethodAsync('HandleGlobalKeyDown', key, e.ctrlKey || e.metaKey, e.shiftKey);
+                        }
+                    }
+                });
+            }
+        };
+    </script>
     <script src="_framework/blazor.webview.js"></script>
     <script src="js/dragdrop.js"></script>
     <script src="js/grid.js"></script>
@@ -7020,21 +7050,16 @@ window.layoutResizer = {
         function setupResizer(splitter, panel, side) {
             splitter.addEventListener('mousedown', function (e) {
                 e.preventDefault();
-                
-                // Add active class for styling
+
                 splitter.classList.add('active');
                 document.body.style.cursor = 'col-resize';
-                document.body.classList.add('no-select'); // Prevent text selection during drag
+                document.body.classList.add('no-select');
 
                 function onMouseMove(e) {
                     if (side === 'left') {
-                        // Left panel width is simply mouse X
-                        // Clamp between 150px and 500px
                         const newWidth = Math.min(Math.max(e.clientX, 150), 600);
                         panel.style.width = newWidth + 'px';
                     } else {
-                        // Right panel width is Window Width - Mouse X
-                        // Clamp between 200px and 600px
                         const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 200), 800);
                         panel.style.width = newWidth + 'px';
                     }
@@ -7044,7 +7069,7 @@ window.layoutResizer = {
                     splitter.classList.remove('active');
                     document.body.style.cursor = '';
                     document.body.classList.remove('no-select');
-                    
+
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
                 }

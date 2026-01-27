@@ -5,7 +5,7 @@ using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
-public partial class FileGrid
+public partial class FileGrid : IDisposable
 {
     private List<FileEntry> Files = [];
     private DotNetObjectReference<FileGrid>? _objRef;
@@ -47,7 +47,7 @@ public partial class FileGrid
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
     }
 
-    private void OnCardClick(MouseEventArgs e, long id)
+    private void OnCardClick(MouseEventArgs e, Guid id)
     {
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
@@ -63,14 +63,18 @@ public partial class FileGrid
     }
 
     [JSInvokable]
-    public void SelectFile(long id)
+    public void SelectFile(string idStr)
     {
-        AppState.SelectFile(id, false, false);
+        if (Guid.TryParse(idStr, out var id))
+        {
+            AppState.SelectFile(id, false, false);
+        }
     }
 
     [JSInvokable]
-    public void SelectFiles(long[] ids)
+    public void SelectFiles(string[] idStrs)
     {
+        var ids = idStrs.Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null).Where(g => g.HasValue).Select(g => g!.Value);
         AppState.SetSelection(ids);
     }
 
@@ -94,7 +98,7 @@ public partial class FileGrid
             return;
         }
 
-        long id = AppState.SelectedFileIds.First();
+        Guid id = AppState.SelectedFileIds.First();
         FileEntry? file = Files.FirstOrDefault(f => f.Id == id);
 
         if (file is null || file.IsMissing)

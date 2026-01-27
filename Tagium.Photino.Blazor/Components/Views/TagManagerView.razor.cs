@@ -9,7 +9,7 @@ public partial class TagManagerView
 {
     private List<Tag> Tags = [];
     private string NewTagName = "";
-    private long? ActiveColorPickerId = null;
+    private Guid? ActiveColorPickerId = null;
 
     private static readonly List<string> Palette =
     [
@@ -75,7 +75,7 @@ public partial class TagManagerView
         NewTagName = "";
     }
 
-    private void DeleteTag(long id)
+    private void DeleteTag(Guid id)
     {
         Library.DeleteTag(id);
     }
@@ -97,7 +97,7 @@ public partial class TagManagerView
         Library.UpdateTag(tag);
     }
 
-    private void ToggleColorPicker(long id)
+    private void ToggleColorPicker(Guid id)
     {
         ActiveColorPickerId = ActiveColorPickerId == id ? null : id;
     }

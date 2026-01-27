@@ -2,15 +2,11 @@
 
 public class FileEntry
 {
-    public long Id { get; set; }
+    public Guid Id { get; set; }
     public required string Path { get; set; }
     public required string Name { get; set; }
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
-
-    /// <summary>
-    /// Tags associated with this file. Populated on-demand via GetFilesWithTags().
-    /// </summary>
     public List<Tag> Tags { get; set; } = [];
 }

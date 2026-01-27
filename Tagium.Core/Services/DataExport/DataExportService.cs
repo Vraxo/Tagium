@@ -29,7 +29,7 @@ public class DataExportService
     public async Task ExportCsvAsync(string path)
     {
         DatabaseExport data = BuildExportData();
-        Dictionary<long, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
+        Dictionary<Guid, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
         StringBuilder sb = new();
 
         _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,Tags");
@@ -53,7 +53,7 @@ public class DataExportService
 
         foreach (FileEntry f in files)
         {
-            List<long> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
+            List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(f.Id);
 
             export.Files.Add(new FileExportData
             {

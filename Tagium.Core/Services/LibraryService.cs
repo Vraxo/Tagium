@@ -21,8 +21,8 @@ public class LibraryService
     private readonly UndoService _undoService;
 
     public event Action? LibraryChanged;
-    public event Action<int, int, int>? ImportCompleted; // added, duplicates, errors
-    public event Action<int, int>? ImportProgress; // processed, total
+    public event Action<int, int, int>? ImportCompleted;
+    public event Action<int, int>? ImportProgress;
 
     public LibraryService(
         FileRepository fileRepo,
@@ -54,8 +54,6 @@ public class LibraryService
         _undoService.Undo();
     }
 
-    // --- Files ---
-
     public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
     {
         SortBy sort = _settingsManager.Current.FileSortBy;
@@ -70,7 +68,7 @@ public class LibraryService
             : _searchRepo.Search(searchText, sort, dir);
     }
 
-    public FileEntry? GetFileById(long id)
+    public FileEntry? GetFileById(Guid id)
     {
         return _fileRepo.GetById(id);
     }
@@ -88,7 +86,6 @@ public class LibraryService
             return new AddFileDetailedResult(AddFileResult.Error, null);
         }
 
-        // Check for existing by hash first to return the entry
         FileEntry? existing = _fileRepo.GetByHash(hash);
         if (existing is not null)
         {
@@ -103,7 +100,6 @@ public class LibraryService
             {
                 LibraryChanged?.Invoke();
             }
-            // Fetch the newly added entry
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
             return new AddFileDetailedResult(AddFileResult.Success, newEntry);
         }
@@ -111,15 +107,11 @@ public class LibraryService
         return new AddFileDetailedResult(result, null);
     }
 
-    // Kept for backward compatibility
     public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
     {
         return AddFileDetailedAsync(path, suppressNotification).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    /// Imports multiple files asynchronously with progress reporting and non-blocking I/O.
-    /// </summary>
     public async Task ImportBatchAsync(string[] paths)
     {
         if (paths.Length == 0)
@@ -128,7 +120,7 @@ public class LibraryService
             return;
         }
 
-        const int MaxParallelism = 4; // Prevent disk overload
+        const int MaxParallelism = 4;
         using var semaphore = new SemaphoreSlim(MaxParallelism);
 
         var tasks = paths.Select(async (path, index) =>
@@ -143,7 +135,6 @@ public class LibraryService
 
                 var result = await AddFileDetailedAsync(path, suppressNotification: true);
 
-                // Report progress every 10 files to reduce UI churn
                 if ((index + 1) % 10 == 0 || index == paths.Length - 1)
                 {
                     ImportProgress?.Invoke(index + 1, paths.Length);
@@ -171,27 +162,25 @@ public class LibraryService
         ImportCompleted?.Invoke(added, duplicates, errors);
     }
 
-    // Kept for backward compatibility if needed, but redirects to async
     public void ImportBatch(string[] paths)
     {
         _ = ImportBatchAsync(paths);
     }
 
-    public RelocateResult RelocateFile(long fileId, string newPath)
+    [Obsolete]
+    public RelocateResult RelocateFile(Guid fileId, string newPath)
     {
         if (!File.Exists(newPath))
         {
             return new RelocateResult(RelocateResultStatus.NotFound, null);
         }
 
-        // This is a single file operation, async not critical
         string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
         if (newHash is null)
         {
             return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
-        // Check if the new file is already in the database
         FileEntry? existing = _fileRepo.GetByHash(newHash);
         if (existing is not null && existing.Id != fileId)
         {
@@ -211,37 +200,30 @@ public class LibraryService
 
         _fileRepo.Update(file);
 
-        // Regenerate thumbnail for the new path
         _ = _thumbnailService.GenerateThumbnailAsync(file);
 
         LibraryChanged?.Invoke();
         return new RelocateResult(RelocateResultStatus.Success, null);
     }
 
-    public void RemoveFile(long fileId)
+    public void RemoveFile(Guid fileId)
     {
         _fileRepo.Remove(fileId);
         LibraryChanged?.Invoke();
     }
 
-    public void RemoveFiles(IEnumerable<long> fileIds)
+    public void RemoveFiles(IEnumerable<Guid> fileIds)
     {
-        if (!fileIds.Any())
-        {
-            return;
-        }
-
-        foreach (long id in fileIds)
+        foreach (Guid id in fileIds)
         {
             _fileRepo.Remove(id);
         }
         LibraryChanged?.Invoke();
     }
 
-    public void AddTagToFile(long fileId, long tagId)
+    public void AddTagToFile(Guid fileId, Guid tagId)
     {
-        // Record which files didn't have this tag before adding
-        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
         bool alreadyHadTag = existingIds.Contains(tagId);
 
         _fileTagRepo.AddTagToFile(fileId, tagId);
@@ -259,19 +241,18 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void AddTagToFiles(IEnumerable<long> fileIds, long tagId)
+    public void AddTagToFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<long> ids = fileIds.ToList();
+        List<Guid> ids = fileIds.ToList();
         if (ids.Count == 0)
         {
             return;
         }
 
-        // Determine which files actually receive the tag (didn't have it before)
-        List<long> modifiedFiles = [];
-        foreach (long id in ids)
+        List<Guid> modifiedFiles = [];
+        foreach (Guid id in ids)
         {
-            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            List<Guid> existing = _fileTagRepo.GetTagIdsForFile(id);
             if (!existing.Contains(tagId))
             {
                 modifiedFiles.Add(id);
@@ -293,10 +274,9 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void RemoveTagFromFile(long fileId, long tagId)
+    public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
-        // Record if file had this tag before removing
-        List<long> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
         bool hadTag = existingIds.Contains(tagId);
 
         _fileTagRepo.RemoveTagFromFile(fileId, tagId);
@@ -314,19 +294,18 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void RemoveTagFromFiles(IEnumerable<long> fileIds, long tagId)
+    public void RemoveTagFromFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<long> ids = fileIds.ToList();
+        List<Guid> ids = fileIds.ToList();
         if (ids.Count == 0)
         {
             return;
         }
 
-        // Determine which files actually lose the tag (had it before)
-        List<long> modifiedFiles = [];
-        foreach (long id in ids)
+        List<Guid> modifiedFiles = [];
+        foreach (Guid id in ids)
         {
-            List<long> existing = _fileTagRepo.GetTagIdsForFile(id);
+            List<Guid> existing = _fileTagRepo.GetTagIdsForFile(id);
             if (existing.Contains(tagId))
             {
                 modifiedFiles.Add(id);
@@ -348,8 +327,6 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    // --- Tags ---
-
     public List<Tag> GetTags()
     {
         return _tagRepo.GetAll();
@@ -360,30 +337,27 @@ public class LibraryService
         return _tagRepo.GetAll(sortBy, direction);
     }
 
-    public List<Tag> GetTagsForFile(long fileId)
+    public List<Tag> GetTagsForFile(Guid fileId)
     {
-        List<long> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
         return _tagRepo.GetTagsByIds(tagIds);
     }
 
-    public List<Tag> GetCommonTags(IEnumerable<long> fileIds)
+    public List<Tag> GetCommonTags(IEnumerable<Guid> fileIds)
     {
-        List<long> ids = fileIds.ToList();
+        List<Guid> ids = fileIds.ToList();
         if (ids.Count == 0)
         {
             return [];
         }
 
-        // Start with tags of first file
-        HashSet<long> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
+        HashSet<Guid> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
 
-        // Intersect with remaining files
         for (int i = 1; i < ids.Count; i++)
         {
-            List<long> tags = _fileTagRepo.GetTagIdsForFile(ids[i]);
+            List<Guid> tags = _fileTagRepo.GetTagIdsForFile(ids[i]);
             commonIds.IntersectWith(tags);
 
-            // Optimization: If intersection is empty, no need to continue
             if (commonIds.Count == 0)
             {
                 break;
@@ -405,7 +379,7 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
-    public void DeleteTag(long id)
+    public void DeleteTag(Guid id)
     {
         _tagRepo.Delete(id);
         LibraryChanged?.Invoke();

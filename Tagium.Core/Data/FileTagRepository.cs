@@ -11,46 +11,46 @@ public class FileTagRepository
         _db = db;
     }
 
-    public void AddTagToFile(long fileId, long tagId)
+    public void AddTagToFile(Guid fileId, Guid tagId)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
-        _ = cmd.Parameters.AddWithValue("@FileId", fileId);
-        _ = cmd.Parameters.AddWithValue("@TagId", tagId);
+        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
+        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
-    public void RemoveTagFromFile(long fileId, long tagId)
+    public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
-        _ = cmd.Parameters.AddWithValue("@FileId", fileId);
-        _ = cmd.Parameters.AddWithValue("@TagId", tagId);
+        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
+        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
-    public List<long> GetTagIdsForFile(long fileId)
+    public List<Guid> GetTagIdsForFile(Guid fileId)
     {
-        List<long> ids = [];
+        List<Guid> ids = [];
 
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT TagId FROM FileTags WHERE FileId = @FileId";
-        _ = cmd.Parameters.AddWithValue("@FileId", fileId);
+        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
 
         while (reader.Read())
         {
-            ids.Add(reader.GetInt64(0));
+            ids.Add(Guid.Parse(reader.GetString(0)));
         }
 
         return ids;

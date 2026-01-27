@@ -21,7 +21,6 @@ public class FileSearchRepository
             return [];
         }
 
-        // Split tokens and separate into positive (include) and negative (exclude) terms
         string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         List<string> includeTerms = [];
@@ -48,16 +47,11 @@ public class FileSearchRepository
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
 
-        // Dynamic SQL Construction
-        // We want files that match ALL include terms (AND) and match NO exclude terms (NOT OR).
-        // A match is defined as: Name matches OR Path matches OR Any Tag Name matches.
-
         StringBuilder query = new();
         _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing");
         _ = query.AppendLine("FROM Files F");
         _ = query.AppendLine("WHERE 1=1");
 
-        // 1. Process Includes (AND logic)
         for (int i = 0; i < includeTerms.Count; i++)
         {
             string paramName = $"@in{i}";
@@ -65,7 +59,6 @@ public class FileSearchRepository
 
             _ = cmd.Parameters.AddWithValue(paramName, termPattern);
 
-            // "Exists a tag matching term" subquery
             string tagSubQuery = $@"
                 EXISTS (
                     SELECT 1 FROM FileTags FT 
@@ -76,7 +69,6 @@ public class FileSearchRepository
             _ = query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
         }
 
-        // 2. Process Excludes (NOT logic)
         for (int i = 0; i < excludeTerms.Count; i++)
         {
             string paramName = $"@ex{i}";
@@ -94,7 +86,6 @@ public class FileSearchRepository
             _ = query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
         }
 
-        // 3. Sorting
         _ = query.AppendLine(GetOrderByClause(sortBy, sortDirection));
 
         cmd.CommandText = query.ToString();
@@ -106,7 +97,7 @@ public class FileSearchRepository
         {
             files.Add(new FileEntry
             {
-                Id = reader.GetInt64(0),
+                Id = Guid.Parse(reader.GetString(0)),
                 Path = reader.GetString(1),
                 Name = reader.GetString(2),
                 Hash = reader.IsDBNull(3) ? null : reader.GetString(3),

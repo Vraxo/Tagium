@@ -43,7 +43,7 @@ public partial class FileInspector
             }
             else if (count == 1)
             {
-                long id = AppState.SelectedFileIds.First();
+                Guid id = AppState.SelectedFileIds.First();
                 SelectedFile = Library.GetFileById(id);
 
                 if (SelectedFile is not null)
@@ -54,7 +54,6 @@ public partial class FileInspector
                 }
                 else
                 {
-                    // Stale ID, treat as none
                     SelectionMode = InspectorMode.None;
                 }
             }
@@ -79,7 +78,7 @@ public partial class FileInspector
     private List<Tag> GetAvailableTags(List<Tag> existingTags)
     {
         List<Tag> allTags = Library.GetTags();
-        HashSet<long> existingIds = [.. existingTags.Select(t => t.Id)];
+        HashSet<Guid> existingIds = [.. existingTags.Select(t => t.Id)];
         return [.. allTags.Where(t => !existingIds.Contains(t.Id))];
     }
 

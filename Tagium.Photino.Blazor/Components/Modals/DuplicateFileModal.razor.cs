@@ -11,11 +11,8 @@ public partial class DuplicateFileModal
 
     private void ShowExisting()
     {
-        // Clear filters to ensure the file is visible
         AppState.SetSearch("");
         AppState.SetMissingOnly(false);
-
-        // Select the file
         AppState.SelectFile(ExistingFile.Id, false, false);
 
         ModalService.Close();

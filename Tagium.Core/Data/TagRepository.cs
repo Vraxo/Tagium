@@ -32,14 +32,7 @@ public class TagRepository
 
         while (reader.Read())
         {
-            tags.Add(new Tag
-            {
-                Id = reader.GetInt64(0),
-                Name = reader.GetString(1),
-                ColorHex = reader.GetString(2),
-                Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
-                FileCount = reader.GetInt32(4)
-            });
+            tags.Add(ReadTag(reader));
         }
 
         return tags;
@@ -57,9 +50,10 @@ public class TagRepository
         return $"ORDER BY {col} {dir}, T.Name ASC";
     }
 
-    public List<Tag> GetTagsByIds(IEnumerable<long> ids)
+    public List<Tag> GetTagsByIds(IEnumerable<Guid> ids)
     {
-        if (!ids.Any())
+        List<Guid> idList = ids.ToList();
+        if (idList.Count == 0)
         {
             return [];
         }
@@ -69,25 +63,19 @@ public class TagRepository
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
+        // SQLite can handle 'guid'|'guid'|... syntax for IN clause with TEXT
         cmd.CommandText = @"
             SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
-            WHERE T.Id IN (" + string.Join(",", ids) + @")
+            WHERE T.Id IN (" + string.Join(",", idList.Select(id => $"'{id:N}'")) + @")
             GROUP BY T.Id";
 
         using SqliteDataReader reader = cmd.ExecuteReader();
 
         while (reader.Read())
         {
-            tags.Add(new Tag
-            {
-                Id = reader.GetInt64(0),
-                Name = reader.GetString(1),
-                ColorHex = reader.GetString(2),
-                Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
-                FileCount = reader.GetInt32(4)
-            });
+            tags.Add(ReadTag(reader));
         }
 
         return tags;
@@ -98,7 +86,8 @@ public class TagRepository
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO Tags (Name, ColorHex, Emoji) VALUES (@Name, @Color, @Emoji)";
+        cmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji) VALUES (@Id, @Name, @Color, @Emoji)";
+        _ = cmd.Parameters.AddWithValue("@Id", Guid.NewGuid().ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Name", name);
         _ = cmd.Parameters.AddWithValue("@Color", colorHex);
         _ = cmd.Parameters.AddWithValue("@Emoji", (object?)emoji ?? DBNull.Value);
@@ -116,7 +105,7 @@ public class TagRepository
             SET Name = @Name, ColorHex = @Color, Emoji = @Emoji 
             WHERE Id = @Id";
 
-        _ = cmd.Parameters.AddWithValue("@Id", tag.Id);
+        _ = cmd.Parameters.AddWithValue("@Id", tag.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Name", tag.Name);
         _ = cmd.Parameters.AddWithValue("@Color", tag.ColorHex);
         _ = cmd.Parameters.AddWithValue("@Emoji", (object?)tag.Emoji ?? DBNull.Value);
@@ -124,13 +113,25 @@ public class TagRepository
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore name collision */ }
     }
 
-    public void Delete(long id)
+    public void Delete(Guid id)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Tags WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id);
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
         _ = cmd.ExecuteNonQuery();
+    }
+
+    private static Tag ReadTag(SqliteDataReader reader)
+    {
+        return new Tag
+        {
+            Id = Guid.Parse(reader.GetString(0)),
+            Name = reader.GetString(1),
+            ColorHex = reader.GetString(2),
+            Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
+            FileCount = reader.GetInt32(4)
+        };
     }
 }

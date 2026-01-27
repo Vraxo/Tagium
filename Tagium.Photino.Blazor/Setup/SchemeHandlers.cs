@@ -7,8 +7,6 @@ namespace Tagium.Photino.Blazor.Setup;
 
 public static class SchemeHandlers
 {
-    // We need access to the repository to look up file paths by ID.
-    // Since this is a static callback, we need a reference to the ServiceProvider.
     public static IServiceProvider? ServiceProvider { get; set; }
 
     public static Stream HandleTagiumScheme(object sender, string scheme, string url, out string contentType)
@@ -16,13 +14,11 @@ public static class SchemeHandlers
         contentType = "text/plain";
         Uri uri = new(url);
 
-        // 1. Thumbnail Handler
         if (uri.Host.Equals("thumbnail", StringComparison.OrdinalIgnoreCase))
         {
             return HandleThumbnail(uri, out contentType);
         }
 
-        // 2. Preview Handler
         return uri.Host.Equals("preview", StringComparison.OrdinalIgnoreCase) ? HandlePreview(uri, out contentType) : Stream.Null;
     }
 
@@ -31,20 +27,15 @@ public static class SchemeHandlers
         contentType = "image/png";
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
-        if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
+        if (segments.Length == 0 || !Guid.TryParse(segments[0], out Guid fileId))
         {
             return Stream.Null;
         }
 
         string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
-        string path = Path.Combine(cacheDir, $"{fileId}.png");
+        string path = Path.Combine(cacheDir, $"{fileId:N}.png");
 
-        if (!File.Exists(path))
-        {
-            return null!; // 404
-        }
-
-        return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        return !File.Exists(path) ? null! : (Stream)new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
     }
 
     private static Stream HandlePreview(Uri uri, out string contentType)
@@ -57,18 +48,17 @@ public static class SchemeHandlers
         }
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
-        if (segments.Length == 0 || !long.TryParse(segments[0], out long fileId))
+        if (segments.Length == 0 || !Guid.TryParse(segments[0], out Guid fileId))
         {
             return Stream.Null;
         }
 
-        // Resolve the file path from the database
         var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
         FileEntry? entry = fileRepo.GetById(fileId);
 
         if (entry is null || !File.Exists(entry.Path))
         {
-            return null!; // 404
+            return null!;
         }
 
         contentType = GetMimeType(Path.GetExtension(entry.Path));
@@ -87,7 +77,7 @@ public static class SchemeHandlers
             ".mp4" => "video/mp4",
             ".webm" => "video/webm",
             ".mov" => "video/quicktime",
-            ".mkv" => "video/x-matroska", // Browsers struggle with this, but WebView might try
+            ".mkv" => "video/x-matroska",
             _ => "application/octet-stream"
         };
     }
