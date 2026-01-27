@@ -1,22 +1,27 @@
-﻿using Tagium.Photino.Blazor.Services;
+﻿using Tagium.Core.Services;
+using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
 public partial class AppToolbar
 {
+    [Obsolete]
     private async Task ImportFiles()
     {
         var paths = FileDialogService.OpenFiles();
+
         if (paths is { Length: > 0 })
         {
-            await Library.ImportBatchAsync(paths);
+            await ImportService.ImportBatchAsync(paths);
         }
     }
 
     private void ToggleTagView()
     {
-        AppState.SwitchView(
-            AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
-        );
+        AppView view = AppState.CurrentView == AppView.Tags
+            ? AppView.Files
+            : AppView.Tags;
+
+        AppState.SwitchView(view);
     }
 }

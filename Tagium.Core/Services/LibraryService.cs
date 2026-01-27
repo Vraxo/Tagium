@@ -8,8 +8,6 @@ namespace Tagium.Core.Services;
 
 public record RelocateResult(RelocateResultStatus Status, FileEntry? ConflictingFile);
 
-public record AddFileDetailedResult(AddFileResult Status, FileEntry? Entry);
-
 public class LibraryService
 {
     private readonly FileRepository _fileRepo;
@@ -21,8 +19,6 @@ public class LibraryService
     private readonly UndoService _undoService;
 
     public event Action? LibraryChanged;
-    public event Action<int, int, int>? ImportCompleted;
-    public event Action<int, int>? ImportProgress;
 
     public LibraryService(
         FileRepository fileRepo,
@@ -71,112 +67,6 @@ public class LibraryService
     public FileEntry? GetFileById(Guid id)
     {
         return _fileRepo.GetById(id);
-    }
-
-    [Obsolete]
-    public bool AddFile(string path)
-    {
-        return AddFileDetailed(path).Status == AddFileResult.Success;
-    }
-
-    [Obsolete]
-    public async Task<AddFileDetailedResult> AddFileDetailedAsync(string path, bool suppressNotification = false)
-    {
-        string? hash = await FileHasher.ComputeSha256Async(path);
-        if (hash is null)
-        {
-            return new AddFileDetailedResult(AddFileResult.Error, null);
-        }
-
-        FileEntry? existing = _fileRepo.GetByHash(hash);
-        if (existing is not null)
-        {
-            return new AddFileDetailedResult(AddFileResult.Duplicate, existing);
-        }
-
-        AddFileResult result = _fileRepo.Add(path, hash);
-
-        if (result == AddFileResult.Success)
-        {
-            FileEntry? newEntry = _fileRepo.GetByHash(hash);
-
-            if (newEntry is not null)
-            {
-                await _thumbnailService.GenerateThumbnailAsync(newEntry);
-            }
-
-            if (!suppressNotification)
-            {
-                LibraryChanged?.Invoke();
-            }
-
-            return new AddFileDetailedResult(AddFileResult.Success, newEntry);
-        }
-
-        return new AddFileDetailedResult(result, null);
-    }
-
-    [Obsolete]
-    public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
-    {
-        return AddFileDetailedAsync(path, suppressNotification).GetAwaiter().GetResult();
-    }
-
-    [Obsolete]
-    public async Task ImportBatchAsync(string[] paths)
-    {
-        if (paths.Length == 0)
-        {
-            ImportCompleted?.Invoke(0, 0, 0);
-            return;
-        }
-
-        const int MaxParallelism = 4;
-        using var semaphore = new SemaphoreSlim(MaxParallelism);
-
-        var tasks = paths.Select(async (path, index) =>
-        {
-            await semaphore.WaitAsync();
-            try
-            {
-                if (!File.Exists(path))
-                {
-                    return (Status: AddFileResult.Error, Entry: null);
-                }
-
-                var result = await AddFileDetailedAsync(path, suppressNotification: true);
-
-                if ((index + 1) % 10 == 0 || index == paths.Length - 1)
-                {
-                    ImportProgress?.Invoke(index + 1, paths.Length);
-                }
-
-                return (result.Status, result.Entry);
-            }
-            finally
-            {
-                _ = semaphore.Release();
-            }
-        }).ToList();
-
-        var results = await Task.WhenAll(tasks);
-
-        int added = results.Count(r => r.Status == AddFileResult.Success);
-        int duplicates = results.Count(r => r.Status == AddFileResult.Duplicate);
-        int errors = results.Count(r => r.Status == AddFileResult.Error);
-
-        if (added > 0)
-        {
-            LibraryChanged?.Invoke();
-        }
-
-        ImportCompleted?.Invoke(added, duplicates, errors);
-    }
-
-    [Obsolete]
-    public void ImportBatch(string[] paths)
-    {
-        _ = ImportBatchAsync(paths);
     }
 
     [Obsolete]

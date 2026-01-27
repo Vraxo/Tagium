@@ -17,8 +17,8 @@ public partial class MainLayout : IDisposable
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
-        Library.ImportCompleted += ShowImportStatus;
-        Library.ImportProgress += UpdateImportProgress;
+        ImportService.ImportCompleted += ShowImportStatus;
+        ImportService.ImportProgress += UpdateImportProgress;
         AppState.OnChange += StateHasChanged;
     }
 
@@ -92,6 +92,7 @@ public partial class MainLayout : IDisposable
         if (added > 0)
         {
             parts.Add($"{added} added");
+            Library.Refresh();
         }
 
         if (duplicates > 0)
@@ -120,8 +121,8 @@ public partial class MainLayout : IDisposable
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
-        Library.ImportCompleted -= ShowImportStatus;
-        Library.ImportProgress -= UpdateImportProgress;
+        ImportService.ImportCompleted -= ShowImportStatus;
+        ImportService.ImportProgress -= UpdateImportProgress;
         AppState.OnChange -= StateHasChanged;
 
         _objRef?.Dispose();

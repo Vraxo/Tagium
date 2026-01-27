@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
+using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components.Shared;
@@ -43,6 +44,7 @@ public partial class FileDropZone
         _isDragging = false;
     }
 
+    [Obsolete]
     private async Task HandleFileDrop(InputFileChangeEventArgs e)
     {
         _isProcessing = true;
@@ -61,7 +63,7 @@ public partial class FileDropZone
             return;
         }
 
-        await Library.ImportBatchAsync(importedPaths);
+        await ImportService.ImportBatchAsync(importedPaths);
     }
 
     public void Dispose()

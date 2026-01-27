@@ -31,6 +31,7 @@ public static class ServiceRegistrar
 
         // Core - Services
         _ = services.AddSingleton<ThumbnailService>();
+        _ = services.AddSingleton<ImportService>();
         _ = services.AddSingleton<LibraryService>();
         _ = services.AddSingleton<LibraryIntegrityService>();
         _ = services.AddSingleton<DataExportService>();
