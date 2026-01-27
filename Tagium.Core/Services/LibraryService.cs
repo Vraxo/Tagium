@@ -78,6 +78,7 @@ public class LibraryService
         return AddFileDetailed(path).Status == AddFileResult.Success;
     }
 
+    [Obsolete]
     public async Task<AddFileDetailedResult> AddFileDetailedAsync(string path, bool suppressNotification = false)
     {
         string? hash = await FileHasher.ComputeSha256Async(path);
@@ -101,17 +102,25 @@ public class LibraryService
                 LibraryChanged?.Invoke();
             }
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
+
+            if (newEntry is not null)
+            {
+                _ = _thumbnailService.GenerateThumbnailAsync(newEntry);
+            }
+
             return new AddFileDetailedResult(AddFileResult.Success, newEntry);
         }
 
         return new AddFileDetailedResult(result, null);
     }
 
+    [Obsolete]
     public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
     {
         return AddFileDetailedAsync(path, suppressNotification).GetAwaiter().GetResult();
     }
 
+    [Obsolete]
     public async Task ImportBatchAsync(string[] paths)
     {
         if (paths.Length == 0)
