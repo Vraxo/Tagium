@@ -153,6 +153,26 @@ public class FileRepository
         }
     }
 
+    public void Restore(FileEntry entry)
+    {
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing) 
+            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing)";
+
+        _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
+        _ = cmd.Parameters.AddWithValue("@Path", entry.Path);
+        _ = cmd.Parameters.AddWithValue("@Name", entry.Name);
+        _ = cmd.Parameters.AddWithValue("@Hash", (object?)entry.Hash ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@DateAdded", entry.DateAdded);
+        _ = cmd.Parameters.AddWithValue("@IsMissing", entry.IsMissing ? 1 : 0);
+
+        _ = cmd.ExecuteNonQuery();
+    }
+
     public void Update(FileEntry file)
     {
         using SqliteConnection conn = new(_db.ConnectionString);

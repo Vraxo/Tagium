@@ -244,16 +244,18 @@ public class DatabaseManager
             string oldPath = Path.Combine(cacheDir, $"{kvp.Key}.png");
             string newPath = Path.Combine(cacheDir, $"{kvp.Value}.png");
 
-            if (File.Exists(oldPath))
+            if (!File.Exists(oldPath))
             {
-                try
-                {
-                    File.Move(oldPath, newPath, overwrite: true);
-                }
-                catch
-                {
-                    // Best effort - thumbnails can be regenerated
-                }
+                continue;
+            }
+
+            try
+            {
+                File.Move(oldPath, newPath, overwrite: true);
+            }
+            catch
+            {
+                // Best effort - thumbnails can be regenerated
             }
         }
     }

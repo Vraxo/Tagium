@@ -208,16 +208,58 @@ public class LibraryService
 
     public void RemoveFile(Guid fileId)
     {
+        var file = _fileRepo.GetById(fileId);
+        if (file is null)
+        {
+            return;
+        }
+
+        var tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+
+        _undoService.Push(new FileDeletionUndoCommand(
+            _fileRepo,
+            _fileTagRepo,
+            () => LibraryChanged?.Invoke(),
+            [(file, tagIds)]));
+
         _fileRepo.Remove(fileId);
         LibraryChanged?.Invoke();
     }
 
     public void RemoveFiles(IEnumerable<Guid> fileIds)
     {
-        foreach (Guid id in fileIds)
+        var idsList = fileIds.ToList();
+        if (idsList.Count == 0)
+        {
+            return;
+        }
+
+        var deletedItems = new List<(FileEntry file, List<Guid> tagIds)>();
+
+        foreach (var id in idsList)
+        {
+            var file = _fileRepo.GetById(id);
+            if (file is not null)
+            {
+                var tags = _fileTagRepo.GetTagIdsForFile(id);
+                deletedItems.Add((file, tags));
+            }
+        }
+
+        if (deletedItems.Count != 0)
+        {
+            _undoService.Push(new FileDeletionUndoCommand(
+                _fileRepo,
+                _fileTagRepo,
+                () => LibraryChanged?.Invoke(),
+                deletedItems));
+        }
+
+        foreach (var id in idsList)
         {
             _fileRepo.Remove(id);
         }
+
         LibraryChanged?.Invoke();
     }
 
