@@ -6,10 +6,10 @@ using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
 
-public record RelocateResult(RelocateResultStatus Status, FileEntry? ConflictingFile);
-
 public class LibraryService
 {
+    public bool CanUndo => _undoService.CanUndo;
+
     private readonly FileRepository _fileRepo;
     private readonly TagRepository _tagRepo;
     private readonly FileTagRepository _fileTagRepo;
@@ -42,8 +42,6 @@ public class LibraryService
     {
         LibraryChanged?.Invoke();
     }
-
-    public bool CanUndo => _undoService.CanUndo;
 
     public void Undo()
     {

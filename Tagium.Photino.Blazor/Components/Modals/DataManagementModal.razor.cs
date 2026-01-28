@@ -74,8 +74,6 @@ public partial class DataManagementModal
 
         try
         {
-            // This is a risky operation while the app is running, but standard for this simple app type.
-            // SQLite usually allows it if no write transaction is active.
             File.Copy(source, dest, true);
             Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
         }

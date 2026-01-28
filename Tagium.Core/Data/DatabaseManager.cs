@@ -29,17 +29,14 @@ public class DatabaseManager
 
         if (userVersion == 0)
         {
-            // Fresh database - create V2 schema directly
             CreateV2Schema(connection);
             SetUserVersion(connection, 2);
         }
         else if (userVersion == 1)
         {
-            // Existing V1 database with integer IDs - migrate to V2
             MigrateV1ToV2(connection);
             SetUserVersion(connection, 2);
         }
-        // else version 2+ - schema already current
     }
 
     private static int GetUserVersion(SqliteConnection conn)
@@ -95,133 +92,19 @@ public class DatabaseManager
 
         try
         {
-            // Rename old tables
-            using (SqliteCommand cmd = connection.CreateCommand())
-            {
-                cmd.Transaction = transaction;
-                cmd.CommandText = @"
-                    ALTER TABLE Tags RENAME TO Tags_Old;
-                    ALTER TABLE Files RENAME TO Files_Old;
-                    ALTER TABLE FileTags RENAME TO FileTags_Old;
-                ";
-                _ = cmd.ExecuteNonQuery();
-            }
-
-            // Create new schema
+            PrepareMigrationTables(connection, transaction);
             CreateV2Schema(connection);
 
-            // Maps to track old int IDs -> new UUIDs
             Dictionary<long, string> tagIdMap = [];
             Dictionary<long, string> fileIdMap = [];
 
-            // Migrate Tags
-            using (SqliteCommand selectCmd = connection.CreateCommand())
-            {
-                selectCmd.Transaction = transaction;
-                selectCmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags_Old";
-                using SqliteDataReader reader = selectCmd.ExecuteReader();
+            MigrateTagsData(connection, transaction, tagIdMap);
+            MigrateFilesData(connection, transaction, fileIdMap);
+            MigrateAssociationsData(connection, transaction, tagIdMap, fileIdMap);
 
-                using SqliteCommand insertCmd = connection.CreateCommand();
-                insertCmd.Transaction = transaction;
-                insertCmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji) VALUES (@Id, @Name, @Color, @Emoji)";
-
-                var idParam = insertCmd.Parameters.Add("@Id", (SqliteType)System.Data.DbType.String);
-                var nameParam = insertCmd.Parameters.Add("@Name", (SqliteType)System.Data.DbType.String);
-                var colorParam = insertCmd.Parameters.Add("@Color", (SqliteType)System.Data.DbType.String);
-                var emojiParam = insertCmd.Parameters.Add("@Emoji", (SqliteType)System.Data.DbType.String);
-
-                while (reader.Read())
-                {
-                    long oldId = reader.GetInt64(0);
-                    string newId = Guid.NewGuid().ToString("N");
-                    tagIdMap[oldId] = newId;
-
-                    idParam.Value = newId;
-                    nameParam.Value = reader.GetString(1);
-                    colorParam.Value = reader.GetString(2);
-                    emojiParam.Value = reader.IsDBNull(3) ? DBNull.Value : reader.GetString(3);
-                    _ = insertCmd.ExecuteNonQuery();
-                }
-            }
-
-            // Migrate Files
-            using (SqliteCommand selectCmd = connection.CreateCommand())
-            {
-                selectCmd.Transaction = transaction;
-                selectCmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files_Old";
-                using SqliteDataReader reader = selectCmd.ExecuteReader();
-
-                using SqliteCommand insertCmd = connection.CreateCommand();
-                insertCmd.Transaction = transaction;
-                insertCmd.CommandText = "INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing) VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing)";
-
-                var idParam = insertCmd.Parameters.Add("@Id", (SqliteType)System.Data.DbType.String);
-                var pathParam = insertCmd.Parameters.Add("@Path", (SqliteType)System.Data.DbType.String);
-                var nameParam = insertCmd.Parameters.Add("@Name", (SqliteType)System.Data.DbType.String);
-                var hashParam = insertCmd.Parameters.Add("@Hash", (SqliteType)System.Data.DbType.String);
-                var dateParam = insertCmd.Parameters.Add("@DateAdded", (SqliteType)System.Data.DbType.Int64);
-                var missingParam = insertCmd.Parameters.Add("@IsMissing", (SqliteType)System.Data.DbType.Int32);
-
-                while (reader.Read())
-                {
-                    long oldId = reader.GetInt64(0);
-                    string newId = Guid.NewGuid().ToString("N");
-                    fileIdMap[oldId] = newId;
-
-                    idParam.Value = newId;
-                    pathParam.Value = reader.GetString(1);
-                    nameParam.Value = reader.GetString(2);
-                    hashParam.Value = reader.IsDBNull(3) ? DBNull.Value : reader.GetString(3);
-                    dateParam.Value = reader.GetInt64(4);
-                    missingParam.Value = reader.GetBoolean(5) ? 1 : 0;
-                    _ = insertCmd.ExecuteNonQuery();
-                }
-            }
-
-            // Migrate FileTags
-            using (SqliteCommand selectCmd = connection.CreateCommand())
-            {
-                selectCmd.Transaction = transaction;
-                selectCmd.CommandText = "SELECT FileId, TagId FROM FileTags_Old";
-                using SqliteDataReader reader = selectCmd.ExecuteReader();
-
-                using SqliteCommand insertCmd = connection.CreateCommand();
-                insertCmd.Transaction = transaction;
-                insertCmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
-
-                var fileIdParam = insertCmd.Parameters.Add("@FileId", (SqliteType)System.Data.DbType.String);
-                var tagIdParam = insertCmd.Parameters.Add("@TagId", (SqliteType)System.Data.DbType.String);
-
-                while (reader.Read())
-                {
-                    long oldFileId = reader.GetInt64(0);
-                    long oldTagId = reader.GetInt64(1);
-
-                    if (fileIdMap.TryGetValue(oldFileId, out string? newFileId) &&
-                        tagIdMap.TryGetValue(oldTagId, out string? newTagId))
-                    {
-                        fileIdParam.Value = newFileId;
-                        tagIdParam.Value = newTagId;
-                        _ = insertCmd.ExecuteNonQuery();
-                    }
-                }
-            }
-
-            // Drop old tables
-            using (SqliteCommand cmd = connection.CreateCommand())
-            {
-                cmd.Transaction = transaction;
-                cmd.CommandText = @"
-                    DROP TABLE Tags_Old;
-                    DROP TABLE Files_Old;
-                    DROP TABLE FileTags_Old;
-                ";
-                _ = cmd.ExecuteNonQuery();
-            }
-
+            CleanupOldTables(connection, transaction);
             transaction.Commit();
 
-            // Rename thumbnail files
             RenameThumbnails(fileIdMap);
         }
         catch
@@ -229,6 +112,124 @@ public class DatabaseManager
             transaction.Rollback();
             throw;
         }
+    }
+
+    private static void PrepareMigrationTables(SqliteConnection conn, SqliteTransaction trans)
+    {
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = trans;
+        cmd.CommandText = @"
+            ALTER TABLE Tags RENAME TO Tags_Old;
+            ALTER TABLE Files RENAME TO Files_Old;
+            ALTER TABLE FileTags RENAME TO FileTags_Old;
+        ";
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    private static void MigrateTagsData(SqliteConnection conn, SqliteTransaction trans, Dictionary<long, string> tagIdMap)
+    {
+        using SqliteCommand selectCmd = conn.CreateCommand();
+        selectCmd.Transaction = trans;
+        selectCmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags_Old";
+
+        using SqliteDataReader reader = selectCmd.ExecuteReader();
+        using SqliteCommand insertCmd = conn.CreateCommand();
+        insertCmd.Transaction = trans;
+        insertCmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji) VALUES (@Id, @Name, @Color, @Emoji)";
+
+        var idParam = insertCmd.Parameters.Add("@Id", (SqliteType)System.Data.DbType.String);
+        var nameParam = insertCmd.Parameters.Add("@Name", (SqliteType)System.Data.DbType.String);
+        var colorParam = insertCmd.Parameters.Add("@Color", (SqliteType)System.Data.DbType.String);
+        var emojiParam = insertCmd.Parameters.Add("@Emoji", (SqliteType)System.Data.DbType.String);
+
+        while (reader.Read())
+        {
+            long oldId = reader.GetInt64(0);
+            string newId = Guid.NewGuid().ToString("N");
+            tagIdMap[oldId] = newId;
+
+            idParam.Value = newId;
+            nameParam.Value = reader.GetString(1);
+            colorParam.Value = reader.GetString(2);
+            emojiParam.Value = reader.IsDBNull(3) ? DBNull.Value : reader.GetString(3);
+            _ = insertCmd.ExecuteNonQuery();
+        }
+    }
+
+    private static void MigrateFilesData(SqliteConnection conn, SqliteTransaction trans, Dictionary<long, string> fileIdMap)
+    {
+        using SqliteCommand selectCmd = conn.CreateCommand();
+        selectCmd.Transaction = trans;
+        selectCmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files_Old";
+
+        using SqliteDataReader reader = selectCmd.ExecuteReader();
+        using SqliteCommand insertCmd = conn.CreateCommand();
+        insertCmd.Transaction = trans;
+        insertCmd.CommandText = "INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing) VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing)";
+
+        var idParam = insertCmd.Parameters.Add("@Id", (SqliteType)System.Data.DbType.String);
+        var pathParam = insertCmd.Parameters.Add("@Path", (SqliteType)System.Data.DbType.String);
+        var nameParam = insertCmd.Parameters.Add("@Name", (SqliteType)System.Data.DbType.String);
+        var hashParam = insertCmd.Parameters.Add("@Hash", (SqliteType)System.Data.DbType.String);
+        var dateParam = insertCmd.Parameters.Add("@DateAdded", (SqliteType)System.Data.DbType.Int64);
+        var missingParam = insertCmd.Parameters.Add("@IsMissing", (SqliteType)System.Data.DbType.Int32);
+
+        while (reader.Read())
+        {
+            long oldId = reader.GetInt64(0);
+            string newId = Guid.NewGuid().ToString("N");
+            fileIdMap[oldId] = newId;
+
+            idParam.Value = newId;
+            pathParam.Value = reader.GetString(1);
+            nameParam.Value = reader.GetString(2);
+            hashParam.Value = reader.IsDBNull(3) ? DBNull.Value : reader.GetString(3);
+            dateParam.Value = reader.GetInt64(4);
+            missingParam.Value = reader.GetBoolean(5) ? 1 : 0;
+            _ = insertCmd.ExecuteNonQuery();
+        }
+    }
+
+    private static void MigrateAssociationsData(SqliteConnection conn, SqliteTransaction trans,
+        Dictionary<long, string> tagIdMap, Dictionary<long, string> fileIdMap)
+    {
+        using SqliteCommand selectCmd = conn.CreateCommand();
+        selectCmd.Transaction = trans;
+        selectCmd.CommandText = "SELECT FileId, TagId FROM FileTags_Old";
+
+        using SqliteDataReader reader = selectCmd.ExecuteReader();
+        using SqliteCommand insertCmd = conn.CreateCommand();
+        insertCmd.Transaction = trans;
+        insertCmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
+
+        var fileIdParam = insertCmd.Parameters.Add("@FileId", (SqliteType)System.Data.DbType.String);
+        var tagIdParam = insertCmd.Parameters.Add("@TagId", (SqliteType)System.Data.DbType.String);
+
+        while (reader.Read())
+        {
+            long oldFileId = reader.GetInt64(0);
+            long oldTagId = reader.GetInt64(1);
+
+            if (fileIdMap.TryGetValue(oldFileId, out string? newFileId) &&
+                tagIdMap.TryGetValue(oldTagId, out string? newTagId))
+            {
+                fileIdParam.Value = newFileId;
+                tagIdParam.Value = newTagId;
+                _ = insertCmd.ExecuteNonQuery();
+            }
+        }
+    }
+
+    private static void CleanupOldTables(SqliteConnection conn, SqliteTransaction trans)
+    {
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = trans;
+        cmd.CommandText = @"
+            DROP TABLE Tags_Old;
+            DROP TABLE Files_Old;
+            DROP TABLE FileTags_Old;
+        ";
+        _ = cmd.ExecuteNonQuery();
     }
 
     private static void RenameThumbnails(Dictionary<long, string> fileIdMap)

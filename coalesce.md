@@ -1027,129 +1027,61 @@ public class Tag
 
 ---
 
-### `Tagium.Core\Services\LibraryService.cs`
+### `Tagium.Core\Services\ImportService.cs`
 
 ```csharp
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
-using Tagium.Core.Services.Undo;
-using Tagium.Core.Settings;
 
 namespace Tagium.Core.Services;
 
-public record RelocateResult(RelocateResultStatus Status, FileEntry? ConflictingFile);
+public record ImportResult(AddFileResult Status, FileEntry? Entry);
 
-public record AddFileDetailedResult(AddFileResult Status, FileEntry? Entry);
-
-public class LibraryService
+public class ImportService
 {
     private readonly FileRepository _fileRepo;
-    private readonly TagRepository _tagRepo;
-    private readonly FileTagRepository _fileTagRepo;
-    private readonly FileSearchRepository _searchRepo;
     private readonly ThumbnailService _thumbnailService;
-    private readonly SettingsManager _settingsManager;
-    private readonly UndoService _undoService;
 
-    public event Action? LibraryChanged;
     public event Action<int, int, int>? ImportCompleted;
     public event Action<int, int>? ImportProgress;
 
-    public LibraryService(
-        FileRepository fileRepo,
-        TagRepository tagRepo,
-        FileTagRepository fileTagRepo,
-        FileSearchRepository searchRepo,
-        ThumbnailService thumbnailService,
-        SettingsManager settingsManager,
-        UndoService undoService)
+    public ImportService(FileRepository fileRepo, ThumbnailService thumbnailService)
     {
         _fileRepo = fileRepo;
-        _tagRepo = tagRepo;
-        _fileTagRepo = fileTagRepo;
-        _searchRepo = searchRepo;
         _thumbnailService = thumbnailService;
-        _settingsManager = settingsManager;
-        _undoService = undoService;
-    }
-
-    public void Refresh()
-    {
-        LibraryChanged?.Invoke();
-    }
-
-    public bool CanUndo => _undoService.CanUndo;
-
-    public void Undo()
-    {
-        _undoService.Undo();
-    }
-
-    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
-    {
-        SortBy sort = _settingsManager.Current.FileSortBy;
-        SortDirection dir = _settingsManager.Current.FileSortDirection;
-
-        return missingOnly
-            ? _fileRepo.GetFilesWithTags(sort, dir, true)
-                .Where(f => f.IsMissing)
-                .ToList()
-            : string.IsNullOrWhiteSpace(searchText)
-            ? _fileRepo.GetFilesWithTags(sort, dir)
-            : _searchRepo.Search(searchText, sort, dir);
-    }
-
-    public FileEntry? GetFileById(Guid id)
-    {
-        return _fileRepo.GetById(id);
-    }
-
-    public bool AddFile(string path)
-    {
-        return AddFileDetailed(path).Status == AddFileResult.Success;
     }
 
     [Obsolete]
-    public async Task<AddFileDetailedResult> AddFileDetailedAsync(string path, bool suppressNotification = false)
+    public async Task<ImportResult> ImportAsync(string path)
     {
         string? hash = await FileHasher.ComputeSha256Async(path);
         if (hash is null)
         {
-            return new AddFileDetailedResult(AddFileResult.Error, null);
+            return new ImportResult(AddFileResult.Error, null);
         }
 
         FileEntry? existing = _fileRepo.GetByHash(hash);
         if (existing is not null)
         {
-            return new AddFileDetailedResult(AddFileResult.Duplicate, existing);
+            return new ImportResult(AddFileResult.Duplicate, existing);
         }
 
         AddFileResult result = _fileRepo.Add(path, hash);
 
         if (result == AddFileResult.Success)
         {
-            if (!suppressNotification)
-            {
-                LibraryChanged?.Invoke();
-            }
             FileEntry? newEntry = _fileRepo.GetByHash(hash);
 
             if (newEntry is not null)
             {
-                _ = _thumbnailService.GenerateThumbnailAsync(newEntry);
+                await _thumbnailService.GenerateThumbnailAsync(newEntry);
             }
 
-            return new AddFileDetailedResult(AddFileResult.Success, newEntry);
+            return new ImportResult(AddFileResult.Success, newEntry);
         }
 
-        return new AddFileDetailedResult(result, null);
-    }
-
-    [Obsolete]
-    public AddFileDetailedResult AddFileDetailed(string path, bool suppressNotification = false)
-    {
-        return AddFileDetailedAsync(path, suppressNotification).GetAwaiter().GetResult();
+        return new ImportResult(result, null);
     }
 
     [Obsolete]
@@ -1174,7 +1106,7 @@ public class LibraryService
                     return (Status: AddFileResult.Error, Entry: null);
                 }
 
-                var result = await AddFileDetailedAsync(path, suppressNotification: true);
+                var result = await ImportAsync(path);
 
                 if ((index + 1) % 10 == 0 || index == paths.Length - 1)
                 {
@@ -1195,17 +1127,83 @@ public class LibraryService
         int duplicates = results.Count(r => r.Status == AddFileResult.Duplicate);
         int errors = results.Count(r => r.Status == AddFileResult.Error);
 
-        if (added > 0)
-        {
-            LibraryChanged?.Invoke();
-        }
-
         ImportCompleted?.Invoke(added, duplicates, errors);
     }
+}
+```
 
-    public void ImportBatch(string[] paths)
+---
+
+### `Tagium.Core\Services\LibraryService.cs`
+
+```csharp
+using Tagium.Core.Data;
+using Tagium.Core.Helpers;
+using Tagium.Core.Models;
+using Tagium.Core.Services.Undo;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Services;
+
+public class LibraryService
+{
+    public bool CanUndo => _undoService.CanUndo;
+
+    private readonly FileRepository _fileRepo;
+    private readonly TagRepository _tagRepo;
+    private readonly FileTagRepository _fileTagRepo;
+    private readonly FileSearchRepository _searchRepo;
+    private readonly ThumbnailService _thumbnailService;
+    private readonly SettingsManager _settingsManager;
+    private readonly UndoService _undoService;
+
+    public event Action? LibraryChanged;
+
+    public LibraryService(
+        FileRepository fileRepo,
+        TagRepository tagRepo,
+        FileTagRepository fileTagRepo,
+        FileSearchRepository searchRepo,
+        ThumbnailService thumbnailService,
+        SettingsManager settingsManager,
+        UndoService undoService)
     {
-        _ = ImportBatchAsync(paths);
+        _fileRepo = fileRepo;
+        _tagRepo = tagRepo;
+        _fileTagRepo = fileTagRepo;
+        _searchRepo = searchRepo;
+        _thumbnailService = thumbnailService;
+        _settingsManager = settingsManager;
+        _undoService = undoService;
+    }
+
+    public void Refresh()
+    {
+        LibraryChanged?.Invoke();
+    }
+
+    public void Undo()
+    {
+        _undoService.Undo();
+    }
+
+    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
+    {
+        SortBy sort = _settingsManager.Current.FileSortBy;
+        SortDirection dir = _settingsManager.Current.FileSortDirection;
+
+        return missingOnly
+            ? _fileRepo.GetFilesWithTags(sort, dir, true)
+                .Where(f => f.IsMissing)
+                .ToList()
+            : string.IsNullOrWhiteSpace(searchText)
+            ? _fileRepo.GetFilesWithTags(sort, dir)
+            : _searchRepo.Search(searchText, sort, dir);
+    }
+
+    public FileEntry? GetFileById(Guid id)
+    {
+        return _fileRepo.GetById(id);
     }
 
     [Obsolete]
@@ -1472,6 +1470,18 @@ public class LibraryService
 
 ---
 
+### `Tagium.Core\Services\RelocateResult.cs`
+
+```csharp
+using Tagium.Core.Models;
+
+namespace Tagium.Core.Services;
+
+public record RelocateResult(RelocateResultStatus Status, FileEntry? ConflictingFile);
+```
+
+---
+
 ### `Tagium.Core\Services\RelocateResultStatus.cs`
 
 ```csharp
@@ -1498,7 +1508,13 @@ public class ThumbnailService
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
 
-    private readonly HashSet<string> _imageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    private const int DefaultSize = 128;
+    private const int PngQuality = 85;
+    private const int VideoEarlyCaptureSeconds = 5;
+    private const int VideoDurationThresholdSeconds = 10;
+    private const double VideoLateCaptureRatio = 0.1;
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg",
         ".jpeg",
@@ -1508,7 +1524,7 @@ public class ThumbnailService
         ".webp"
     };
 
-    private readonly HashSet<string> _videoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".mp4",
         ".mkv",
@@ -1529,9 +1545,7 @@ public class ThumbnailService
 
         if (!_hasFFmpeg)
         {
-            Console.WriteLine(
-                "[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found." +
-                "Video thumbnails will use placeholders.");
+            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails disabled.");
             return;
         }
 
@@ -1549,9 +1563,10 @@ public class ThumbnailService
     }
 
     [Obsolete]
-    public async Task GenerateThumbnailAsync(FileEntry file, int size = 128)
+    public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultSize)
     {
         string destPath = GetThumbnailPath(file.Id);
+
         if (File.Exists(destPath))
         {
             return;
@@ -1562,83 +1577,148 @@ public class ThumbnailService
             return;
         }
 
-        string ext = Path.GetExtension(file.Path);
-
         try
         {
-            if (_imageExtensions.Contains(ext))
-            {
-                await GenerateImageThumbnailAsync(file.Path, destPath, size);
-            }
-            else if (_videoExtensions.Contains(ext))
-            {
-                if (_hasFFmpeg)
-                {
-                    await GenerateVideoThumbnailAsync(file.Path, destPath, size);
-                }
-                else
-                {
-                    GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
-                }
-            }
-            else
-            {
-                GeneratePlaceholder(destPath, size, ext.TrimStart('.').ToUpper(), SKColors.Gray);
-            }
+            await TryGenerateThumbnailAsync(file.Path, destPath, size);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Thumbnail] Error for {file.Path}: {ex.Message}");
+            Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
             GeneratePlaceholder(destPath, size, "ERR", SKColors.DarkRed);
         }
     }
 
     [Obsolete]
-    private static async Task GenerateImageThumbnailAsync(string sourcePath, string destPath, int size)
+    private static async Task TryGenerateThumbnailAsync(string sourcePath, string destPath, int size)
     {
-        using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath));
-        if (original is null)
-        {
-            return;
-        }
+        string extension = Path.GetExtension(sourcePath);
 
-        SaveResized(original, destPath, size);
+        bool success = extension.ToLowerInvariant() switch
+        {
+            var e when ImageExtensions.Contains(e) => await TryGenerateImageAsync(sourcePath, destPath, size),
+            var e when VideoExtensions.Contains(e) => await TryGenerateVideoAsync(sourcePath, destPath, size),
+            _ => false
+        };
+
+        if (!success)
+        {
+            string label = extension.TrimStart('.').ToUpperInvariant();
+            GeneratePlaceholder(destPath, size, label, SKColors.Gray);
+        }
     }
 
     [Obsolete]
-    private static async Task GenerateVideoThumbnailAsync(string sourcePath, string destPath, int size)
+    private static async Task<bool> TryGenerateImageAsync(string sourcePath, string destPath, int size)
+    {
+        using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath));
+
+        if (original is null)
+        {
+            return false;
+        }
+
+        SaveResized(original, destPath, size);
+        return true;
+    }
+
+    [Obsolete]
+    private static async Task<bool> TryGenerateVideoAsync(string sourcePath, string destPath, int size)
+    {
+        try
+        {
+            TimeSpan? duration = await AnalyzeDurationAsync(sourcePath);
+
+            if (duration is null)
+            {
+                return false;
+            }
+
+            TimeSpan captureTime = CalculateCaptureTime(duration.Value);
+            string? tempFramePath = await ExtractSnapshotAsync(sourcePath, size, captureTime);
+
+            return tempFramePath is not null && await ProcessSnapshotAsync(tempFramePath, destPath, size);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Thumbnail] Video processing error: {ex.Message}");
+            GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
+            return true;
+        }
+    }
+
+    private static async Task<TimeSpan?> AnalyzeDurationAsync(string sourcePath)
     {
         try
         {
             IMediaAnalysis analysis = await FFProbe.AnalyseAsync(sourcePath);
-            TimeSpan duration = analysis.Duration;
+            return analysis.Duration;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
-            TimeSpan captureTime = duration.TotalSeconds > 10
-                ? TimeSpan.FromSeconds(5)
-                : TimeSpan.FromSeconds(duration.TotalSeconds * 0.1);
+    private static TimeSpan CalculateCaptureTime(TimeSpan duration)
+    {
+        bool isLongVideo = duration.TotalSeconds > VideoDurationThresholdSeconds;
 
-            string tempFrame = Path.GetTempFileName() + ".png";
+        double seconds = isLongVideo
+            ? VideoEarlyCaptureSeconds
+            : duration.TotalSeconds * VideoLateCaptureRatio;
 
-            _ = await FFMpeg.SnapshotAsync(sourcePath, tempFrame, new Size(size, size), captureTime);
+        return TimeSpan.FromSeconds(seconds);
+    }
 
-            if (!File.Exists(tempFrame))
+    private static async Task<string?> ExtractSnapshotAsync(string sourcePath, int size, TimeSpan captureTime)
+    {
+        string tempPath = Path.GetTempFileName() + ".png";
+
+        try
+        {
+            _ = await FFMpeg.SnapshotAsync(sourcePath, tempPath, new Size(size, size), captureTime);
+            return File.Exists(tempPath) ? tempPath : null;
+        }
+        catch
+        {
+            CleanupTempFile(tempPath);
+            return null;
+        }
+    }
+
+    [Obsolete]
+    private static async Task<bool> ProcessSnapshotAsync(string tempPath, string destPath, int size)
+    {
+        try
+        {
+            using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(tempPath));
+
+            if (original is null)
             {
-                return;
+                return false;
             }
 
-            using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(tempFrame));
+            SaveResized(original, destPath, size);
+            return true;
+        }
+        finally
+        {
+            CleanupTempFile(tempPath);
+        }
+    }
 
-            if (original is not null)
+    private static void CleanupTempFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
             {
-                SaveResized(original, destPath, size);
+                File.Delete(path);
             }
-
-            File.Delete(tempFrame);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Thumbnail] FFMpeg error: {ex.Message}");
-            GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
+            Console.WriteLine($"[Thumbnail] Failed to cleanup temp file {path}: {ex.Message}");
         }
     }
 
@@ -1653,30 +1733,31 @@ public class ThumbnailService
         using SKPaint textPaint = new()
         {
             Color = SKColors.White,
-            TextSize = size / 4,
+            TextSize = size / 4.0f,
             IsAntialias = true,
             TextAlign = SKTextAlign.Center
         };
 
-        float x = size / 2;
-        float y = (size / 2) + (textPaint.TextSize / 2) - 5;
+        float x = size / 2.0f;
+        float y = (size / 2.0f) + (textPaint.TextSize / 2.0f) - 5;
 
         canvas.DrawText(text, x, y, textPaint);
 
         using SKImage image = SKImage.FromBitmap(bitmap);
-        using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
+        using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
         using FileStream stream = File.OpenWrite(destPath);
+
         data.SaveTo(stream);
     }
 
     [Obsolete]
     private static void SaveResized(SKBitmap original, string destPath, int size)
     {
-        float ratio = (float)Math.Min((double)size / original.Width, (double)size / original.Height);
-        int w = (int)(original.Width * ratio);
-        int h = (int)(original.Height * ratio);
+        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
+        int width = (int)(original.Width * ratio);
+        int height = (int)(original.Height * ratio);
 
-        SKImageInfo info = new(w, h);
+        SKImageInfo info = new(width, height);
         using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
 
         if (resized is null)
@@ -1685,7 +1766,7 @@ public class ThumbnailService
         }
 
         using SKImage image = SKImage.FromBitmap(resized);
-        using SKData data = image.Encode(SKEncodedImageFormat.Png, 85);
+        using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
         using FileStream stream = File.OpenWrite(destPath);
 
         data.SaveTo(stream);
@@ -2559,6 +2640,7 @@ public class Program
 @using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Photino.Blazor.Services
 @inject LibraryService Library
+@inject ImportService ImportService
 @inject FileDialogService FileDialog
 @inject ModalService ModalService
 @inject AppState AppState
@@ -2591,26 +2673,31 @@ public class Program
 ### `Tagium.Photino.Blazor\Components\AppToolbar.razor.cs`
 
 ```csharp
+using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
 public partial class AppToolbar
 {
+    [Obsolete]
     private async Task ImportFiles()
     {
         var paths = FileDialogService.OpenFiles();
+
         if (paths is { Length: > 0 })
         {
-            await Library.ImportBatchAsync(paths);
+            await ImportService.ImportBatchAsync(paths);
         }
     }
 
     private void ToggleTagView()
     {
-        AppState.SwitchView(
-            AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
-        );
+        AppView view = AppState.CurrentView == AppView.Tags
+            ? AppView.Files
+            : AppView.Tags;
+
+        AppState.SwitchView(view);
     }
 }
 ```
@@ -2959,6 +3046,7 @@ public partial class FileGrid : IDisposable
 @using Tagium.Photino.Blazor.Services.Toasting
 @implements IDisposable
 @inject LibraryService Library
+@inject ImportService ImportService
 @inject SettingsManager Settings
 @inject ModalService ModalService
 @inject ToastService Toast
@@ -3057,8 +3145,8 @@ public partial class MainLayout : IDisposable
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
-        Library.ImportCompleted += ShowImportStatus;
-        Library.ImportProgress += UpdateImportProgress;
+        ImportService.ImportCompleted += ShowImportStatus;
+        ImportService.ImportProgress += UpdateImportProgress;
         AppState.OnChange += StateHasChanged;
     }
 
@@ -3132,6 +3220,7 @@ public partial class MainLayout : IDisposable
         if (added > 0)
         {
             parts.Add($"{added} added");
+            Library.Refresh();
         }
 
         if (duplicates > 0)
@@ -3160,8 +3249,8 @@ public partial class MainLayout : IDisposable
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
-        Library.ImportCompleted -= ShowImportStatus;
-        Library.ImportProgress -= UpdateImportProgress;
+        ImportService.ImportCompleted -= ShowImportStatus;
+        ImportService.ImportProgress -= UpdateImportProgress;
         AppState.OnChange -= StateHasChanged;
 
         _objRef?.Dispose();
@@ -4252,6 +4341,7 @@ public static class ServiceRegistrar
 
         // Core - Services
         _ = services.AddSingleton<ThumbnailService>();
+        _ = services.AddSingleton<ImportService>();
         _ = services.AddSingleton<LibraryService>();
         _ = services.AddSingleton<LibraryIntegrityService>();
         _ = services.AddSingleton<DataExportService>();
@@ -5629,7 +5719,7 @@ public partial class PreferencesModal
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
-@inject LibraryService Library
+@inject ImportService ImportService
 @inject FileImportService FileImportService
 @inject SettingsManager Settings
 
@@ -5660,6 +5750,7 @@ public partial class PreferencesModal
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
+using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components.Shared;
@@ -5702,6 +5793,7 @@ public partial class FileDropZone
         _isDragging = false;
     }
 
+    [Obsolete]
     private async Task HandleFileDrop(InputFileChangeEventArgs e)
     {
         _isProcessing = true;
@@ -5720,7 +5812,7 @@ public partial class FileDropZone
             return;
         }
 
-        await Library.ImportBatchAsync(importedPaths);
+        await ImportService.ImportBatchAsync(importedPaths);
     }
 
     public void Dispose()

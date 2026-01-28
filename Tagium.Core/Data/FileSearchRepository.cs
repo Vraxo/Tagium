@@ -22,7 +22,6 @@ public class FileSearchRepository
         }
 
         string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
         List<string> includeTerms = [];
         List<string> excludeTerms = [];
 
@@ -52,39 +51,8 @@ public class FileSearchRepository
         _ = query.AppendLine("FROM Files F");
         _ = query.AppendLine("WHERE 1=1");
 
-        for (int i = 0; i < includeTerms.Count; i++)
-        {
-            string paramName = $"@in{i}";
-            string termPattern = $"%{includeTerms[i]}%";
-
-            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
-
-            string tagSubQuery = $@"
-                EXISTS (
-                    SELECT 1 FROM FileTags FT 
-                    JOIN Tags T ON FT.TagId = T.Id 
-                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
-                )";
-
-            _ = query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
-        }
-
-        for (int i = 0; i < excludeTerms.Count; i++)
-        {
-            string paramName = $"@ex{i}";
-            string termPattern = $"%{excludeTerms[i]}%";
-
-            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
-
-            string tagSubQuery = $@"
-                EXISTS (
-                    SELECT 1 FROM FileTags FT 
-                    JOIN Tags T ON FT.TagId = T.Id 
-                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
-                )";
-
-            _ = query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
-        }
+        BuildIncludeClauses(includeTerms, cmd, query);
+        BuildExcludeClauses(excludeTerms, cmd, query);
 
         _ = query.AppendLine(GetOrderByClause(sortBy, sortDirection));
 
@@ -107,6 +75,44 @@ public class FileSearchRepository
         }
 
         return files;
+    }
+
+    private static void BuildIncludeClauses(List<string> terms, SqliteCommand cmd, StringBuilder query)
+    {
+        for (int i = 0; i < terms.Count; i++)
+        {
+            string paramName = $"@in{i}";
+            string termPattern = $"%{terms[i]}%";
+            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
+
+            string tagSubQuery = $@"
+                EXISTS (
+                    SELECT 1 FROM FileTags FT 
+                    JOIN Tags T ON FT.TagId = T.Id 
+                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
+                )";
+
+            _ = query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
+        }
+    }
+
+    private static void BuildExcludeClauses(List<string> terms, SqliteCommand cmd, StringBuilder query)
+    {
+        for (int i = 0; i < terms.Count; i++)
+        {
+            string paramName = $"@ex{i}";
+            string termPattern = $"%{terms[i]}%";
+            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
+
+            string tagSubQuery = $@"
+                EXISTS (
+                    SELECT 1 FROM FileTags FT 
+                    JOIN Tags T ON FT.TagId = T.Id 
+                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
+                )";
+
+            _ = query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
+        }
     }
 
     private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
