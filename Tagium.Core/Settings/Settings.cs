@@ -1,4 +1,4 @@
-﻿namespace Tagium.Core.Settings;
+namespace Tagium.Core.Settings;
 
 public class Settings
 {
@@ -10,4 +10,5 @@ public class Settings
     public TagSidebarDisplayMode TagSidebarStyle { get; set; } = TagSidebarDisplayMode.Pill;
     public TagSortBy TagSortBy { get; set; } = TagSortBy.Name;
     public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
+    public FileViewMode FileViewMode { get; set; } = FileViewMode.Grid;
 }

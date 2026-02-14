@@ -1,4 +1,4 @@
-﻿@namespace Tagium.Photino.Blazor.Components
+@namespace Tagium.Photino.Blazor.Components
 @inherits LayoutComponentBase
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
@@ -44,7 +44,14 @@
                         <ChildContent>
                             @if (AppState.CurrentView == AppView.Files)
                             {
-                                <FileGrid />
+                                if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                                {
+                                    <FileGrid />
+                                }
+                                else
+                                {
+                                    <FileListView />
+                                }
                             }
                             else if (AppState.CurrentView == AppView.Tags)
                             {

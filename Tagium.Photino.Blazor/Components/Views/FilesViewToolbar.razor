@@ -1,4 +1,4 @@
-﻿@namespace Tagium.Photino.Blazor.Components.Views
+@namespace Tagium.Photino.Blazor.Components.Views
 @using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Core.Settings
 @inject SearchInput SearchInput
@@ -7,6 +7,19 @@
 <div class="files-view-toolbar">
     <div class="search-container">
         <SearchInput @ref="SearchInput" />
+    </div>
+
+    <div class="view-mode-buttons">
+        <button class="btn-icon @(Settings.Current.FileViewMode == FileViewMode.Grid ? "active" : "")"
+                @onclick="() => SetViewMode(FileViewMode.Grid)"
+                title="Grid View">
+            <span>⊞</span>
+        </button>
+        <button class="btn-icon @(Settings.Current.FileViewMode == FileViewMode.List ? "active" : "")"
+                @onclick="() => SetViewMode(FileViewMode.List)"
+                title="List View">
+            <span>☰</span>
+        </button>
     </div>
 
     <div class="view-options-wrapper">
@@ -33,4 +46,3 @@
         }
     </div>
 </div>
-

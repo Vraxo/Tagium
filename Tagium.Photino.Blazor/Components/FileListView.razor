@@ -1,0 +1,54 @@
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@implements IDisposable
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+@inject SystemLauncherService Launcher
+@inject IJSRuntime JS
+
+<div id="file-list-container" class="list-container">
+    <table class="file-list">
+        <thead>
+            <tr>
+                <th></th> <!-- Thumbnail -->
+                <th>Name</th>
+                <th>Path</th>
+                <th>Tags</th>
+                <th>Date Added</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var file in Files)
+            {
+                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                <tr class="file-row @(isSelected ? "selected" : "")"
+                    data-id="@file.Id"
+                    @onclick="e => OnRowClick(e, file.Id)"
+                    @ondblclick="e => OnRowDoubleClick(e, file)">
+                    
+                    <td class="thumbnail-cell">
+                        <div class="thumbnail">
+                            <img src="tagium://thumbnail/@file.Id"
+                                 alt="@file.Name"
+                                 onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
+                            <div class="placeholder-icon">📷</div>
+                        </div>
+                    </td>
+                    <td class="name-cell" title="@file.Name">@file.Name</td>
+                    <td class="path-cell" title="@file.Path">@file.Path</td>
+                    <td class="tags-cell">
+                        @foreach (var tag in file.Tags)
+                        {
+                            <span class="tag-pill" style="border-color: @tag.ColorHex">@tag.Name</span>
+                        }
+                    </td>
+                    <td class="date-cell">@FormatDate(file.DateAdded)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
