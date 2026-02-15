@@ -10,15 +10,10 @@
     </div>
 
     <div class="view-mode-buttons">
-        <button class="btn-icon @(Settings.Current.FileViewMode == FileViewMode.Grid ? "active" : "")"
-                @onclick="() => SetViewMode(FileViewMode.Grid)"
-                title="Grid View">
-            <span>⊞</span>
-        </button>
-        <button class="btn-icon @(Settings.Current.FileViewMode == FileViewMode.List ? "active" : "")"
-                @onclick="() => SetViewMode(FileViewMode.List)"
-                title="List View">
-            <span>☰</span>
+        <button class="btn-icon"
+                @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
+                title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+            <span>@(Settings.Current.FileViewMode == FileViewMode.Grid ? "☰" : "⊞")</span>
         </button>
     </div>
 
