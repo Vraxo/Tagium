@@ -1,4 +1,4 @@
-﻿using Tagium.Core.Data;
+using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
@@ -65,6 +65,11 @@ public class LibraryService
     public FileEntry? GetFileById(Guid id)
     {
         return _fileRepo.GetById(id);
+    }
+
+    public FileEntry? GetFileWithTagsById(Guid id)
+    {
+        return _fileRepo.GetFileWithTagsById(id);
     }
 
     [Obsolete]

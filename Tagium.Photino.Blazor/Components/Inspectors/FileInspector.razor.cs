@@ -11,79 +11,128 @@ public partial class FileInspector
     private List<Tag> AssignedTags = [];
     private List<Tag> CommonTags = [];
     private List<Tag> AvailableTags = [];
+    private List<Tag> _allTagsCache = [];
+    private CancellationTokenSource? _cts;
 
     protected override void OnInitialized()
     {
+        LoadAllTags();
         AppState.OnSelectionChange += OnSelectionChanged;
         Library.LibraryChanged += OnLibraryChanged;
-        UpdateView();
+        _ = LoadInspectorDataAsync();
+    }
+
+    private void LoadAllTags()
+    {
+        _allTagsCache = Library.GetTags();
     }
 
     private void OnSelectionChanged()
     {
-        _ = InvokeAsync(UpdateView);
+        _ = LoadInspectorDataAsync();
     }
 
     private void OnLibraryChanged()
     {
-        _ = InvokeAsync(UpdateView);
+        LoadAllTags(); // Refresh tag cache
+        _ = LoadInspectorDataAsync();
     }
 
-    private void UpdateView()
+    private async Task LoadInspectorDataAsync()
     {
-        HasRenderError = false;
+        // Cancel any previous ongoing operation
+        _cts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _cts = cts;
+        var token = cts.Token;
+
         try
         {
-            int count = AppState.SelectedFileIds.Count;
+            // Capture selected IDs on UI thread
+            var selectedIds = AppState.SelectedFileIds.ToList();
+            int count = selectedIds.Count;
 
             if (count == 0)
             {
-                SelectionMode = InspectorMode.None;
-                SelectedFile = null;
-            }
-            else if (count == 1)
-            {
-                Guid id = AppState.SelectedFileIds.First();
-                SelectedFile = Library.GetFileById(id);
-
-                if (SelectedFile is not null)
+                await InvokeAsync(() =>
                 {
-                    SelectionMode = InspectorMode.Single;
-                    AssignedTags = Library.GetTagsForFile(id);
-                    AvailableTags = GetAvailableTags(AssignedTags);
+                    SelectionMode = InspectorMode.None;
+                    SelectedFile = null;
+                    StateHasChanged();
+                });
+                return;
+            }
+
+            // Perform database operations in background
+            await Task.Run(async () =>
+            {
+                if (count == 1)
+                {
+                    var id = selectedIds[0];
+                    var file = Library.GetFileWithTagsById(id);
+                    if (file is null)
+                        return;
+
+                    var assigned = file.Tags ?? [];
+                    var available = GetAvailableTags(assigned);
+
+                    // Update UI on UI thread
+                    await InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        SelectionMode = InspectorMode.Single;
+                        SelectedFile = file;
+                        AssignedTags = assigned;
+                        AvailableTags = available;
+                        StateHasChanged();
+                    });
                 }
                 else
                 {
-                    SelectionMode = InspectorMode.None;
-                }
-            }
-            else
-            {
-                SelectionMode = InspectorMode.Multi;
-                SelectedFile = null;
-                CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
-                AvailableTags = GetAvailableTags(CommonTags);
-            }
+                    var common = Library.GetCommonTags(selectedIds);
+                    var available = GetAvailableTags(common);
 
-            StateHasChanged();
+                    await InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        SelectionMode = InspectorMode.Multi;
+                        SelectedFile = null;
+                        CommonTags = common;
+                        AvailableTags = available;
+                        StateHasChanged();
+                    });
+                }
+            }, token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore, expected when new selection occurs
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Inspector] Critical Error: {ex}");
-            HasRenderError = true;
-            StateHasChanged();
+            Console.WriteLine($"[Inspector] Error: {ex}");
+            await InvokeAsync(() =>
+            {
+                HasRenderError = true;
+                StateHasChanged();
+            });
+        }
+        finally
+        {
+            if (_cts == cts)
+                _cts = null;
         }
     }
 
     private List<Tag> GetAvailableTags(List<Tag> existingTags)
     {
-        List<Tag> allTags = Library.GetTags();
         HashSet<Guid> existingIds = [.. existingTags.Select(t => t.Id)];
-        return [.. allTags.Where(t => !existingIds.Contains(t.Id))];
+        return [.. _allTagsCache.Where(t => !existingIds.Contains(t.Id))];
     }
 
     public void Dispose()
     {
+        _cts?.Cancel();
         AppState.OnSelectionChange -= OnSelectionChanged;
         Library.LibraryChanged -= OnLibraryChanged;
     }

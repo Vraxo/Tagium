@@ -75,11 +75,11 @@ window.gridInteractions = {
         if (index < 0) index = 0;
         if (index >= items.length) index = items.length - 1;
 
-        // Get ID
+        // Get ID (as string)
         const id = items[index].getAttribute('data-id');
         items[index].scrollIntoView({ block: 'nearest' });
 
-        this.dotNetRef.invokeMethodAsync('SelectFile', parseInt(id));
+        this.dotNetRef.invokeMethodAsync('SelectFile', id);
     },
 
     handleMouseDown: function (e) {
@@ -159,7 +159,7 @@ window.gridInteractions = {
                 boxRect.top > pageRect.bottom);
 
             if (intersect) {
-                ids.push(parseInt(item.getAttribute('data-id')));
+                ids.push(item.getAttribute('data-id')); // Keep as string
             }
         });
 

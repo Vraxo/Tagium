@@ -65,16 +65,21 @@ public partial class FileGrid : IDisposable
     [JSInvokable]
     public void SelectFile(string idStr)
     {
-        if (Guid.TryParse(idStr, out var id))
+        if (!Guid.TryParse(idStr, out var id))
         {
-            AppState.SelectFile(id, false, false);
+            return;
         }
+
+        AppState.SelectFile(id, false, false);
     }
 
     [JSInvokable]
     public void SelectFiles(string[] idStrs)
     {
-        var ids = idStrs.Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null).Where(g => g.HasValue).Select(g => g!.Value);
+        IEnumerable<Guid> ids = idStrs.Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value);
+
         AppState.SetSelection(ids);
     }
 

@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
@@ -68,29 +68,36 @@ public class FileRepository
         return files;
     }
 
-    private List<Tag> ParseTagData(string tagData)
+    public FileEntry? GetFileWithTagsById(Guid id)
     {
-        return string.IsNullOrEmpty(tagData)
-            ? []
-            : tagData.Split(";;", StringSplitOptions.RemoveEmptyEntries)
-            .Select(ParseTagFromData)
-            .Where(t => t != null)
-            .Cast<Tag>()
-            .ToList();
-    }
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
 
-    private Tag? ParseTagFromData(string tagData)
-    {
-        var parts = tagData.Split(':', 4);
-        return parts.Length < 3 || !Guid.TryParse(parts[0], out var tagId)
-            ? null
-            : new Tag
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT 
+                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing,
+                GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
+            FROM Files F
+            LEFT JOIN FileTags FT ON F.Id = FT.FileId
+            LEFT JOIN Tags T ON FT.TagId = T.Id
+            WHERE F.Id = @Id
+            GROUP BY F.Id";
+
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            var file = ReadFile(reader);
+            if (!reader.IsDBNull(6))
             {
-                Id = tagId,
-                Name = parts[1],
-                ColorHex = parts[2],
-                Emoji = parts.Length > 3 && parts[3] != "" ? parts[3] : null
-            };
+                string tagData = reader.GetString(6);
+                file.Tags = ParseTagData(tagData);
+            }
+            return file;
+        }
+        return null;
     }
 
     public FileEntry? GetById(Guid id)
@@ -241,6 +248,31 @@ public class FileRepository
             IsMissing = reader.GetBoolean(5),
             Tags = []
         };
+    }
+
+    private List<Tag> ParseTagData(string tagData)
+    {
+        return string.IsNullOrEmpty(tagData)
+            ? []
+            : tagData.Split(";;", StringSplitOptions.RemoveEmptyEntries)
+            .Select(ParseTagFromData)
+            .Where(t => t != null)
+            .Cast<Tag>()
+            .ToList();
+    }
+
+    private Tag? ParseTagFromData(string tagData)
+    {
+        var parts = tagData.Split(':', 4);
+        return parts.Length < 3 || !Guid.TryParse(parts[0], out var tagId)
+            ? null
+            : new Tag
+            {
+                Id = tagId,
+                Name = parts[1],
+                ColorHex = parts[2],
+                Emoji = parts.Length > 3 && parts[3] != "" ? parts[3] : null
+            };
     }
 
     private static string GetOrderByClause(SortBy sortBy, SortDirection direction)

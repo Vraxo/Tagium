@@ -8,7 +8,7 @@ public partial class AppToolbar
     [Obsolete]
     private async Task ImportFiles()
     {
-        var paths = FileDialogService.OpenFiles();
+        string[]? paths = FileDialogService.OpenFiles();
 
         if (paths is { Length: > 0 })
         {

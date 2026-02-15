@@ -28,7 +28,8 @@ public class Program
             .SetTitle("Tagium")
             .SetUseOsDefaultSize(false)
             .SetSize(1200, 800)
-            .Center();
+            .Center()
+            .SetLogVerbosity(0);
 
         app.Run();
     }

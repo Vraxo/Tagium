@@ -1,4 +1,4 @@
-﻿@namespace Tagium.Photino.Blazor.Components.Inspectors
+@namespace Tagium.Photino.Blazor.Components.Inspectors
 @using Tagium.Core.Services
 @using Tagium.Core.Models
 @using Tagium.Photino.Blazor.Services
@@ -19,7 +19,7 @@
         {
             <div class="state-message error">
                 <p>⚠️ Display Error</p>
-                <button class="btn" @onclick="UpdateView">Retry</button>
+                <button class="btn" @onclick="LoadInspectorDataAsync">Retry</button>
             </div>
         }
         else if (SelectionMode == InspectorMode.None)
