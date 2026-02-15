@@ -1,7 +1,8 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
+using Tagium.Core.Services;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -35,7 +36,44 @@ public static class SchemeHandlers
         string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
         string path = Path.Combine(cacheDir, $"{fileId:N}.png");
 
-        return !File.Exists(path) ? null! : (Stream)new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        // If thumbnail exists, serve it
+        if (File.Exists(path))
+        {
+            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        }
+
+        // Thumbnail missing – try to generate it on demand
+        if (ServiceProvider is null)
+        {
+            return Stream.Null;
+        }
+
+        try
+        {
+            var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+            var thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
+
+            var file = fileRepo.GetById(fileId);
+            if (file == null)
+            {
+                return Stream.Null;
+            }
+
+            // Generate thumbnail synchronously (blocks this thread but it's a background handler)
+            thumbnailService.GenerateThumbnailAsync(file).GetAwaiter().GetResult();
+
+            // If generation succeeded, serve it
+            if (File.Exists(path))
+            {
+                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SchemeHandler] Failed to generate thumbnail for {fileId}: {ex.Message}");
+        }
+
+        return Stream.Null;
     }
 
     private static Stream HandlePreview(Uri uri, out string contentType)
@@ -58,7 +96,7 @@ public static class SchemeHandlers
 
         if (entry is null || !File.Exists(entry.Path))
         {
-            return null!;
+            return Stream.Null;
         }
 
         contentType = GetMimeType(Path.GetExtension(entry.Path));

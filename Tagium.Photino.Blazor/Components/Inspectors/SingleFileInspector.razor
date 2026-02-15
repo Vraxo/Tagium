@@ -10,90 +10,105 @@
 @inject AppState AppState
 @inject ModalService ModalService
 
-<div class="preview-container">
-    @if (!File.IsMissing)
-    {
-        @if (IsImage)
+<div class="single-inspector">
+    <div class="preview-container">
+        @if (!File.IsMissing)
         {
-            <img src="tagium://preview/@File.Id" class="preview-media" />
-        }
-        else if (IsVideo)
-        {
-            <div class="preview-video-thumbnail" @onclick="OpenFile" title="Click to open video">
-                <img src="tagium://thumbnail/@File.Id" class="preview-media" alt="Video thumbnail" />
-                <div class="play-overlay">▶</div>
-            </div>
+            @if (IsImage)
+            {
+                <img src="tagium://preview/@File.Id" class="preview-media" />
+            }
+            else if (IsVideo)
+            {
+                <div class="preview-video-thumbnail" @onclick="OpenFile" title="Click to open video">
+                    <img src="tagium://thumbnail/@File.Id" class="preview-media" alt="Video thumbnail" />
+                    <div class="play-overlay">▶</div>
+                </div>
+            }
+            else
+            {
+                <div class="preview-placeholder">📄</div>
+            }
         }
         else
         {
-            <div class="preview-placeholder">📄</div>
+            <div class="preview-placeholder error">❓</div>
         }
-    }
-    else
-    {
-        <div class="preview-placeholder error">❓</div>
-    }
-</div>
-
-@if (File.IsMissing)
-{
-    <div class="missing-warning">
-        <h4>⚠️ File Missing</h4>
-        <p>This file was not found at its original path.</p>
-        <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
     </div>
-}
 
-<div class="actions-row">
-    <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
-    <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
-    <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
-</div>
-
-<div class="prop-row">
-    <label>Name</label>
-    <span>@File.Name</span>
-</div>
-<div class="prop-row">
-    <label>Path</label>
-    <span class="path">@File.Path</span>
-</div>
-
-<hr />
-
-<h4>Tags</h4>
-<div class="tags-container">
-    @foreach (var tag in AssignedTags)
+    @if (File.IsMissing)
     {
-        <span class="tag-pill"
-              style="border-color: @tag.ColorHex"
-              @onclick="() => RemoveTag(tag.Id)">
-            <TagIcon Tag="@tag" ShowIcon="false" />
-            @tag.Name <span class="remove">&times;</span>
-        </span>
+        <div class="missing-warning">
+            <h4>⚠️ File Missing</h4>
+            <p>This file was not found at its original path.</p>
+            <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
+        </div>
     }
-</div>
 
-<hr />
+    <div class="actions-row">
+        <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
+        <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
+        <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
+    </div>
 
-<h4>Add Tag</h4>
-<div class="tags-container available">
-    @foreach (var tag in AvailableTags)
-    {
-        <span class="tag-pill add"
-              style="border-color: @tag.ColorHex"
-              @onclick="() => AddTag(tag.Id)">
-            <TagIcon Tag="@tag" ShowIcon="false" />
-            @tag.Name
-        </span>
-    }
+    <div class="prop-row">
+        <label>Name</label>
+        <span>@File.Name</span>
+    </div>
+    <div class="prop-row">
+        <label>Path</label>
+        <span class="path">@File.Path</span>
+    </div>
+
+    <hr />
+
+    <h4>Tags</h4>
+    <div class="tags-container">
+        @foreach (var tag in AssignedTags)
+        {
+            <span class="tag-pill"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => RemoveTag(tag.Id)">
+                <TagIcon Tag="@tag" ShowIcon="false" />
+                @tag.Name <span class="remove">&times;</span>
+            </span>
+        }
+    </div>
+
+    <hr />
+
+    <h4>Add Tag</h4>
+    <div class="tags-container available">
+        @foreach (var tag in AvailableTags)
+        {
+            <span class="tag-pill add"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => AddTag(tag.Id)">
+                <TagIcon Tag="@tag" ShowIcon="false" />
+                @tag.Name
+            </span>
+        }
+    </div>
 </div>
 
 <style>
+    .single-inspector {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+    .preview-container {
+        flex: 1 1 0;
+        min-height: 0;
+        width: 100%;
+        background: var(--panel-bg);
+    }
     .preview-video-thumbnail {
         position: relative;
         cursor: pointer;
-        display: inline-block;
+        height: 100%;
+        width: 100%;
+        background: var(--panel-bg);
     }
     .play-overlay {
         position: absolute;
@@ -112,9 +127,17 @@
         pointer-events: none;
     }
     .preview-media {
-        max-width: 100%;
-        max-height: 200px;
-        object-fit: contain;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .missing-warning,
+    .actions-row,
+    .prop-row,
+    hr,
+    h4,
+    .tags-container {
+        flex-shrink: 0;
     }
 </style>
 

@@ -11,7 +11,7 @@ public class ThumbnailService
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
 
-    private const int DefaultSize = 128;
+    private const int DefaultSize = 800;
     private const int PngQuality = 85;
     private const int VideoEarlyCaptureSeconds = 5;
     private const int VideoDurationThresholdSeconds = 10;
@@ -208,7 +208,8 @@ public class ThumbnailService
 
         try
         {
-            _ = await FFMpeg.SnapshotAsync(sourcePath, tempPath, new Size(size, size), captureTime);
+            // Pass null for size to get the original frame dimensions
+            _ = await FFMpeg.SnapshotAsync(sourcePath, tempPath, null, captureTime);
             return File.Exists(tempPath) ? tempPath : null;
         }
         catch
@@ -284,11 +285,22 @@ public class ThumbnailService
     [Obsolete]
     private static void SaveResized(SKBitmap original, string destPath, int size)
     {
-        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
-        int width = (int)(original.Width * ratio);
-        int height = (int)(original.Height * ratio);
+        // Create a square canvas
+        using SKBitmap square = new(size, size);
+        using SKCanvas canvas = new(square);
 
-        SKImageInfo info = new(width, height);
+        // Fill with dark background (approx panel background)
+        canvas.Clear(new SKColor(30, 30, 30)); // #1e1e1e
+
+        // Calculate dimensions to fit while preserving aspect ratio
+        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
+        int drawWidth = (int)(original.Width * ratio);
+        int drawHeight = (int)(original.Height * ratio);
+        int x = (size - drawWidth) / 2;
+        int y = (size - drawHeight) / 2;
+
+        // Resize original to fit
+        SKImageInfo info = new(drawWidth, drawHeight);
         using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
 
         if (resized is null)
@@ -296,10 +308,12 @@ public class ThumbnailService
             return;
         }
 
-        using SKImage image = SKImage.FromBitmap(resized);
+        // Draw resized image centered on canvas
+        canvas.DrawBitmap(resized, x, y);
+
+        using SKImage image = SKImage.FromBitmap(square);
         using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
         using FileStream stream = File.OpenWrite(destPath);
-
         data.SaveTo(stream);
     }
 }
