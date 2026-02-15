@@ -178,29 +178,36 @@ public class FileRepository
         return files;
     }
 
-    private List<Tag> ParseTagData(string tagData)
+    public FileEntry? GetFileWithTagsById(Guid id)
     {
-        return string.IsNullOrEmpty(tagData)
-            ? []
-            : tagData.Split(";;", StringSplitOptions.RemoveEmptyEntries)
-            .Select(ParseTagFromData)
-            .Where(t => t != null)
-            .Cast<Tag>()
-            .ToList();
-    }
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
 
-    private Tag? ParseTagFromData(string tagData)
-    {
-        var parts = tagData.Split(':', 4);
-        return parts.Length < 3 || !Guid.TryParse(parts[0], out var tagId)
-            ? null
-            : new Tag
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT 
+                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing,
+                GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
+            FROM Files F
+            LEFT JOIN FileTags FT ON F.Id = FT.FileId
+            LEFT JOIN Tags T ON FT.TagId = T.Id
+            WHERE F.Id = @Id
+            GROUP BY F.Id";
+
+        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            var file = ReadFile(reader);
+            if (!reader.IsDBNull(6))
             {
-                Id = tagId,
-                Name = parts[1],
-                ColorHex = parts[2],
-                Emoji = parts.Length > 3 && parts[3] != "" ? parts[3] : null
-            };
+                string tagData = reader.GetString(6);
+                file.Tags = ParseTagData(tagData);
+            }
+            return file;
+        }
+        return null;
     }
 
     public FileEntry? GetById(Guid id)
@@ -351,6 +358,31 @@ public class FileRepository
             IsMissing = reader.GetBoolean(5),
             Tags = []
         };
+    }
+
+    private List<Tag> ParseTagData(string tagData)
+    {
+        return string.IsNullOrEmpty(tagData)
+            ? []
+            : tagData.Split(";;", StringSplitOptions.RemoveEmptyEntries)
+            .Select(ParseTagFromData)
+            .Where(t => t != null)
+            .Cast<Tag>()
+            .ToList();
+    }
+
+    private Tag? ParseTagFromData(string tagData)
+    {
+        var parts = tagData.Split(':', 4);
+        return parts.Length < 3 || !Guid.TryParse(parts[0], out var tagId)
+            ? null
+            : new Tag
+            {
+                Id = tagId,
+                Name = parts[1],
+                ColorHex = parts[2],
+                Emoji = parts.Length > 3 && parts[3] != "" ? parts[3] : null
+            };
     }
 
     private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
@@ -1013,6 +1045,11 @@ public class LibraryService
         return _fileRepo.GetById(id);
     }
 
+    public FileEntry? GetFileWithTagsById(Guid id)
+    {
+        return _fileRepo.GetFileWithTagsById(id);
+    }
+
     [Obsolete]
     public RelocateResult RelocateFile(Guid fileId, string newPath)
     {
@@ -1315,7 +1352,7 @@ public class ThumbnailService
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
 
-    private const int DefaultSize = 128;
+    private const int DefaultSize = 800;
     private const int PngQuality = 85;
     private const int VideoEarlyCaptureSeconds = 5;
     private const int VideoDurationThresholdSeconds = 10;
@@ -1345,18 +1382,51 @@ public class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
-        string ffmpegPath = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
-        string ffprobePath = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
+        // Try to locate ffmpeg and ffprobe
+        string? ffmpegPath = null;
+        string? ffprobePath = null;
 
-        _hasFFmpeg = File.Exists(ffmpegPath) && File.Exists(ffprobePath);
+        // First check application directory
+        string appDirFfmpeg = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+        string appDirFfprobe = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
+
+        if (File.Exists(appDirFfmpeg) && File.Exists(appDirFfprobe))
+        {
+            ffmpegPath = appDirFfmpeg;
+            ffprobePath = appDirFfprobe;
+        }
+        else
+        {
+            // Fallback to searching in PATH
+            string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+            if (!string.IsNullOrEmpty(pathEnv))
+            {
+                string[] paths = pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+                foreach (string dir in paths)
+                {
+                    string candidateFfmpeg = Path.Combine(dir, "ffmpeg.exe");
+                    string candidateFfprobe = Path.Combine(dir, "ffprobe.exe");
+                    if (File.Exists(candidateFfmpeg) && File.Exists(candidateFfprobe))
+                    {
+                        ffmpegPath = candidateFfmpeg;
+                        ffprobePath = candidateFfprobe;
+                        break;
+                    }
+                }
+            }
+        }
+
+        _hasFFmpeg = ffmpegPath != null && ffprobePath != null;
 
         if (!_hasFFmpeg)
         {
-            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails disabled.");
+            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found (neither in app directory nor in PATH). Video thumbnails disabled.");
             return;
         }
 
-        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
+        // Configure FFMpegCore to use the correct binary folder
+        string binaryFolder = Path.GetDirectoryName(ffmpegPath)!;
+        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
     }
 
     public string GetThumbnailPath(Guid fileId)
@@ -1479,7 +1549,8 @@ public class ThumbnailService
 
         try
         {
-            _ = await FFMpeg.SnapshotAsync(sourcePath, tempPath, new Size(size, size), captureTime);
+            // Pass null for size to get the original frame dimensions
+            _ = await FFMpeg.SnapshotAsync(sourcePath, tempPath, null, captureTime);
             return File.Exists(tempPath) ? tempPath : null;
         }
         catch
@@ -1555,11 +1626,22 @@ public class ThumbnailService
     [Obsolete]
     private static void SaveResized(SKBitmap original, string destPath, int size)
     {
-        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
-        int width = (int)(original.Width * ratio);
-        int height = (int)(original.Height * ratio);
+        // Create a square canvas
+        using SKBitmap square = new(size, size);
+        using SKCanvas canvas = new(square);
 
-        SKImageInfo info = new(width, height);
+        // Fill with dark background (approx panel background)
+        canvas.Clear(new SKColor(30, 30, 30)); // #1e1e1e
+
+        // Calculate dimensions to fit while preserving aspect ratio
+        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
+        int drawWidth = (int)(original.Width * ratio);
+        int drawHeight = (int)(original.Height * ratio);
+        int x = (size - drawWidth) / 2;
+        int y = (size - drawHeight) / 2;
+
+        // Resize original to fit
+        SKImageInfo info = new(drawWidth, drawHeight);
         using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
 
         if (resized is null)
@@ -1567,10 +1649,12 @@ public class ThumbnailService
             return;
         }
 
-        using SKImage image = SKImage.FromBitmap(resized);
+        // Draw resized image centered on canvas
+        canvas.DrawBitmap(resized, x, y);
+
+        using SKImage image = SKImage.FromBitmap(square);
         using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
         using FileStream stream = File.OpenWrite(destPath);
-
         data.SaveTo(stream);
     }
 }
@@ -1592,6 +1676,20 @@ public enum EmojiSet
 
 ---
 
+### `Tagium.Core\Settings\FileViewMode.cs`
+
+```csharp
+namespace Tagium.Core.Settings;
+
+public enum FileViewMode
+{
+    Grid,
+    List
+}
+```
+
+---
+
 ### `Tagium.Core\Settings\Settings.cs`
 
 ```csharp
@@ -1607,6 +1705,7 @@ public class Settings
     public TagSidebarDisplayMode TagSidebarStyle { get; set; } = TagSidebarDisplayMode.Pill;
     public TagSortBy TagSortBy { get; set; } = TagSortBy.Name;
     public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
+    public FileViewMode FileViewMode { get; set; } = FileViewMode.Grid;
 }
 ```
 
@@ -2367,7 +2466,8 @@ public class Program
             .SetTitle("Tagium")
             .SetUseOsDefaultSize(false)
             .SetSize(1200, 800)
-            .Center();
+            .Center()
+            .SetLogVerbosity(0);
 
         app.Run();
     }
@@ -2382,7 +2482,7 @@ public class Program
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -2485,7 +2585,7 @@ public partial class AppToolbar
     [Obsolete]
     private async Task ImportFiles()
     {
-        var paths = FileDialogService.OpenFiles();
+        string[]? paths = FileDialogService.OpenFiles();
 
         if (paths is { Length: > 0 })
         {
@@ -2679,16 +2779,21 @@ public partial class FileGrid : IDisposable
     [JSInvokable]
     public void SelectFile(string idStr)
     {
-        if (Guid.TryParse(idStr, out var id))
+        if (!Guid.TryParse(idStr, out var id))
         {
-            AppState.SelectFile(id, false, false);
+            return;
         }
+
+        AppState.SelectFile(id, false, false);
     }
 
     [JSInvokable]
     public void SelectFiles(string[] idStrs)
     {
-        var ids = idStrs.Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null).Where(g => g.HasValue).Select(g => g!.Value);
+        IEnumerable<Guid> ids = idStrs.Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value);
+
         AppState.SetSelection(ids);
     }
 
@@ -2833,6 +2938,285 @@ public partial class FileGrid : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\FileListView.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@implements IDisposable
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+@inject SystemLauncherService Launcher
+@inject IJSRuntime JS
+
+<div id="file-list-container" class="list-container">
+    <table class="file-list">
+        <thead>
+            <tr>
+                <th></th> <!-- Thumbnail -->
+                <th>Name</th>
+                <th>Path</th>
+                <th>Tags</th>
+                <th>Date Added</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var file in Files)
+            {
+                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                <tr class="file-row @(isSelected ? "selected" : "")"
+                    data-id="@file.Id"
+                    @onclick="e => OnRowClick(e, file.Id)"
+                    @ondblclick="e => OnRowDoubleClick(e, file)">
+                    
+                    <td class="thumbnail-cell">
+                        <div class="thumbnail">
+                            <img src="tagium://thumbnail/@file.Id"
+                                 alt="@file.Name"
+                                 onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
+                            <div class="placeholder-icon">📷</div>
+                        </div>
+                    </td>
+                    <td class="name-cell" title="@file.Name">@file.Name</td>
+                    <td class="path-cell" title="@file.Path">@file.Path</td>
+                    <td class="tags-cell">
+                        @foreach (var tag in file.Tags)
+                        {
+                            <span class="tag-pill" style="border-color: @tag.ColorHex">@tag.Name</span>
+                        }
+                    </td>
+                    <td class="date-cell">@FormatDate(file.DateAdded)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileListView.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.JSInterop;
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class FileListView : IDisposable
+{
+    private List<FileEntry> Files = [];
+
+    protected override void OnInitialized()
+    {
+        LoadFiles();
+
+        AppState.OnChange += ReloadData;
+        AppState.OnSelectionChange += RefreshSelection;
+        Library.LibraryChanged += ReloadData;
+        Settings.SettingsChanged += ReloadData;
+    }
+
+    private void ReloadData()
+    {
+        LoadFiles();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshSelection()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void LoadFiles()
+    {
+        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+    }
+
+    private void OnRowClick(MouseEventArgs e, Guid id)
+    {
+        AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
+    }
+
+    private void OnRowDoubleClick(MouseEventArgs e, FileEntry file)
+    {
+        if (file.IsMissing)
+        {
+            return;
+        }
+
+        SystemLauncherService.OpenFile(file.Path);
+    }
+
+    private static string FormatDate(long unixTimestamp)
+    {
+        DateTime dateTime = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp).LocalDateTime;
+        return dateTime.ToShortDateString();
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= ReloadData;
+        AppState.OnSelectionChange -= RefreshSelection;
+        Library.LibraryChanged -= ReloadData;
+        Settings.SettingsChanged -= ReloadData;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileListView.razor.css`
+
+```css
+.list-container {
+    height: 100%;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    padding: 0;
+    position: relative;
+}
+
+.file-list {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    color: var(--text-color);
+    table-layout: fixed;
+}
+
+.file-list thead {
+    position: sticky;
+    top: 0;
+    background: var(--panel-bg);
+    z-index: 10;
+}
+
+.file-list th {
+    text-align: left;
+    padding: 8px 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.file-list tbody tr {
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
+
+.file-list tbody tr:hover {
+    background: var(--surface-hover);
+}
+
+.file-list tbody tr.selected {
+    background: rgba(66, 165, 245, 0.15);
+    border-left: 3px solid var(--primary-color);
+}
+
+.file-list td {
+    padding: 6px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.thumbnail-cell {
+    width: 40px;
+    padding: 2px 0 2px 10px !important;
+}
+
+.thumbnail {
+    width: 40px;
+    height: 40px;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    position: relative;
+    z-index: 2;
+}
+
+.thumbnail .placeholder-icon {
+    position: absolute;
+    font-size: 1.5em;
+    color: var(--border-color);
+    z-index: 1;
+}
+
+.thumbnail.broken .placeholder-icon {
+    color: var(--text-muted);
+}
+
+.name-cell {
+    width: 25%;
+    font-weight: 500;
+}
+
+.path-cell {
+    width: 35%;
+    color: var(--text-muted);
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.tags-cell {
+    width: 25%;
+    white-space: normal !important;
+    line-height: 1.4;
+}
+
+.tag-pill {
+    display: inline-block;
+    background: var(--surface-bg);
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    margin-right: 4px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+.date-cell {
+    width: 10%;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+/* Column widths */
+.file-list th:nth-child(1) { width: 60px; } /* thumbnail */
+.file-list th:nth-child(2) { width: 25%; }  /* name */
+.file-list th:nth-child(3) { width: 35%; }  /* path */
+.file-list th:nth-child(4) { width: 25%; }  /* tags */
+.file-list th:nth-child(5) { width: 10%; }  /* date */
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\MainLayout.razor`
 
 ```
@@ -2882,7 +3266,14 @@ public partial class FileGrid : IDisposable
                         <ChildContent>
                             @if (AppState.CurrentView == AppView.Files)
                             {
-                                <FileGrid />
+                                if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                                {
+                                    <FileGrid />
+                                }
+                                else
+                                {
+                                    <FileListView />
+                                }
                             }
                             else if (AppState.CurrentView == AppView.Tags)
                             {
@@ -4023,6 +4414,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
+using Tagium.Core.Services;
 
 namespace Tagium.Photino.Blazor.Setup;
 
@@ -4056,7 +4448,44 @@ public static class SchemeHandlers
         string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
         string path = Path.Combine(cacheDir, $"{fileId:N}.png");
 
-        return !File.Exists(path) ? null! : (Stream)new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        // If thumbnail exists, serve it
+        if (File.Exists(path))
+        {
+            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        }
+
+        // Thumbnail missing – try to generate it on demand
+        if (ServiceProvider is null)
+        {
+            return Stream.Null;
+        }
+
+        try
+        {
+            var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+            var thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
+
+            var file = fileRepo.GetById(fileId);
+            if (file == null)
+            {
+                return Stream.Null;
+            }
+
+            // Generate thumbnail synchronously (blocks this thread but it's a background handler)
+            thumbnailService.GenerateThumbnailAsync(file).GetAwaiter().GetResult();
+
+            // If generation succeeded, serve it
+            if (File.Exists(path))
+            {
+                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SchemeHandler] Failed to generate thumbnail for {fileId}: {ex.Message}");
+        }
+
+        return Stream.Null;
     }
 
     private static Stream HandlePreview(Uri uri, out string contentType)
@@ -4079,7 +4508,7 @@ public static class SchemeHandlers
 
         if (entry is null || !File.Exists(entry.Path))
         {
-            return null!;
+            return Stream.Null;
         }
 
         contentType = GetMimeType(Path.GetExtension(entry.Path));
@@ -4237,10 +4666,10 @@ public static class ServiceRegistrar
             }
         };
     </script>
-    <script src="_framework/blazor.webview.js"></script>
     <script src="js/dragdrop.js"></script>
     <script src="js/grid.js"></script>
     <script src="js/layout.js"></script>
+    <script src="_framework/blazor.webview.js"></script>
 </body>
 </html>
 ```
@@ -4271,7 +4700,7 @@ public static class ServiceRegistrar
         {
             <div class="state-message error">
                 <p>⚠️ Display Error</p>
-                <button class="btn" @onclick="UpdateView">Retry</button>
+                <button class="btn" @onclick="LoadInspectorDataAsync">Retry</button>
             </div>
         }
         else if (SelectionMode == InspectorMode.None)
@@ -4320,79 +4749,128 @@ public partial class FileInspector
     private List<Tag> AssignedTags = [];
     private List<Tag> CommonTags = [];
     private List<Tag> AvailableTags = [];
+    private List<Tag> _allTagsCache = [];
+    private CancellationTokenSource? _cts;
 
     protected override void OnInitialized()
     {
+        LoadAllTags();
         AppState.OnSelectionChange += OnSelectionChanged;
         Library.LibraryChanged += OnLibraryChanged;
-        UpdateView();
+        _ = LoadInspectorDataAsync();
+    }
+
+    private void LoadAllTags()
+    {
+        _allTagsCache = Library.GetTags();
     }
 
     private void OnSelectionChanged()
     {
-        _ = InvokeAsync(UpdateView);
+        _ = LoadInspectorDataAsync();
     }
 
     private void OnLibraryChanged()
     {
-        _ = InvokeAsync(UpdateView);
+        LoadAllTags(); // Refresh tag cache
+        _ = LoadInspectorDataAsync();
     }
 
-    private void UpdateView()
+    private async Task LoadInspectorDataAsync()
     {
-        HasRenderError = false;
+        // Cancel any previous ongoing operation
+        _cts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _cts = cts;
+        var token = cts.Token;
+
         try
         {
-            int count = AppState.SelectedFileIds.Count;
+            // Capture selected IDs on UI thread
+            var selectedIds = AppState.SelectedFileIds.ToList();
+            int count = selectedIds.Count;
 
             if (count == 0)
             {
-                SelectionMode = InspectorMode.None;
-                SelectedFile = null;
-            }
-            else if (count == 1)
-            {
-                Guid id = AppState.SelectedFileIds.First();
-                SelectedFile = Library.GetFileById(id);
-
-                if (SelectedFile is not null)
+                await InvokeAsync(() =>
                 {
-                    SelectionMode = InspectorMode.Single;
-                    AssignedTags = Library.GetTagsForFile(id);
-                    AvailableTags = GetAvailableTags(AssignedTags);
+                    SelectionMode = InspectorMode.None;
+                    SelectedFile = null;
+                    StateHasChanged();
+                });
+                return;
+            }
+
+            // Perform database operations in background
+            await Task.Run(async () =>
+            {
+                if (count == 1)
+                {
+                    var id = selectedIds[0];
+                    var file = Library.GetFileWithTagsById(id);
+                    if (file is null)
+                        return;
+
+                    var assigned = file.Tags ?? [];
+                    var available = GetAvailableTags(assigned);
+
+                    // Update UI on UI thread
+                    await InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        SelectionMode = InspectorMode.Single;
+                        SelectedFile = file;
+                        AssignedTags = assigned;
+                        AvailableTags = available;
+                        StateHasChanged();
+                    });
                 }
                 else
                 {
-                    SelectionMode = InspectorMode.None;
-                }
-            }
-            else
-            {
-                SelectionMode = InspectorMode.Multi;
-                SelectedFile = null;
-                CommonTags = Library.GetCommonTags(AppState.SelectedFileIds);
-                AvailableTags = GetAvailableTags(CommonTags);
-            }
+                    var common = Library.GetCommonTags(selectedIds);
+                    var available = GetAvailableTags(common);
 
-            StateHasChanged();
+                    await InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        SelectionMode = InspectorMode.Multi;
+                        SelectedFile = null;
+                        CommonTags = common;
+                        AvailableTags = available;
+                        StateHasChanged();
+                    });
+                }
+            }, token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore, expected when new selection occurs
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Inspector] Critical Error: {ex}");
-            HasRenderError = true;
-            StateHasChanged();
+            Console.WriteLine($"[Inspector] Error: {ex}");
+            await InvokeAsync(() =>
+            {
+                HasRenderError = true;
+                StateHasChanged();
+            });
+        }
+        finally
+        {
+            if (_cts == cts)
+                _cts = null;
         }
     }
 
     private List<Tag> GetAvailableTags(List<Tag> existingTags)
     {
-        List<Tag> allTags = Library.GetTags();
         HashSet<Guid> existingIds = [.. existingTags.Select(t => t.Id)];
-        return [.. allTags.Where(t => !existingIds.Contains(t.Id))];
+        return [.. _allTagsCache.Where(t => !existingIds.Contains(t.Id))];
     }
 
     public void Dispose()
     {
+        _cts?.Cancel();
         AppState.OnSelectionChange -= OnSelectionChanged;
         Library.LibraryChanged -= OnLibraryChanged;
     }
@@ -4726,81 +5204,136 @@ h4 {
 @inject AppState AppState
 @inject ModalService ModalService
 
-<div class="preview-container">
-    @if (!File.IsMissing)
-    {
-        @if (IsImage)
+<div class="single-inspector">
+    <div class="preview-container">
+        @if (!File.IsMissing)
         {
-            <img src="tagium://preview/@File.Id" class="preview-media" />
-        }
-        else if (IsVideo)
-        {
-            <video src="tagium://preview/@File.Id" class="preview-media" controls autoplay muted loop></video>
+            @if (IsImage)
+            {
+                <img src="tagium://preview/@File.Id" class="preview-media" />
+            }
+            else if (IsVideo)
+            {
+                <div class="preview-video-thumbnail" @onclick="OpenFile" title="Click to open video">
+                    <img src="tagium://thumbnail/@File.Id" class="preview-media" alt="Video thumbnail" />
+                    <div class="play-overlay">▶</div>
+                </div>
+            }
+            else
+            {
+                <div class="preview-placeholder">📄</div>
+            }
         }
         else
         {
-            <div class="preview-placeholder">📄</div>
+            <div class="preview-placeholder error">❓</div>
         }
-    }
-    else
-    {
-        <div class="preview-placeholder error">❓</div>
-    }
-</div>
-
-@if (File.IsMissing)
-{
-    <div class="missing-warning">
-        <h4>⚠️ File Missing</h4>
-        <p>This file was not found at its original path.</p>
-        <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
     </div>
-}
 
-<div class="actions-row">
-    <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
-    <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
-    <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
-</div>
-
-<div class="prop-row">
-    <label>Name</label>
-    <span>@File.Name</span>
-</div>
-<div class="prop-row">
-    <label>Path</label>
-    <span class="path">@File.Path</span>
-</div>
-
-<hr />
-
-<h4>Tags</h4>
-<div class="tags-container">
-    @foreach (var tag in AssignedTags)
+    @if (File.IsMissing)
     {
-        <span class="tag-pill"
-              style="border-color: @tag.ColorHex"
-              @onclick="() => RemoveTag(tag.Id)">
-            <TagIcon Tag="@tag" ShowIcon="false" />
-            @tag.Name <span class="remove">&times;</span>
-        </span>
+        <div class="missing-warning">
+            <h4>⚠️ File Missing</h4>
+            <p>This file was not found at its original path.</p>
+            <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
+        </div>
     }
+
+    <div class="actions-row">
+        <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
+        <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
+        <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
+    </div>
+
+    <div class="prop-row">
+        <label>Name</label>
+        <span>@File.Name</span>
+    </div>
+    <div class="prop-row">
+        <label>Path</label>
+        <span class="path">@File.Path</span>
+    </div>
+
+    <hr />
+
+    <h4>Tags</h4>
+    <div class="tags-container">
+        @foreach (var tag in AssignedTags)
+        {
+            <span class="tag-pill"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => RemoveTag(tag.Id)">
+                <TagIcon Tag="@tag" ShowIcon="false" />
+                @tag.Name <span class="remove">&times;</span>
+            </span>
+        }
+    </div>
+
+    <hr />
+
+    <h4>Add Tag</h4>
+    <div class="tags-container available">
+        @foreach (var tag in AvailableTags)
+        {
+            <span class="tag-pill add"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => AddTag(tag.Id)">
+                <TagIcon Tag="@tag" ShowIcon="false" />
+                @tag.Name
+            </span>
+        }
+    </div>
 </div>
 
-<hr />
-
-<h4>Add Tag</h4>
-<div class="tags-container available">
-    @foreach (var tag in AvailableTags)
-    {
-        <span class="tag-pill add"
-              style="border-color: @tag.ColorHex"
-              @onclick="() => AddTag(tag.Id)">
-            <TagIcon Tag="@tag" ShowIcon="false" />
-            @tag.Name
-        </span>
+<style>
+    .single-inspector {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
     }
-</div>
+    .preview-container {
+        flex: 1 1 0;
+        min-height: 0;
+        width: 100%;
+        background: var(--panel-bg);
+    }
+    .preview-video-thumbnail {
+        position: relative;
+        cursor: pointer;
+        height: 100%;
+        width: 100%;
+        background: var(--panel-bg);
+    }
+    .play-overlay {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: rgba(0, 0, 0, 0.6);
+        color: white;
+        font-size: 3rem;
+        width: 4rem;
+        height: 4rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+    }
+    .preview-media {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .missing-warning,
+    .actions-row,
+    .prop-row,
+    hr,
+    h4,
+    .tags-container {
+        flex-shrink: 0;
+    }
+</style>
 
 @code {
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
@@ -6108,6 +6641,14 @@ input[type=range] {
         <SearchInput @ref="SearchInput" />
     </div>
 
+    <div class="view-mode-buttons">
+        <button class="btn-icon"
+                @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
+                title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+            <span>@(Settings.Current.FileViewMode == FileViewMode.Grid ? "☰" : "⊞")</span>
+        </button>
+    </div>
+
     <div class="view-options-wrapper">
         <button class="btn-icon @(IsMenuOpen ? "active" : "")"
                 @onclick="ToggleMenu"
@@ -6132,7 +6673,6 @@ input[type=range] {
         }
     </div>
 </div>
-
 ```
 
 ---
@@ -6141,6 +6681,7 @@ input[type=range] {
 
 ```csharp
 using Tagium.Photino.Blazor.Components.Shared;
+using Tagium.Core.Settings;
 
 namespace Tagium.Photino.Blazor.Components.Views;
 
@@ -6161,6 +6702,11 @@ public partial class FilesViewToolbar
     private void CloseMenu()
     {
         IsMenuOpen = false;
+    }
+
+    private void SetViewMode(FileViewMode mode)
+    {
+        Settings.Update(s => s.FileViewMode = mode);
     }
 }
 ```
@@ -7045,11 +7591,11 @@ window.gridInteractions = {
         if (index < 0) index = 0;
         if (index >= items.length) index = items.length - 1;
 
-        // Get ID
+        // Get ID (as string)
         const id = items[index].getAttribute('data-id');
         items[index].scrollIntoView({ block: 'nearest' });
 
-        this.dotNetRef.invokeMethodAsync('SelectFile', parseInt(id));
+        this.dotNetRef.invokeMethodAsync('SelectFile', id);
     },
 
     handleMouseDown: function (e) {
@@ -7129,7 +7675,7 @@ window.gridInteractions = {
                 boxRect.top > pageRect.bottom);
 
             if (intersect) {
-                ids.push(parseInt(item.getAttribute('data-id')));
+                ids.push(item.getAttribute('data-id')); // Keep as string
             }
         });
 

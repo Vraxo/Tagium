@@ -91,56 +91,6 @@
     </div>
 </div>
 
-<style>
-    .single-inspector {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-    .preview-container {
-        flex: 1 1 0;
-        min-height: 0;
-        width: 100%;
-        background: var(--panel-bg);
-    }
-    .preview-video-thumbnail {
-        position: relative;
-        cursor: pointer;
-        height: 100%;
-        width: 100%;
-        background: var(--panel-bg);
-    }
-    .play-overlay {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background-color: rgba(0, 0, 0, 0.6);
-        color: white;
-        font-size: 3rem;
-        width: 4rem;
-        height: 4rem;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        pointer-events: none;
-    }
-    .preview-media {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .missing-warning,
-    .actions-row,
-    .prop-row,
-    hr,
-    h4,
-    .tags-container {
-        flex-shrink: 0;
-    }
-</style>
-
 @code {
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
     [Parameter] public List<Tag> AssignedTags { get; set; } = [];

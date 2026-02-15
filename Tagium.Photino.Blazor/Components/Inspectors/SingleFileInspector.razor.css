@@ -1,8 +1,14 @@
+.single-inspector {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
 .preview-container {
+    flex: 1 1 0; /* Grow to fill available space, shrink if needed */
+    min-height: 200px;
     width: 100%;
-    max-width: 100%; /* Prevent overflow in constrained flex containers */
-    aspect-ratio: 16 / 9;
-    background: #000;
+    background: #000; /* Pitch black background for media */
     border-radius: 6px;
     margin-bottom: 10px;
     overflow: hidden;
@@ -10,22 +16,62 @@
     justify-content: center;
     align-items: center;
     border: 1px solid var(--border-color);
+    position: relative;
+}
+
+.preview-video-thumbnail {
+    position: relative;
+    cursor: pointer;
+    height: 100%;
+    width: 100%;
+    background: transparent; /* Ensure parent black bg is visible */
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .preview-media {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Ensure full content is visible without cropping */
+}
+
+.play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 3rem;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
 }
 
 .preview-placeholder {
-    font-size: 2em;
+    font-size: 3em;
     color: var(--border-color);
 }
 
     .preview-placeholder.error {
         color: var(--danger-color);
     }
+
+/* Prevent lower sections from shrinking when preview grows */
+.missing-warning,
+.actions-row,
+.prop-row,
+hr,
+h4,
+.tags-container {
+    flex-shrink: 0;
+}
 
 .prop-row {
     margin-bottom: 8px;
@@ -123,7 +169,7 @@
 
 .tag-pill {
     background: var(--surface-bg);
-    padding: 3px 6px; /* Increased from 2px for better optical centering */
+    padding: 3px 6px;
     border-radius: 12px;
     font-size: var(--font-size-xs);
     cursor: pointer;
@@ -132,7 +178,7 @@
     user-select: none;
     border: 1px solid var(--border-color);
     transition: background-color 0.1s;
-    line-height: 1; /* Force consistent baseline */
+    line-height: 1;
 }
 
     .tag-pill:hover {
@@ -143,7 +189,7 @@
         margin-left: 4px;
         color: var(--danger-color);
         font-weight: bold;
-        display: flex; /* Ensure perfect vertical alignment */
+        display: flex;
         align-items: center;
         line-height: 1;
     }
@@ -160,7 +206,6 @@
             opacity: 1;
         }
 
-/* Subtle separator styling */
 hr {
     border: 0;
     height: 1px;
@@ -168,7 +213,6 @@ hr {
     margin: 10px 0;
 }
 
-/* Natural, readable section headings */
 h4 {
     font-size: var(--font-size-sm);
     font-weight: normal;
