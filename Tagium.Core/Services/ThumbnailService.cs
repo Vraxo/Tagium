@@ -1,4 +1,4 @@
-﻿using FFMpegCore;
+using FFMpegCore;
 using SkiaSharp;
 using System.Drawing;
 using Tagium.Core.Helpers;
@@ -41,18 +41,51 @@ public class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
-        string ffmpegPath = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
-        string ffprobePath = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
+        // Try to locate ffmpeg and ffprobe
+        string? ffmpegPath = null;
+        string? ffprobePath = null;
 
-        _hasFFmpeg = File.Exists(ffmpegPath) && File.Exists(ffprobePath);
+        // First check application directory
+        string appDirFfmpeg = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+        string appDirFfprobe = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
+
+        if (File.Exists(appDirFfmpeg) && File.Exists(appDirFfprobe))
+        {
+            ffmpegPath = appDirFfmpeg;
+            ffprobePath = appDirFfprobe;
+        }
+        else
+        {
+            // Fallback to searching in PATH
+            string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+            if (!string.IsNullOrEmpty(pathEnv))
+            {
+                string[] paths = pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+                foreach (string dir in paths)
+                {
+                    string candidateFfmpeg = Path.Combine(dir, "ffmpeg.exe");
+                    string candidateFfprobe = Path.Combine(dir, "ffprobe.exe");
+                    if (File.Exists(candidateFfmpeg) && File.Exists(candidateFfprobe))
+                    {
+                        ffmpegPath = candidateFfmpeg;
+                        ffprobePath = candidateFfprobe;
+                        break;
+                    }
+                }
+            }
+        }
+
+        _hasFFmpeg = ffmpegPath != null && ffprobePath != null;
 
         if (!_hasFFmpeg)
         {
-            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails disabled.");
+            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found (neither in app directory nor in PATH). Video thumbnails disabled.");
             return;
         }
 
-        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = AppContext.BaseDirectory });
+        // Configure FFMpegCore to use the correct binary folder
+        string binaryFolder = Path.GetDirectoryName(ffmpegPath)!;
+        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
     }
 
     public string GetThumbnailPath(Guid fileId)
