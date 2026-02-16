@@ -14,6 +14,9 @@
     <div class="preview-container">
         @if (!File.IsMissing)
         {
+            @* Ambient Background Layer (Uses low-res thumbnail for performance) *@
+            <img src="tagium://thumbnail/@File.Id" class="preview-bg" alt="" aria-hidden="true" />
+
             @if (IsImage)
             {
                 <img src="tagium://preview/@File.Id" class="preview-media" />
@@ -91,57 +94,23 @@
     </div>
 </div>
 
-@code {
-    [Parameter, EditorRequired] public required FileEntry File { get; set; }
-    [Parameter] public List<Tag> AssignedTags { get; set; } = [];
-    [Parameter] public List<Tag> AvailableTags { get; set; } = [];
-
-    private bool IsImage => CheckExtension([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
-    private bool IsVideo => CheckExtension([".mp4", ".webm", ".mov", ".mkv"]);
-
-    private bool CheckExtension(string[] exts)
-    {
-        string ext = Path.GetExtension(File.Path);
-        return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private void AddTag(Guid tagId)
-    {
-        Library.AddTagToFile(File.Id, tagId);
-    }
-
-    private void RemoveTag(Guid tagId)
-    {
-        Library.RemoveTagFromFile(File.Id, tagId);
-    }
-
-    private void OpenFile()
-    {
-        SystemLauncherService.OpenFile(File.Path);
-    }
-
-    private void ShowInExplorer()
-    {
-        SystemLauncherService.ShowInExplorer(File.Path);
-    }
-
-    private void RemoveFile()
-    {
-        Library.RemoveFile(File.Id);
-        AppState.ClearSelection();
-    }
-
+@code{
     private void RelocateFile()
     {
-        var files = FileDialogService.OpenFiles();
-        if (files is not null && files.Length > 0)
-        {
-            var result = Library.RelocateFile(File.Id, files[0]);
+        string[]? files = FileDialogService.OpenFiles();
 
-            if (result.Status == RelocateResultStatus.Duplicate && result.ConflictingFile is not null)
-            {
-                ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
-            }
+        if (files is null || files.Length == 0)
+        {
+            return;
         }
+
+        RelocateResult result = Library.RelocateFile(File.Id, files[0]);
+
+        if (result.Status != RelocateResultStatus.Duplicate || result.ConflictingFile is null)
+        {
+            return;
+        }
+
+        ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
     }
 }
