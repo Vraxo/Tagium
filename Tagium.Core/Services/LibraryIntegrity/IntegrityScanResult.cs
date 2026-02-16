@@ -1,4 +1,4 @@
-﻿namespace Tagium.Core.Services.LibraryItengrity;
+﻿namespace Tagium.Core.Services.LibraryIntegrity;
 
 public class IntegrityScanResult
 {

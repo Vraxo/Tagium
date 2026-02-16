@@ -10,6 +10,7 @@ public static class SchemeHandlers
 {
     public static IServiceProvider? ServiceProvider { get; set; }
 
+    [Obsolete]
     public static Stream HandleTagiumScheme(object sender, string scheme, string url, out string contentType)
     {
         contentType = "text/plain";
@@ -23,6 +24,7 @@ public static class SchemeHandlers
         return uri.Host.Equals("preview", StringComparison.OrdinalIgnoreCase) ? HandlePreview(uri, out contentType) : Stream.Null;
     }
 
+    [Obsolete]
     private static Stream HandleThumbnail(Uri uri, out string contentType)
     {
         contentType = "image/png";

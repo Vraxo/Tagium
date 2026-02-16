@@ -53,13 +53,17 @@ public class LibraryService
         SortBy sort = _settingsManager.Current.FileSortBy;
         SortDirection dir = _settingsManager.Current.FileSortDirection;
 
-        return missingOnly
-            ? _fileRepo.GetFilesWithTags(sort, dir, true)
-                .Where(f => f.IsMissing)
-                .ToList()
-            : string.IsNullOrWhiteSpace(searchText)
-            ? _fileRepo.GetFilesWithTags(sort, dir)
-            : _searchRepo.Search(searchText, sort, dir);
+        if (missingOnly)
+        {
+            return [.. _fileRepo.GetFilesWithTags(sort, dir, true)
+                .Where(f => f.IsMissing)];
+        }
+        else
+        {
+            return string.IsNullOrWhiteSpace(searchText)
+                ? _fileRepo.GetFilesWithTags(sort, dir)
+                : _searchRepo.Search(searchText, sort, dir);
+        }
     }
 
     public FileEntry? GetFileById(Guid id)
@@ -81,18 +85,21 @@ public class LibraryService
         }
 
         string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
+
         if (newHash is null)
         {
             return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
         FileEntry? existing = _fileRepo.GetByHash(newHash);
+
         if (existing is not null && existing.Id != fileId)
         {
             return new RelocateResult(RelocateResultStatus.Duplicate, existing);
         }
 
         FileEntry? file = _fileRepo.GetById(fileId);
+
         if (file is null)
         {
             return new RelocateResult(RelocateResultStatus.Error, null);
@@ -113,13 +120,14 @@ public class LibraryService
 
     public void RemoveFile(Guid fileId)
     {
-        var file = _fileRepo.GetById(fileId);
+        FileEntry? file = _fileRepo.GetById(fileId);
+
         if (file is null)
         {
             return;
         }
 
-        var tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
 
         _undoService.Push(new FileDeletionUndoCommand(
             _fileRepo,
@@ -133,7 +141,8 @@ public class LibraryService
 
     public void RemoveFiles(IEnumerable<Guid> fileIds)
     {
-        var idsList = fileIds.ToList();
+        List<Guid> idsList = fileIds.ToList();
+
         if (idsList.Count == 0)
         {
             return;
@@ -143,12 +152,15 @@ public class LibraryService
 
         foreach (var id in idsList)
         {
-            var file = _fileRepo.GetById(id);
-            if (file is not null)
+            FileEntry? file = _fileRepo.GetById(id);
+
+            if (file is null)
             {
-                var tags = _fileTagRepo.GetTagIdsForFile(id);
-                deletedItems.Add((file, tags));
+                continue;
             }
+
+            List<Guid> tags = _fileTagRepo.GetTagIdsForFile(id);
+            deletedItems.Add((file, tags));
         }
 
         if (deletedItems.Count != 0)
@@ -190,13 +202,15 @@ public class LibraryService
 
     public void AddTagToFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<Guid> ids = fileIds.ToList();
+        List<Guid> ids = [.. fileIds];
+
         if (ids.Count == 0)
         {
             return;
         }
 
         List<Guid> modifiedFiles = [];
+
         foreach (Guid id in ids)
         {
             List<Guid> existing = _fileTagRepo.GetTagIdsForFile(id);
@@ -243,7 +257,8 @@ public class LibraryService
 
     public void RemoveTagFromFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<Guid> ids = fileIds.ToList();
+        List<Guid> ids = [.. fileIds];
+
         if (ids.Count == 0)
         {
             return;
@@ -298,7 +313,7 @@ public class LibraryService
             return [];
         }
 
-        HashSet<Guid> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
+        HashSet<Guid> commonIds = [.. _fileTagRepo.GetTagIdsForFile(ids[0])];
 
         for (int i = 1; i < ids.Count; i++)
         {

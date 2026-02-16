@@ -1,5 +1,5 @@
-using Tagium.Photino.Blazor.Components.Shared;
 using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Components.Shared;
 
 namespace Tagium.Photino.Blazor.Components.Views;
 

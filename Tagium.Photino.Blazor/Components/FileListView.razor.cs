@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Components.Web;
-using Microsoft.JSInterop;
 using Tagium.Core.Models;
 using Tagium.Photino.Blazor.Services;
 

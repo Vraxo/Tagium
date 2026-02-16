@@ -2,7 +2,7 @@
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
-namespace Tagium.Core.Services.LibraryItengrity;
+namespace Tagium.Core.Services.LibraryIntegrity;
 
 public class LibraryIntegrityService
 {

@@ -4676,6 +4676,13 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Inspectors\Component.razor`
+
+```
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor`
 
 ```
@@ -5208,6 +5215,9 @@ h4 {
     <div class="preview-container">
         @if (!File.IsMissing)
         {
+            @* Ambient Background Layer (Uses low-res thumbnail for performance) *@
+            <img src="tagium://thumbnail/@File.Id" class="preview-bg" alt="" aria-hidden="true" />
+
             @if (IsImage)
             {
                 <img src="tagium://preview/@File.Id" class="preview-media" />
@@ -5285,57 +5295,41 @@ h4 {
     </div>
 </div>
 
-<style>
-    .single-inspector {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-    .preview-container {
-        flex: 1 1 0;
-        min-height: 0;
-        width: 100%;
-        background: var(--panel-bg);
-    }
-    .preview-video-thumbnail {
-        position: relative;
-        cursor: pointer;
-        height: 100%;
-        width: 100%;
-        background: var(--panel-bg);
-    }
-    .play-overlay {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background-color: rgba(0, 0, 0, 0.6);
-        color: white;
-        font-size: 3rem;
-        width: 4rem;
-        height: 4rem;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        pointer-events: none;
-    }
-    .preview-media {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .missing-warning,
-    .actions-row,
-    .prop-row,
-    hr,
-    h4,
-    .tags-container {
-        flex-shrink: 0;
-    }
-</style>
+@code{
+    private void RelocateFile()
+    {
+        string[]? files = FileDialogService.OpenFiles();
 
-@code {
+        if (files is null || files.Length == 0)
+        {
+            return;
+        }
+
+        RelocateResult result = Library.RelocateFile(File.Id, files[0]);
+
+        if (result.Status != RelocateResultStatus.Duplicate || result.ConflictingFile is null)
+        {
+            return;
+        }
+
+        ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components.Inspectors;
+
+public partial class SingleFileInspector
+{
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
     [Parameter] public List<Tag> AssignedTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
@@ -5374,20 +5368,6 @@ h4 {
         Library.RemoveFile(File.Id);
         AppState.ClearSelection();
     }
-
-    private void RelocateFile()
-    {
-        var files = FileDialogService.OpenFiles();
-        if (files is not null && files.Length > 0)
-        {
-            var result = Library.RelocateFile(File.Id, files[0]);
-
-            if (result.Status == RelocateResultStatus.Duplicate && result.ConflictingFile is not null)
-            {
-                ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
-            }
-        }
-    }
 }
 ```
 
@@ -5396,11 +5376,20 @@ h4 {
 ### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor.css`
 
 ```css
+.single-inspector {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    /* Variables for blur control */
+    --blur-radius: 20px;
+    --bg-opacity: 0.5;
+}
+
 .preview-container {
+    flex: 1 1 0;
+    min-height: 200px;
     width: 100%;
-    max-width: 100%; /* Prevent overflow in constrained flex containers */
-    aspect-ratio: 16 / 9;
-    background: #000;
+    background: #000; /* Fallback for transparency */
     border-radius: 6px;
     margin-bottom: 10px;
     overflow: hidden;
@@ -5408,22 +5397,82 @@ h4 {
     justify-content: center;
     align-items: center;
     border: 1px solid var(--border-color);
+    position: relative;
+    z-index: 0;
+}
+
+/* Blurred Background Layer */
+.preview-bg {
+    position: absolute;
+    top: -10%;
+    left: -10%;
+    width: 120%; /* Expand slightly to avoid blurred edge vignetting */
+    height: 120%;
+    object-fit: cover;
+    filter: blur(var(--blur-radius));
+    opacity: var(--bg-opacity);
+    z-index: 0;
+    pointer-events: none;
+}
+
+.preview-video-thumbnail {
+    position: relative;
+    cursor: pointer;
+    height: 100%;
+    width: 100%;
+    background: transparent;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1; /* Sit above background */
 }
 
 .preview-media {
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
+    position: relative;
+    z-index: 1; /* Sit above background */
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5)); /* Pop off the background */
+}
+
+.play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 3rem;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
 }
 
 .preview-placeholder {
-    font-size: 2em;
+    font-size: 3em;
     color: var(--border-color);
+    position: relative;
+    z-index: 1;
 }
 
     .preview-placeholder.error {
         color: var(--danger-color);
     }
+
+.missing-warning,
+.actions-row,
+.prop-row,
+hr,
+h4,
+.tags-container {
+    flex-shrink: 0;
+}
 
 .prop-row {
     margin-bottom: 8px;
@@ -5521,7 +5570,7 @@ h4 {
 
 .tag-pill {
     background: var(--surface-bg);
-    padding: 3px 6px; /* Increased from 2px for better optical centering */
+    padding: 3px 6px;
     border-radius: 12px;
     font-size: var(--font-size-xs);
     cursor: pointer;
@@ -5530,7 +5579,7 @@ h4 {
     user-select: none;
     border: 1px solid var(--border-color);
     transition: background-color 0.1s;
-    line-height: 1; /* Force consistent baseline */
+    line-height: 1;
 }
 
     .tag-pill:hover {
@@ -5541,7 +5590,7 @@ h4 {
         margin-left: 4px;
         color: var(--danger-color);
         font-weight: bold;
-        display: flex; /* Ensure perfect vertical alignment */
+        display: flex;
         align-items: center;
         line-height: 1;
     }
@@ -5558,7 +5607,6 @@ h4 {
             opacity: 1;
         }
 
-/* Subtle separator styling */
 hr {
     border: 0;
     height: 1px;
@@ -5566,7 +5614,6 @@ hr {
     margin: 10px 0;
 }
 
-/* Natural, readable section headings */
 h4 {
     font-size: var(--font-size-sm);
     font-weight: normal;

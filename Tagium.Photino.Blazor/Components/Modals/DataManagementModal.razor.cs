@@ -1,5 +1,5 @@
 using Tagium.Core.Services.DataMerge;
-using Tagium.Core.Services.LibraryItengrity;
+using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Photino.Blazor.Services.Toasting;
 
 namespace Tagium.Photino.Blazor.Components.Modals;

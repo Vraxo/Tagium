@@ -71,7 +71,9 @@ public partial class FileInspector
                     var id = selectedIds[0];
                     var file = Library.GetFileWithTagsById(id);
                     if (file is null)
+                    {
                         return;
+                    }
 
                     var assigned = file.Tags ?? [];
                     var available = GetAvailableTags(assigned);
@@ -79,7 +81,11 @@ public partial class FileInspector
                     // Update UI on UI thread
                     await InvokeAsync(() =>
                     {
-                        if (token.IsCancellationRequested) return;
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
                         SelectionMode = InspectorMode.Single;
                         SelectedFile = file;
                         AssignedTags = assigned;
@@ -94,7 +100,11 @@ public partial class FileInspector
 
                     await InvokeAsync(() =>
                     {
-                        if (token.IsCancellationRequested) return;
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
                         SelectionMode = InspectorMode.Multi;
                         SelectedFile = null;
                         CommonTags = common;
@@ -120,7 +130,9 @@ public partial class FileInspector
         finally
         {
             if (_cts == cts)
+            {
                 _cts = null;
+            }
         }
     }
 

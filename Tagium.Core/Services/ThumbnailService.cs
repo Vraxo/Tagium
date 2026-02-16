@@ -1,6 +1,5 @@
 using FFMpegCore;
 using SkiaSharp;
-using System.Drawing;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
@@ -41,11 +40,9 @@ public class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
-        // Try to locate ffmpeg and ffprobe
         string? ffmpegPath = null;
         string? ffprobePath = null;
 
-        // First check application directory
         string appDirFfmpeg = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
         string appDirFfprobe = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
 
@@ -56,7 +53,6 @@ public class ThumbnailService
         }
         else
         {
-            // Fallback to searching in PATH
             string? pathEnv = Environment.GetEnvironmentVariable("PATH");
             if (!string.IsNullOrEmpty(pathEnv))
             {
@@ -83,7 +79,6 @@ public class ThumbnailService
             return;
         }
 
-        // Configure FFMpegCore to use the correct binary folder
         string binaryFolder = Path.GetDirectoryName(ffmpegPath)!;
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
     }
@@ -98,6 +93,7 @@ public class ThumbnailService
         return File.Exists(GetThumbnailPath(fileId));
     }
 
+    [Obsolete]
     public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultSize)
     {
         string destPath = GetThumbnailPath(file.Id);
@@ -123,6 +119,7 @@ public class ThumbnailService
         }
     }
 
+    [Obsolete]
     private static async Task TryGenerateThumbnailAsync(string sourcePath, string destPath, int size)
     {
         string extension = Path.GetExtension(sourcePath);
@@ -141,6 +138,7 @@ public class ThumbnailService
         }
     }
 
+    [Obsolete]
     private static async Task<bool> TryGenerateImageAsync(string sourcePath, string destPath, int size)
     {
         using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath));
@@ -154,6 +152,7 @@ public class ThumbnailService
         return true;
     }
 
+    [Obsolete]
     private static async Task<bool> TryGenerateVideoAsync(string sourcePath, string destPath, int size)
     {
         try
@@ -208,7 +207,6 @@ public class ThumbnailService
 
         try
         {
-            // Pass null for size to get the original frame dimensions
             _ = await FFMpeg.SnapshotAsync(sourcePath, tempPath, null, captureTime);
             return File.Exists(tempPath) ? tempPath : null;
         }
@@ -219,6 +217,7 @@ public class ThumbnailService
         }
     }
 
+    [Obsolete]
     private static async Task<bool> ProcessSnapshotAsync(string tempPath, string destPath, int size)
     {
         try
@@ -285,21 +284,17 @@ public class ThumbnailService
     [Obsolete]
     private static void SaveResized(SKBitmap original, string destPath, int size)
     {
-        // Create a square canvas
         using SKBitmap square = new(size, size);
         using SKCanvas canvas = new(square);
 
-        // Fill with dark background (approx panel background)
-        canvas.Clear(new SKColor(30, 30, 30)); // #1e1e1e
+        canvas.Clear(new SKColor(30, 30, 30));
 
-        // Calculate dimensions to fit while preserving aspect ratio
         double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
         int drawWidth = (int)(original.Width * ratio);
         int drawHeight = (int)(original.Height * ratio);
         int x = (size - drawWidth) / 2;
         int y = (size - drawHeight) / 2;
 
-        // Resize original to fit
         SKImageInfo info = new(drawWidth, drawHeight);
         using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
 
@@ -308,7 +303,6 @@ public class ThumbnailService
             return;
         }
 
-        // Draw resized image centered on canvas
         canvas.DrawBitmap(resized, x, y);
 
         using SKImage image = SKImage.FromBitmap(square);

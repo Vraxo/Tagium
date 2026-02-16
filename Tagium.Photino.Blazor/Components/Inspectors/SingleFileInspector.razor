@@ -111,6 +111,8 @@
             return;
         }
 
-        ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
+        ModalService.Show(
+            "Duplicate File Found",
+            @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
     }
 }

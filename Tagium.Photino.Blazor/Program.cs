@@ -6,6 +6,7 @@ namespace Tagium.Photino.Blazor;
 public class Program
 {
     [STAThread]
+    [Obsolete]
     private static void Main(string[] args)
     {
         PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
