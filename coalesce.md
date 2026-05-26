@@ -866,107 +866,60 @@ public class Tag
 
 ---
 
-### `Tagium.Core\Services\ImportService.cs`
+### `Tagium.Core\Services\FFmpegLocator.cs`
 
 ```csharp
-using Tagium.Core.Data;
-using Tagium.Core.Helpers;
-using Tagium.Core.Models;
-
 namespace Tagium.Core.Services;
 
-public record ImportResult(AddFileResult Status, FileEntry? Entry);
-
-public class ImportService
+internal static class FFmpegLocator
 {
-    private readonly FileRepository _fileRepo;
-    private readonly ThumbnailService _thumbnailService;
-
-    public event Action<int, int, int>? ImportCompleted;
-    public event Action<int, int>? ImportProgress;
-
-    public ImportService(FileRepository fileRepo, ThumbnailService thumbnailService)
+    public static string? Find()
     {
-        _fileRepo = fileRepo;
-        _thumbnailService = thumbnailService;
+        string? ffmpegPath = FindInAppDirectory() ?? FindInPath();
+
+        return ffmpegPath is not null && HasCompanionFfprobe(ffmpegPath)
+            ? ffmpegPath : null;
     }
 
-    [Obsolete]
-    public async Task<ImportResult> ImportAsync(string path)
+    private static string? FindInAppDirectory()
     {
-        string? hash = await FileHasher.ComputeSha256Async(path);
-        if (hash is null)
-        {
-            return new ImportResult(AddFileResult.Error, null);
-        }
+        string ffmpeg = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
 
-        FileEntry? existing = _fileRepo.GetByHash(hash);
-        if (existing is not null)
-        {
-            return new ImportResult(AddFileResult.Duplicate, existing);
-        }
-
-        AddFileResult result = _fileRepo.Add(path, hash);
-
-        if (result == AddFileResult.Success)
-        {
-            FileEntry? newEntry = _fileRepo.GetByHash(hash);
-
-            if (newEntry is not null)
-            {
-                await _thumbnailService.GenerateThumbnailAsync(newEntry);
-            }
-
-            return new ImportResult(AddFileResult.Success, newEntry);
-        }
-
-        return new ImportResult(result, null);
+        return File.Exists(ffmpeg)
+            ? ffmpeg
+            : null;
     }
 
-    [Obsolete]
-    public async Task ImportBatchAsync(string[] paths)
+    private static string? FindInPath()
     {
-        if (paths.Length == 0)
+        string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+
+        if (string.IsNullOrEmpty(pathEnv))
         {
-            ImportCompleted?.Invoke(0, 0, 0);
-            return;
+            return null;
         }
 
-        const int MaxParallelism = 4;
-        using var semaphore = new SemaphoreSlim(MaxParallelism);
+        string[] paths = pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
 
-        var tasks = paths.Select(async (path, index) =>
+        foreach (string dir in paths)
         {
-            await semaphore.WaitAsync();
-            try
+            string candidate = Path.Combine(dir, "ffmpeg.exe");
+
+            if (File.Exists(candidate))
             {
-                if (!File.Exists(path))
-                {
-                    return (Status: AddFileResult.Error, Entry: null);
-                }
-
-                var result = await ImportAsync(path);
-
-                if ((index + 1) % 10 == 0 || index == paths.Length - 1)
-                {
-                    ImportProgress?.Invoke(index + 1, paths.Length);
-                }
-
-                return (result.Status, result.Entry);
+                return candidate;
             }
-            finally
-            {
-                _ = semaphore.Release();
-            }
-        }).ToList();
+        }
 
-        var results = await Task.WhenAll(tasks);
+        return null;
+    }
 
-        int added = results.Count(r => r.Status == AddFileResult.Success);
-        int duplicates = results.Count(r => r.Status == AddFileResult.Duplicate);
-        int errors = results.Count(r => r.Status == AddFileResult.Error);
+    private static bool HasCompanionFfprobe(string ffmpegPath)
+    {
+        string dir = Path.GetDirectoryName(ffmpegPath)!;
+        string ffprobe = Path.Combine(dir, "ffprobe.exe");
 
-        ImportCompleted?.Invoke(added, duplicates, errors);
+        return File.Exists(ffprobe);
     }
 }
 ```
@@ -1031,13 +984,17 @@ public class LibraryService
         SortBy sort = _settingsManager.Current.FileSortBy;
         SortDirection dir = _settingsManager.Current.FileSortDirection;
 
-        return missingOnly
-            ? _fileRepo.GetFilesWithTags(sort, dir, true)
-                .Where(f => f.IsMissing)
-                .ToList()
-            : string.IsNullOrWhiteSpace(searchText)
-            ? _fileRepo.GetFilesWithTags(sort, dir)
-            : _searchRepo.Search(searchText, sort, dir);
+        if (missingOnly)
+        {
+            return [.. _fileRepo.GetFilesWithTags(sort, dir, true)
+                .Where(f => f.IsMissing)];
+        }
+        else
+        {
+            return string.IsNullOrWhiteSpace(searchText)
+                ? _fileRepo.GetFilesWithTags(sort, dir)
+                : _searchRepo.Search(searchText, sort, dir);
+        }
     }
 
     public FileEntry? GetFileById(Guid id)
@@ -1059,18 +1016,21 @@ public class LibraryService
         }
 
         string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
+
         if (newHash is null)
         {
             return new RelocateResult(RelocateResultStatus.Error, null);
         }
 
         FileEntry? existing = _fileRepo.GetByHash(newHash);
+
         if (existing is not null && existing.Id != fileId)
         {
             return new RelocateResult(RelocateResultStatus.Duplicate, existing);
         }
 
         FileEntry? file = _fileRepo.GetById(fileId);
+
         if (file is null)
         {
             return new RelocateResult(RelocateResultStatus.Error, null);
@@ -1091,13 +1051,14 @@ public class LibraryService
 
     public void RemoveFile(Guid fileId)
     {
-        var file = _fileRepo.GetById(fileId);
+        FileEntry? file = _fileRepo.GetById(fileId);
+
         if (file is null)
         {
             return;
         }
 
-        var tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
 
         _undoService.Push(new FileDeletionUndoCommand(
             _fileRepo,
@@ -1111,7 +1072,8 @@ public class LibraryService
 
     public void RemoveFiles(IEnumerable<Guid> fileIds)
     {
-        var idsList = fileIds.ToList();
+        List<Guid> idsList = fileIds.ToList();
+
         if (idsList.Count == 0)
         {
             return;
@@ -1121,12 +1083,15 @@ public class LibraryService
 
         foreach (var id in idsList)
         {
-            var file = _fileRepo.GetById(id);
-            if (file is not null)
+            FileEntry? file = _fileRepo.GetById(id);
+
+            if (file is null)
             {
-                var tags = _fileTagRepo.GetTagIdsForFile(id);
-                deletedItems.Add((file, tags));
+                continue;
             }
+
+            List<Guid> tags = _fileTagRepo.GetTagIdsForFile(id);
+            deletedItems.Add((file, tags));
         }
 
         if (deletedItems.Count != 0)
@@ -1168,13 +1133,15 @@ public class LibraryService
 
     public void AddTagToFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<Guid> ids = fileIds.ToList();
+        List<Guid> ids = [.. fileIds];
+
         if (ids.Count == 0)
         {
             return;
         }
 
         List<Guid> modifiedFiles = [];
+
         foreach (Guid id in ids)
         {
             List<Guid> existing = _fileTagRepo.GetTagIdsForFile(id);
@@ -1221,7 +1188,8 @@ public class LibraryService
 
     public void RemoveTagFromFiles(IEnumerable<Guid> fileIds, Guid tagId)
     {
-        List<Guid> ids = fileIds.ToList();
+        List<Guid> ids = [.. fileIds];
+
         if (ids.Count == 0)
         {
             return;
@@ -1276,7 +1244,7 @@ public class LibraryService
             return [];
         }
 
-        HashSet<Guid> commonIds = _fileTagRepo.GetTagIdsForFile(ids[0]).ToHashSet();
+        HashSet<Guid> commonIds = [.. _fileTagRepo.GetTagIdsForFile(ids[0])];
 
         for (int i = 1; i < ids.Count; i++)
         {
@@ -1341,90 +1309,50 @@ public enum RelocateResultStatus { Success, Duplicate, Error, NotFound }
 ```csharp
 using FFMpegCore;
 using SkiaSharp;
-using System.Drawing;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
 
-public class ThumbnailService
+public sealed class ThumbnailService
 {
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
 
-    private const int DefaultSize = 800;
+    private const int DefaultThumbnailSize = 800;
     private const int PngQuality = 85;
     private const int VideoEarlyCaptureSeconds = 5;
     private const int VideoDurationThresholdSeconds = 10;
     private const double VideoLateCaptureRatio = 0.1;
 
+    private static readonly SKColor PlaceholderBackgroundColor = new(30, 30, 30);
+    private static readonly SKColor ErrorColor = SKColors.DarkRed;
+    private static readonly SKColor VideoColor = SKColors.DarkSlateBlue;
+    private static readonly SKColor GenericColor = SKColors.Gray;
+
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".bmp",
-        ".gif",
-        ".webp"
+        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"
     };
 
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".mp4",
-        ".mkv",
-        ".mov",
-        ".avi",
-        ".wmv",
-        ".webm"
+        ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm"
     };
 
     public ThumbnailService()
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
-        // Try to locate ffmpeg and ffprobe
-        string? ffmpegPath = null;
-        string? ffprobePath = null;
-
-        // First check application directory
-        string appDirFfmpeg = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
-        string appDirFfprobe = Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
-
-        if (File.Exists(appDirFfmpeg) && File.Exists(appDirFfprobe))
-        {
-            ffmpegPath = appDirFfmpeg;
-            ffprobePath = appDirFfprobe;
-        }
-        else
-        {
-            // Fallback to searching in PATH
-            string? pathEnv = Environment.GetEnvironmentVariable("PATH");
-            if (!string.IsNullOrEmpty(pathEnv))
-            {
-                string[] paths = pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-                foreach (string dir in paths)
-                {
-                    string candidateFfmpeg = Path.Combine(dir, "ffmpeg.exe");
-                    string candidateFfprobe = Path.Combine(dir, "ffprobe.exe");
-                    if (File.Exists(candidateFfmpeg) && File.Exists(candidateFfprobe))
-                    {
-                        ffmpegPath = candidateFfmpeg;
-                        ffprobePath = candidateFfprobe;
-                        break;
-                    }
-                }
-            }
-        }
-
-        _hasFFmpeg = ffmpegPath != null && ffprobePath != null;
+        string? ffmpegPath = FFmpegLocator.Find();
+        _hasFFmpeg = ffmpegPath is not null;
 
         if (!_hasFFmpeg)
         {
-            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found (neither in app directory nor in PATH). Video thumbnails disabled.");
+            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails disabled.");
             return;
         }
 
-        // Configure FFMpegCore to use the correct binary folder
         string binaryFolder = Path.GetDirectoryName(ffmpegPath)!;
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
     }
@@ -1439,52 +1367,47 @@ public class ThumbnailService
         return File.Exists(GetThumbnailPath(fileId));
     }
 
-    public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultSize)
+    public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultThumbnailSize, CancellationToken cancellationToken = default)
     {
         string destPath = GetThumbnailPath(file.Id);
 
-        if (File.Exists(destPath))
-        {
-            return;
-        }
-
-        if (!File.Exists(file.Path))
+        if (File.Exists(destPath) || !File.Exists(file.Path))
         {
             return;
         }
 
         try
         {
-            await TryGenerateThumbnailAsync(file.Path, destPath, size);
+            await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
-            GeneratePlaceholder(destPath, size, "ERR", SKColors.DarkRed);
+            GeneratePlaceholder(destPath, size, "ERR", ErrorColor);
         }
     }
 
-    private static async Task TryGenerateThumbnailAsync(string sourcePath, string destPath, int size)
+    private async Task TryGenerateThumbnailAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
     {
-        string extension = Path.GetExtension(sourcePath);
+        string extension = Path.GetExtension(sourcePath).ToLowerInvariant();
 
-        bool success = extension.ToLowerInvariant() switch
+        bool success = extension switch
         {
-            var e when ImageExtensions.Contains(e) => await TryGenerateImageAsync(sourcePath, destPath, size),
-            var e when VideoExtensions.Contains(e) => await TryGenerateVideoAsync(sourcePath, destPath, size),
+            var e when ImageExtensions.Contains(e) => await TryGenerateImageAsync(sourcePath, destPath, size, cancellationToken),
+            var e when VideoExtensions.Contains(e) => await TryGenerateVideoAsync(sourcePath, destPath, size, cancellationToken),
             _ => false
         };
 
         if (!success)
         {
             string label = extension.TrimStart('.').ToUpperInvariant();
-            GeneratePlaceholder(destPath, size, label, SKColors.Gray);
+            GeneratePlaceholder(destPath, size, label, GenericColor);
         }
     }
 
-    private static async Task<bool> TryGenerateImageAsync(string sourcePath, string destPath, int size)
+    private static async Task<bool> TryGenerateImageAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
     {
-        using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath));
+        using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath), cancellationToken);
 
         if (original is null)
         {
@@ -1495,26 +1418,32 @@ public class ThumbnailService
         return true;
     }
 
-    private static async Task<bool> TryGenerateVideoAsync(string sourcePath, string destPath, int size)
+    private async Task<bool> TryGenerateVideoAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
     {
+        if (!_hasFFmpeg)
+        {
+            GeneratePlaceholder(destPath, size, "VIDEO", VideoColor);
+            return true;
+        }
+
         try
         {
             TimeSpan? duration = await AnalyzeDurationAsync(sourcePath);
-
             if (duration is null)
             {
                 return false;
             }
 
             TimeSpan captureTime = CalculateCaptureTime(duration.Value);
-            string? tempFramePath = await ExtractSnapshotAsync(sourcePath, size, captureTime);
+            string? tempFramePath = await ExtractSnapshotAsync(sourcePath, captureTime);
 
-            return tempFramePath is not null && await ProcessSnapshotAsync(tempFramePath, destPath, size);
+            return tempFramePath is not null
+                && await ProcessSnapshotAsync(tempFramePath, destPath, size, cancellationToken);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Thumbnail] Video processing error: {ex.Message}");
-            GeneratePlaceholder(destPath, size, "VIDEO", SKColors.DarkSlateBlue);
+            GeneratePlaceholder(destPath, size, "VIDEO", VideoColor);
             return true;
         }
     }
@@ -1543,14 +1472,13 @@ public class ThumbnailService
         return TimeSpan.FromSeconds(seconds);
     }
 
-    private static async Task<string?> ExtractSnapshotAsync(string sourcePath, int size, TimeSpan captureTime)
+    private static async Task<string?> ExtractSnapshotAsync(string sourcePath, TimeSpan captureTime)
     {
         string tempPath = Path.GetTempFileName() + ".png";
 
         try
         {
-            // Pass null for size to get the original frame dimensions
-            _ = await FFMpeg.SnapshotAsync(sourcePath, tempPath, null, captureTime);
+            await FFMpeg.SnapshotAsync(sourcePath, tempPath, null, captureTime);
             return File.Exists(tempPath) ? tempPath : null;
         }
         catch
@@ -1560,11 +1488,11 @@ public class ThumbnailService
         }
     }
 
-    private static async Task<bool> ProcessSnapshotAsync(string tempPath, string destPath, int size)
+    private static async Task<bool> ProcessSnapshotAsync(string tempPath, string destPath, int size, CancellationToken cancellationToken)
     {
         try
         {
-            using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(tempPath));
+            using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(tempPath), cancellationToken);
 
             if (original is null)
             {
@@ -1580,28 +1508,37 @@ public class ThumbnailService
         }
     }
 
-    private static void CleanupTempFile(string path)
+    private static void SaveResized(SKBitmap original, string destPath, int size)
     {
-        try
+        using SKBitmap square = new(size, size);
+        using SKCanvas canvas = new(square);
+
+        canvas.Clear(PlaceholderBackgroundColor);
+
+        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
+        int drawWidth = (int)(original.Width * ratio);
+        int drawHeight = (int)(original.Height * ratio);
+        int x = (size - drawWidth) / 2;
+        int y = (size - drawHeight) / 2;
+
+        SKImageInfo info = new(drawWidth, drawHeight);
+        using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
+
+        if (resized is null)
         {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
+            return;
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Thumbnail] Failed to cleanup temp file {path}: {ex.Message}");
-        }
+
+        canvas.DrawBitmap(resized, x, y);
+        EncodeAndSave(square, destPath);
     }
 
-    [Obsolete]
-    private static void GeneratePlaceholder(string destPath, int size, string text, SKColor color)
+    private static void GeneratePlaceholder(string destPath, int size, string text, SKColor backgroundColor)
     {
         using SKBitmap bitmap = new(size, size);
         using SKCanvas canvas = new(bitmap);
 
-        canvas.Clear(color);
+        canvas.Clear(backgroundColor);
 
         using SKPaint textPaint = new()
         {
@@ -1615,47 +1552,30 @@ public class ThumbnailService
         float y = (size / 2.0f) + (textPaint.TextSize / 2.0f) - 5;
 
         canvas.DrawText(text, x, y, textPaint);
+        EncodeAndSave(bitmap, destPath);
+    }
 
+    private static void EncodeAndSave(SKBitmap bitmap, string destPath)
+    {
         using SKImage image = SKImage.FromBitmap(bitmap);
         using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
         using FileStream stream = File.OpenWrite(destPath);
-
         data.SaveTo(stream);
     }
 
-    [Obsolete]
-    private static void SaveResized(SKBitmap original, string destPath, int size)
+    private static void CleanupTempFile(string path)
     {
-        // Create a square canvas
-        using SKBitmap square = new(size, size);
-        using SKCanvas canvas = new(square);
-
-        // Fill with dark background (approx panel background)
-        canvas.Clear(new SKColor(30, 30, 30)); // #1e1e1e
-
-        // Calculate dimensions to fit while preserving aspect ratio
-        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
-        int drawWidth = (int)(original.Width * ratio);
-        int drawHeight = (int)(original.Height * ratio);
-        int x = (size - drawWidth) / 2;
-        int y = (size - drawHeight) / 2;
-
-        // Resize original to fit
-        SKImageInfo info = new(drawWidth, drawHeight);
-        using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
-
-        if (resized is null)
+        try
         {
-            return;
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
-
-        // Draw resized image centered on canvas
-        canvas.DrawBitmap(resized, x, y);
-
-        using SKImage image = SKImage.FromBitmap(square);
-        using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
-        using FileStream stream = File.OpenWrite(destPath);
-        data.SaveTo(stream);
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Thumbnail] Failed to cleanup temp file {path}: {ex.Message}");
+        }
     }
 }
 ```
@@ -2180,10 +2100,184 @@ public class MergeResult()
 
 ---
 
+### `Tagium.Core\Services\Import\ImportProgress.cs`
+
+```csharp
+namespace Tagium.Core.Services.Import;
+
+public sealed record ImportProgress(int Processed, int Total);
+```
+
+---
+
+### `Tagium.Core\Services\Import\ImportResult.cs`
+
+```csharp
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+
+namespace Tagium.Core.Services.Import;
+
+public sealed record ImportResult(AddFileResult Status, FileEntry? Entry);
+```
+
+---
+
+### `Tagium.Core\Services\Import\ImportService.cs`
+
+```csharp
+using Tagium.Core.Data;
+using Tagium.Core.Helpers;
+using Tagium.Core.Models;
+
+namespace Tagium.Core.Services.Import;
+
+public sealed class ImportService
+{
+    private readonly FileRepository _fileRepo;
+    private readonly ThumbnailService _thumbnailService;
+
+    public event Action<ImportSummary>? ImportCompleted;
+    public event Action<ImportProgress>? ImportProgress;
+
+    private const int DefaultProgressInterval = 10;
+    private const int MaxParallelImports = 4;
+
+    public ImportService(FileRepository fileRepo, ThumbnailService thumbnailService)
+    {
+        _fileRepo = fileRepo;
+        _thumbnailService = thumbnailService;
+    }
+
+    public async Task<ImportResult> ImportAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string? hash = await FileHasher.ComputeSha256Async(path);
+
+        if (hash is null)
+        {
+            return new(AddFileResult.Error, null);
+        }
+
+        FileEntry? existing = _fileRepo.GetByHash(hash);
+
+        if (existing is not null)
+        {
+            return new(AddFileResult.Duplicate, existing);
+        }
+
+        AddFileResult result = _fileRepo.Add(path, hash);
+
+        if (result != AddFileResult.Success)
+        {
+            return new(result, null);
+        }
+
+        FileEntry? newEntry = _fileRepo.GetByHash(hash);
+
+        if (newEntry is not null)
+        {
+            await _thumbnailService.GenerateThumbnailAsync(newEntry);
+        }
+
+        return new(AddFileResult.Success, newEntry);
+    }
+
+    public async Task ImportBatchAsync(string[] paths, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        if (paths.Length == 0)
+        {
+            ImportCompleted?.Invoke(new ImportSummary(0, 0, 0));
+            return;
+        }
+
+        using SemaphoreSlim semaphore = new(MaxParallelImports);
+        List<AddFileResult> results = new(paths.Length);
+
+        List<Task<AddFileResult>> tasks = [.. paths.Select(async (path, index) =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
+
+            AddFileResult status;
+
+            try
+            {
+                status = await TryImportAsync(path, cancellationToken);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+
+            lock (results)
+            {
+                results.Add(status);
+            }
+
+            if (ShouldReportProgress(index, paths.Length))
+            {
+                ImportProgress?.Invoke(new(index + 1, paths.Length));
+            }
+
+            return status;
+        })];
+
+        await Task.WhenAll(tasks);
+
+        ImportCompleted?.Invoke(CreateSummary(results));
+    }
+
+    private async Task<AddFileResult> TryImportAsync(string path, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path))
+        {
+            return AddFileResult.Error;
+        }
+
+        ImportResult result = await ImportAsync(path, cancellationToken);
+        return result.Status;
+    }
+
+    private static ImportSummary CreateSummary(List<AddFileResult> results)
+    {
+        return new(
+            Added: results.Count(r => r == AddFileResult.Success),
+            Duplicates: results.Count(r => r == AddFileResult.Duplicate),
+            Errors: results.Count(r => r == AddFileResult.Error)
+        );
+    }
+
+    private static bool ShouldReportProgress(int index, int total)
+    {
+        int current = index + 1;
+        bool isInterval = current % DefaultProgressInterval == 0;
+
+        return isInterval || current == total;
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\Import\ImportSummary.cs`
+
+```csharp
+namespace Tagium.Core.Services.Import;
+
+public sealed record ImportSummary(int Added, int Duplicates, int Errors);
+```
+
+---
+
 ### `Tagium.Core\Services\LibraryIntegrity\IntegrityScanResult.cs`
 
 ```csharp
-namespace Tagium.Core.Services.LibraryItengrity;
+namespace Tagium.Core.Services.LibraryIntegrity;
 
 public class IntegrityScanResult
 {
@@ -2202,7 +2296,7 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
-namespace Tagium.Core.Services.LibraryItengrity;
+namespace Tagium.Core.Services.LibraryIntegrity;
 
 public class LibraryIntegrityService
 {
@@ -2444,6 +2538,7 @@ namespace Tagium.Photino.Blazor;
 public class Program
 {
     [STAThread]
+    [Obsolete]
     private static void Main(string[] args)
     {
         PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
@@ -2538,6 +2633,7 @@ public class Program
 ```
 @namespace Tagium.Photino.Blazor.Components
 @using Tagium.Core.Services
+@using Tagium.Core.Services.Import
 @using Tagium.Photino.Blazor.Components.Modals
 @using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Photino.Blazor.Services
@@ -3003,7 +3099,6 @@ public partial class FileGrid : IDisposable
 
 ```csharp
 using Microsoft.AspNetCore.Components.Web;
-using Microsoft.JSInterop;
 using Tagium.Core.Models;
 using Tagium.Photino.Blazor.Services;
 
@@ -3223,12 +3318,13 @@ public partial class FileListView : IDisposable
 @namespace Tagium.Photino.Blazor.Components
 @inherits LayoutComponentBase
 @using Tagium.Core.Services
+@using Tagium.Core.Services.Import
 @using Tagium.Core.Settings
-@using Tagium.Photino.Blazor.Services
-@using Tagium.Photino.Blazor.Components.Modals
-@using Tagium.Photino.Blazor.Components.Views
-@using Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Services.Toasting
 @implements IDisposable
 @inject LibraryService Library
@@ -4422,6 +4518,7 @@ public static class SchemeHandlers
 {
     public static IServiceProvider? ServiceProvider { get; set; }
 
+    [Obsolete]
     public static Stream HandleTagiumScheme(object sender, string scheme, string url, out string contentType)
     {
         contentType = "text/plain";
@@ -4435,6 +4532,7 @@ public static class SchemeHandlers
         return uri.Host.Equals("preview", StringComparison.OrdinalIgnoreCase) ? HandlePreview(uri, out contentType) : Stream.Null;
     }
 
+    [Obsolete]
     private static Stream HandleThumbnail(Uri uri, out string contentType)
     {
         contentType = "image/png";
@@ -4544,7 +4642,8 @@ using Tagium.Core.Data;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
 using Tagium.Core.Services.DataMerge;
-using Tagium.Core.Services.LibraryItengrity;
+using Tagium.Core.Services.Import;
+using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Components.Shared;
@@ -4816,7 +4915,9 @@ public partial class FileInspector
                     var id = selectedIds[0];
                     var file = Library.GetFileWithTagsById(id);
                     if (file is null)
+                    {
                         return;
+                    }
 
                     var assigned = file.Tags ?? [];
                     var available = GetAvailableTags(assigned);
@@ -4824,7 +4925,11 @@ public partial class FileInspector
                     // Update UI on UI thread
                     await InvokeAsync(() =>
                     {
-                        if (token.IsCancellationRequested) return;
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
                         SelectionMode = InspectorMode.Single;
                         SelectedFile = file;
                         AssignedTags = assigned;
@@ -4839,7 +4944,11 @@ public partial class FileInspector
 
                     await InvokeAsync(() =>
                     {
-                        if (token.IsCancellationRequested) return;
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
                         SelectionMode = InspectorMode.Multi;
                         SelectedFile = null;
                         CommonTags = common;
@@ -4865,7 +4974,9 @@ public partial class FileInspector
         finally
         {
             if (_cts == cts)
+            {
                 _cts = null;
+            }
         }
     }
 
@@ -5312,7 +5423,9 @@ h4 {
             return;
         }
 
-        ModalService.Show("Duplicate File Found", @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
+        ModalService.Show(
+            "Duplicate File Found",
+            @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
     }
 }
 ```
@@ -5632,7 +5745,7 @@ h4 {
 @using Tagium.Core.Services
 @using Tagium.Core.Services.DataExport
 @using Tagium.Core.Services.DataMerge
-@using Tagium.Core.Services.LibraryItengrity
+@using Tagium.Core.Services.LibraryIntegrity
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Services.Toasting
 @inject LibraryService Library
@@ -5699,7 +5812,7 @@ h4 {
 
 ```csharp
 using Tagium.Core.Services.DataMerge;
-using Tagium.Core.Services.LibraryItengrity;
+using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Photino.Blazor.Services.Toasting;
 
 namespace Tagium.Photino.Blazor.Components.Modals;
@@ -6097,6 +6210,7 @@ public partial class PreferencesModal
 ```
 @namespace Tagium.Photino.Blazor.Components.Shared
 @using Tagium.Core.Services
+@using Tagium.Core.Services.Import
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
 @inject ImportService ImportService
@@ -6727,8 +6841,8 @@ input[type=range] {
 ### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor.cs`
 
 ```csharp
-using Tagium.Photino.Blazor.Components.Shared;
 using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Components.Shared;
 
 namespace Tagium.Photino.Blazor.Components.Views;
 
