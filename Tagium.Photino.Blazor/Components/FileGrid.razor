@@ -9,34 +9,67 @@
 @inject SystemLauncherService Launcher
 @inject IJSRuntime JS
 
+<style>
+    #file-grid-container {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        overflow-y: auto !important;
+        box-sizing: border-box !important;
+        padding: 16px !important;
+    }
+
+    .file-grid-row {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 16px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        margin-bottom: 16px !important;
+    }
+
+    .file-card {
+        width: var(--thumb-size) !important;
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
+        box-sizing: border-box !important;
+    }
+</style>
+
 <div id="file-grid-container"
      class="grid-container"
      style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
 
-    @foreach (var file in Files)
-    {
-        bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
-        bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+    <Virtualize Items="FileRows" ItemSize="@(Settings.Current.ThumbnailSize + 46)" Context="row">
+        <div class="file-grid-row">
+            @foreach (var file in row)
+            {
+                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+                TriggerThumbnailIfMissing(file, hasThumb);
 
-        <div class="file-card @(isSelected ? "selected" : "")"
-             data-id="@file.Id"
-             @onclick="e => OnCardClick(e, file.Id)"
-             @ondblclick="e => OnCardDoubleClick(e, file)"
-             @onclick:stopPropagation="true">
+                <div class="file-card @(isSelected ? "selected" : "")"
+                     data-id="@file.Id"
+                     @onclick="e => OnCardClick(e, file.Id)"
+                     @ondblclick="e => OnCardDoubleClick(e, file)"
+                     @onclick:stopPropagation="true">
 
-            <div class="thumbnail @(hasThumb ? "" : "broken")">
-                @if (hasThumb)
-                {
-                    <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
-                }
-                else
-                {
-                    <div class="placeholder-icon">📷</div>
-                }
-            </div>
-            <div class="filename" title="@file.Name">
-                @file.Name
-            </div>
+                    <div class="thumbnail @(hasThumb ? "" : "broken")">
+                        @if (hasThumb)
+                        {
+                            <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
+                        }
+                        else
+                        {
+                            <div class="placeholder-icon">📷</div>
+                        }
+                    </div>
+                    <div class="filename" title="@file.Name">
+                        @file.Name
+                    </div>
+                </div>
+            }
         </div>
-    }
+    </Virtualize>
 </div>

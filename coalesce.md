@@ -30,86 +30,159 @@ namespace Tagium.Core.Data;
 
 public class DatabaseManager
 {
-    public string ConnectionString { get; }
+    public string LibraryDbPath { get; }
+    public string CacheDbPath { get; }
 
     public DatabaseManager()
     {
-        string dbPath = AppDataHelper.GetDatabasePath();
-        ConnectionString = $"Data Source={dbPath}";
-        InitializeDatabase();
+        string baseDir = AppDataHelper.GetBaseDirectory();
+        LibraryDbPath = Path.Combine(baseDir, "library.db");
+        CacheDbPath = Path.Combine(baseDir, "cache.db");
+        InitializeDatabases();
     }
 
-    private void InitializeDatabase()
+    public SqliteConnection GetConnection()
     {
-        using SqliteConnection connection = new(ConnectionString);
+        SqliteConnection connection = new($"Data Source={LibraryDbPath}");
         connection.Open();
 
-        using (SqliteCommand walCmd = connection.CreateCommand())
+        using (SqliteCommand cmd = connection.CreateCommand())
         {
-            walCmd.CommandText = "PRAGMA journal_mode = WAL;";
-            _ = walCmd.ExecuteNonQuery();
+            cmd.CommandText = "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;";
+            _ = cmd.ExecuteNonQuery();
         }
 
-        InitializeSchema(connection);
-        MigrateSchema(connection);
+        bool isAttached = false;
+        using (SqliteCommand cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA database_list;";
+            using SqliteDataReader reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                string name = reader.GetString(1);
+                if (string.Equals(name, "cache", StringComparison.OrdinalIgnoreCase))
+                {
+                    isAttached = true;
+                    break;
+                }
+            }
+        }
+
+        if (!isAttached)
+        {
+            using SqliteCommand cmd = connection.CreateCommand();
+            cmd.CommandText = $"ATTACH DATABASE '{CacheDbPath}' AS cache;";
+            _ = cmd.ExecuteNonQuery();
+        }
+
+        return connection;
     }
 
-    private static void InitializeSchema(SqliteConnection connection)
+    private void InitializeDatabases()
     {
-        string schema = @"
-            CREATE TABLE IF NOT EXISTS Tags (
-                Id TEXT PRIMARY KEY,
-                Name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                ColorHex TEXT NOT NULL DEFAULT '#757575',
-                Emoji TEXT NULL
-            );
+        using (SqliteConnection conn = new($"Data Source={LibraryDbPath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                PRAGMA journal_mode = WAL;
+                CREATE TABLE IF NOT EXISTS Tags (
+                    Id TEXT PRIMARY KEY,
+                    Name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    ColorHex TEXT NOT NULL DEFAULT '#757575',
+                    Emoji TEXT NULL,
+                    Category TEXT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS Files (
-                Id TEXT PRIMARY KEY,
-                Path TEXT NOT NULL UNIQUE,
-                Name TEXT NOT NULL DEFAULT '',
-                Hash TEXT NULL,
-                DateAdded INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-                IsMissing INTEGER NOT NULL DEFAULT 0,
-                Size INTEGER NOT NULL DEFAULT 0,
-                ModifiedTime INTEGER NOT NULL DEFAULT 0
-            );
+                CREATE TABLE IF NOT EXISTS TagHierarchy (
+                    ParentTagId TEXT NOT NULL,
+                    ChildTagId TEXT NOT NULL,
+                    FOREIGN KEY(ParentTagId) REFERENCES Tags(Id) ON DELETE CASCADE,
+                    FOREIGN KEY(ChildTagId) REFERENCES Tags(Id) ON DELETE CASCADE,
+                    PRIMARY KEY (ParentTagId, ChildTagId)
+                );
 
-            CREATE TABLE IF NOT EXISTS FileTags (
-                FileId TEXT NOT NULL,
-                TagId TEXT NOT NULL,
-                FOREIGN KEY(FileId) REFERENCES Files(Id) ON DELETE CASCADE,
-                FOREIGN KEY(TagId) REFERENCES Tags(Id) ON DELETE CASCADE,
-                PRIMARY KEY (FileId, TagId)
-            );
+                CREATE TABLE IF NOT EXISTS TagAliases (
+                    Id TEXT PRIMARY KEY,
+                    TagId TEXT NOT NULL,
+                    Alias TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    FOREIGN KEY(TagId) REFERENCES Tags(Id) ON DELETE CASCADE
+                );
 
-            CREATE TABLE IF NOT EXISTS LibraryRoots (
-                Id TEXT PRIMARY KEY,
-                Path TEXT NOT NULL UNIQUE,
-                IsEnabled INTEGER NOT NULL DEFAULT 1,
-                LastScanTime INTEGER NULL
-            );
-        ";
+                CREATE TABLE IF NOT EXISTS LibraryRoots (
+                    Id TEXT PRIMARY KEY,
+                    Path TEXT NOT NULL UNIQUE,
+                    IsEnabled INTEGER NOT NULL DEFAULT 1,
+                    LastScanTime INTEGER NULL
+                );
+            ";
+            _ = cmd.ExecuteNonQuery();
+        }
 
-        using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = schema;
-        _ = command.ExecuteNonQuery();
+        using (SqliteConnection conn = new($"Data Source={CacheDbPath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                PRAGMA journal_mode = WAL;
+                CREATE TABLE IF NOT EXISTS Files (
+                    Id TEXT PRIMARY KEY,
+                    Path TEXT NOT NULL UNIQUE,
+                    Name TEXT NOT NULL DEFAULT '',
+                    Hash TEXT NULL,
+                    DateAdded INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                    IsMissing INTEGER NOT NULL DEFAULT 0,
+                    Size INTEGER NOT NULL DEFAULT 0,
+                    ModifiedTime INTEGER NOT NULL DEFAULT 0,
+                    Rating INTEGER NULL,
+                    Title TEXT NULL,
+                    Description TEXT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS FileTags (
+                    FileId TEXT NOT NULL,
+                    TagId TEXT NOT NULL,
+                    FOREIGN KEY(FileId) REFERENCES Files(Id) ON DELETE CASCADE,
+                    PRIMARY KEY (FileId, TagId)
+                );
+            ";
+            _ = cmd.ExecuteNonQuery();
+        }
+
+        MigrateSchema();
     }
 
-    private static void MigrateSchema(SqliteConnection connection)
+    private void MigrateSchema()
     {
-        string[] columns = ["Size", "ModifiedTime"];
+        using SqliteConnection conn = GetConnection();
+        string[] columns = ["Size", "ModifiedTime", "Rating", "Title", "Description"];
         foreach (string col in columns)
         {
             try
             {
-                using SqliteCommand cmd = connection.CreateCommand();
-                cmd.CommandText = $"ALTER TABLE Files ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0;";
+                using SqliteCommand cmd = conn.CreateCommand();
+                string colType = col switch
+                {
+                    "Rating" => "INTEGER NULL",
+                    "Title" or "Description" => "TEXT NULL",
+                    _ => "INTEGER NOT NULL DEFAULT 0"
+                };
+                cmd.CommandText = $"ALTER TABLE cache.Files ADD COLUMN {col} {colType};";
                 _ = cmd.ExecuteNonQuery();
             }
             catch
             {
             }
+        }
+
+        try
+        {
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "ALTER TABLE Tags ADD COLUMN Category TEXT NULL;";
+            _ = cmd.ExecuteNonQuery();
+        }
+        catch
+        {
         }
     }
 }
@@ -138,13 +211,12 @@ public class FileRepository
     public List<FileEntry> GetAll(SortBy sortBy, SortDirection direction)
     {
         List<FileEntry> files = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = $@"
-            SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files F
+            SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files F
             WHERE EXISTS (
                 SELECT 1 FROM LibraryRoots LR 
                 WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}')
@@ -162,8 +234,7 @@ public class FileRepository
     public List<FileEntry> GetFilesWithTags(SortBy sortBy, SortDirection direction, bool includeMissing = false)
     {
         List<FileEntry> files = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         string orderBy = GetOrderByClause(sortBy, direction);
         string rootFilter = $"EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))";
@@ -173,9 +244,10 @@ public class FileRepository
         cmd.CommandText = $@"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
+                F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
-            FROM Files F
-            LEFT JOIN FileTags FT ON F.Id = FT.FileId
+            FROM cache.Files F
+            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
             LEFT JOIN Tags T ON FT.TagId = T.Id
             {missingFilter}
             GROUP BY F.Id
@@ -186,9 +258,9 @@ public class FileRepository
         {
             FileEntry file = ReadFile(reader);
 
-            if (!reader.IsDBNull(8))
+            if (!reader.IsDBNull(11))
             {
-                string tagData = reader.GetString(8);
+                string tagData = reader.GetString(11);
                 file.Tags = ParseTagData(tagData);
             }
 
@@ -199,16 +271,16 @@ public class FileRepository
 
     public FileEntry? GetFileWithTagsById(Guid id)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
+                F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
-            FROM Files F
-            LEFT JOIN FileTags FT ON F.Id = FT.FileId
+            FROM cache.Files F
+            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
             LEFT JOIN Tags T ON FT.TagId = T.Id
             WHERE F.Id = @Id
             GROUP BY F.Id";
@@ -219,9 +291,9 @@ public class FileRepository
         if (reader.Read())
         {
             FileEntry file = ReadFile(reader);
-            if (!reader.IsDBNull(8))
+            if (!reader.IsDBNull(11))
             {
-                string tagData = reader.GetString(8);
+                string tagData = reader.GetString(11);
                 file.Tags = ParseTagData(tagData);
             }
             return file;
@@ -231,10 +303,9 @@ public class FileRepository
 
     public FileEntry? GetById(Guid id)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Id = @Id";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -243,10 +314,9 @@ public class FileRepository
 
     public FileEntry? GetByHash(string hash)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Hash = @Hash";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Hash = @Hash";
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -256,11 +326,10 @@ public class FileRepository
     public List<FileEntry> GetFilesUnderPath(string rootPath)
     {
         List<FileEntry> files = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
         _ = cmd.Parameters.AddWithValue("@Path", rootPath);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -273,13 +342,12 @@ public class FileRepository
 
     public bool Add(string path, string hash, long size, long modifiedTime)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime) 
-            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime)";
+            INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime, Rating, Title, Description) 
+            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime, NULL, NULL, NULL)";
 
         Guid newId = Guid.NewGuid();
         _ = cmd.Parameters.AddWithValue("@Id", newId.ToString("N"));
@@ -302,13 +370,12 @@ public class FileRepository
 
     public void Restore(FileEntry entry)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime) 
-            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime)";
+            INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description) 
+            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime, @Rating, @Title, @Description)";
 
         _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", entry.Path);
@@ -318,18 +385,21 @@ public class FileRepository
         _ = cmd.Parameters.AddWithValue("@IsMissing", entry.IsMissing ? 1 : 0);
         _ = cmd.Parameters.AddWithValue("@Size", entry.Size);
         _ = cmd.Parameters.AddWithValue("@ModifiedTime", entry.ModifiedTime);
+        _ = cmd.Parameters.AddWithValue("@Rating", (object?)entry.Rating ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Title", (object?)entry.Title ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Description", (object?)entry.Description ?? DBNull.Value);
 
         _ = cmd.ExecuteNonQuery();
     }
 
     public void Update(FileEntry file)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            UPDATE Files 
-            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime 
+            UPDATE cache.Files 
+            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime, 
+                Rating = @Rating, Title = @Title, Description = @Description 
             WHERE Id = @Id";
 
         _ = cmd.Parameters.AddWithValue("@Id", file.Id.ToString("N"));
@@ -339,31 +409,32 @@ public class FileRepository
         _ = cmd.Parameters.AddWithValue("@IsMissing", file.IsMissing ? 1 : 0);
         _ = cmd.Parameters.AddWithValue("@Size", file.Size);
         _ = cmd.Parameters.AddWithValue("@ModifiedTime", file.ModifiedTime);
+        _ = cmd.Parameters.AddWithValue("@Rating", (object?)file.Rating ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Title", (object?)file.Title ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Description", (object?)file.Description ?? DBNull.Value);
 
         _ = cmd.ExecuteNonQuery();
     }
 
     public void Remove(Guid id)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM Files WHERE Id = @Id";
+        cmd.CommandText = "DELETE FROM cache.Files WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
     public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
 
         foreach (Guid id in fileIds)
         {
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.Transaction = trans;
-            cmd.CommandText = "UPDATE Files SET IsMissing = @IsMissing WHERE Id = @Id";
+            cmd.CommandText = "UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id";
             _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
             _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
             _ = cmd.ExecuteNonQuery();
@@ -373,10 +444,9 @@ public class FileRepository
 
     public void RemoveMissingFiles()
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM Files WHERE IsMissing = 1";
+        cmd.CommandText = "DELETE FROM cache.Files WHERE IsMissing = 1";
         _ = cmd.ExecuteNonQuery();
     }
 
@@ -392,6 +462,9 @@ public class FileRepository
             IsMissing = reader.GetBoolean(5),
             Size = reader.GetInt64(6),
             ModifiedTime = reader.GetInt64(7),
+            Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+            Title = reader.IsDBNull(9) ? null : reader.GetString(9),
+            Description = reader.IsDBNull(10) ? null : reader.GetString(10),
             Tags = []
         };
     }
@@ -452,6 +525,11 @@ public class FileSearchRepository
 {
     private readonly DatabaseManager _db;
 
+    private static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "artist", "character", "series", "location", "person", "franchise", "species", "year", "meta"
+    };
+
     public FileSearchRepository(DatabaseManager db)
     {
         _db = db;
@@ -465,39 +543,128 @@ public class FileSearchRepository
         }
 
         string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        List<string> includeTerms = [];
-        List<string> excludeTerms = [];
-
-        foreach (string token in tokens)
-        {
-            if (token.StartsWith('-') && token.Length > 1)
-            {
-                excludeTerms.Add(token[1..]);
-            }
-            else
-            {
-                includeTerms.Add(token);
-            }
-        }
-
-        if (includeTerms.Count == 0 && excludeTerms.Count == 0)
+        if (tokens.Length == 0)
         {
             return [];
         }
 
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
 
         StringBuilder query = new();
-        _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime");
-        _ = query.AppendLine("FROM Files F");
-        _ = query.AppendLine($"WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))");
+        query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime, F.Rating, F.Title, F.Description");
+        query.AppendLine("FROM cache.Files F");
+        query.AppendLine("WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '" + Path.DirectorySeparatorChar + "'))");
 
-        BuildIncludeClauses(includeTerms, cmd, query);
-        BuildExcludeClauses(excludeTerms, cmd, query);
+        int paramCounter = 0;
 
-        _ = query.AppendLine(GetOrderByClause(sortBy, sortDirection));
+        foreach (string token in tokens)
+        {
+            bool isNegated = false;
+            string rawToken = token;
+
+            if (rawToken.StartsWith('-') && rawToken.Length > 1)
+            {
+                isNegated = true;
+                rawToken = rawToken[1..];
+            }
+
+            int colonIdx = rawToken.IndexOf(':');
+            if (colonIdx > 0 && colonIdx < rawToken.Length - 1)
+            {
+                string key = rawToken[..colonIdx];
+                string val = rawToken[(colonIdx + 1)..];
+
+                if (string.Equals(key, "rating", StringComparison.OrdinalIgnoreCase))
+                {
+                    (string? op, string? rStr) = SplitOperator(val);
+                    if (int.TryParse(rStr, out int rVal))
+                    {
+                        string paramName = $"@p{paramCounter++}";
+                        _ = cmd.Parameters.AddWithValue(paramName, rVal);
+
+                        if (isNegated)
+                        {
+                            query.AppendLine($"AND (F.Rating IS NULL OR NOT (F.Rating {op} {paramName}))");
+                        }
+                        else
+                        {
+                            query.AppendLine($"AND (F.Rating IS NOT NULL AND F.Rating {op} {paramName})");
+                        }
+                    }
+                }
+                else if (string.Equals(key, "size", StringComparison.OrdinalIgnoreCase))
+                {
+                    (string? op, string? sStr) = SplitOperator(val);
+                    long? bytes = ParseSizeToBytes(sStr);
+                    if (bytes.HasValue)
+                    {
+                        string paramName = $"@p{paramCounter++}";
+                        _ = cmd.Parameters.AddWithValue(paramName, bytes.Value);
+
+                        if (isNegated)
+                        {
+                            query.AppendLine($"AND NOT (F.Size {op} {paramName})");
+                        }
+                        else
+                        {
+                            query.AppendLine($"AND F.Size {op} {paramName}");
+                        }
+                    }
+                }
+                else if (string.Equals(key, "ext", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "extension", StringComparison.OrdinalIgnoreCase))
+                {
+                    string extPattern = "%." + val.TrimStart('.').ToLowerInvariant();
+                    string paramName = $"@p{paramCounter++}";
+                    _ = cmd.Parameters.AddWithValue(paramName, extPattern);
+
+                    if (isNegated)
+                    {
+                        query.AppendLine($"AND F.Path NOT LIKE {paramName}");
+                    }
+                    else
+                    {
+                        query.AppendLine($"AND F.Path LIKE {paramName}");
+                    }
+                }
+                else if (ValidCategories.Contains(key))
+                {
+                    string searchPattern = "%" + val + "%";
+                    string catParam = $"@p{paramCounter++}";
+                    string valParam = $"@p{paramCounter++}";
+
+                    _ = cmd.Parameters.AddWithValue(catParam, key);
+                    _ = cmd.Parameters.AddWithValue(valParam, searchPattern);
+
+                    string subQuery = $@"
+                        EXISTS (
+                            SELECT 1 FROM cache.FileTags FT
+                            JOIN Tags T ON FT.TagId = T.Id
+                            LEFT JOIN TagAliases TA ON T.Id = TA.TagId
+                            WHERE FT.FileId = F.Id AND T.Category = {catParam} AND (T.Name LIKE {valParam} OR TA.Alias LIKE {valParam})
+                        )";
+
+                    if (isNegated)
+                    {
+                        query.AppendLine($"AND NOT ({subQuery})");
+                    }
+                    else
+                    {
+                        query.AppendLine($"AND ({subQuery})");
+                    }
+                }
+                else
+                {
+                    BuildTagSearchClause(rawToken, isNegated, cmd, query, ref paramCounter);
+                }
+            }
+            else
+            {
+                BuildTagSearchClause(rawToken, isNegated, cmd, query, ref paramCounter);
+            }
+        }
+
+        query.AppendLine(GetOrderByClause(sortBy, sortDirection));
 
         cmd.CommandText = query.ToString();
 
@@ -515,49 +682,108 @@ public class FileSearchRepository
                 DateAdded = reader.GetInt64(4),
                 IsMissing = reader.GetBoolean(5),
                 Size = reader.GetInt64(6),
-                ModifiedTime = reader.GetInt64(7)
+                ModifiedTime = reader.GetInt64(7),
+                Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                Title = reader.IsDBNull(9) ? null : reader.GetString(9),
+                Description = reader.IsDBNull(10) ? null : reader.GetString(10)
             });
         }
 
         return files;
     }
 
-    private static void BuildIncludeClauses(List<string> terms, SqliteCommand cmd, StringBuilder query)
+    private static void BuildTagSearchClause(string token, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
     {
-        for (int i = 0; i < terms.Count; i++)
+        string paramName = $"@p{paramCounter++}";
+        string termPattern = $"%{token}%";
+        _ = cmd.Parameters.AddWithValue(paramName, termPattern);
+
+        string subQuery = $@"
+            EXISTS (
+                SELECT 1 FROM cache.FileTags FT
+                JOIN Tags T ON FT.TagId = T.Id
+                LEFT JOIN TagAliases TA ON T.Id = TA.TagId
+                WHERE FT.FileId = F.Id AND (T.Name LIKE {paramName} OR TA.Alias LIKE {paramName})
+            )";
+
+        if (isNegated)
         {
-            string paramName = $"@in{i}";
-            string termPattern = $"%{terms[i]}%";
-            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
-
-            string tagSubQuery = $@"
-                EXISTS (
-                    SELECT 1 FROM FileTags FT 
-                    JOIN Tags T ON FT.TagId = T.Id 
-                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
-                )";
-
-            _ = query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
+            query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {subQuery})");
+        }
+        else
+        {
+            query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {subQuery})");
         }
     }
 
-    private static void BuildExcludeClauses(List<string> terms, SqliteCommand cmd, StringBuilder query)
+    private static (string op, string rest) SplitOperator(string val)
     {
-        for (int i = 0; i < terms.Count; i++)
+        if (val.StartsWith(">="))
         {
-            string paramName = $"@ex{i}";
-            string termPattern = $"%{terms[i]}%";
-            _ = cmd.Parameters.AddWithValue(paramName, termPattern);
-
-            string tagSubQuery = $@"
-                EXISTS (
-                    SELECT 1 FROM FileTags FT 
-                    JOIN Tags T ON FT.TagId = T.Id 
-                    WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
-                )";
-
-            _ = query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {tagSubQuery})");
+            return (">=", val[2..]);
         }
+
+        if (val.StartsWith("<="))
+        {
+            return ("<=", val[2..]);
+        }
+
+        if (val.StartsWith(">"))
+        {
+            return (">", val[1..]);
+        }
+
+        if (val.StartsWith("<"))
+        {
+            return ("<", val[1..]);
+        }
+
+        if (val.StartsWith("="))
+        {
+            return ("=", val[1..]);
+        }
+
+        return ("=", val);
+    }
+
+    private static long? ParseSizeToBytes(string val)
+    {
+        val = val.Trim().ToLowerInvariant();
+        int lastDigitIdx = -1;
+        for (int i = 0; i < val.Length; i++)
+        {
+            if (char.IsDigit(val[i]) || val[i] == '.')
+            {
+                lastDigitIdx = i;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (lastDigitIdx == -1)
+        {
+            return null;
+        }
+
+        string numPart = val[..(lastDigitIdx + 1)];
+        string unitPart = val[(lastDigitIdx + 1)..].Trim();
+
+        if (!double.TryParse(numPart, out double num))
+        {
+            return null;
+        }
+
+        double multiplier = unitPart switch
+        {
+            "kb" or "k" => 1024.0,
+            "mb" or "m" => 1024.0 * 1024.0,
+            "gb" or "g" => 1024.0 * 1024.0 * 1024.0,
+            _ => 1.0
+        };
+
+        return (long)(num * multiplier);
     }
 
     private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
@@ -595,11 +821,10 @@ public class FileTagRepository
 
     public void AddTagToFile(Guid fileId, Guid tagId)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
+        cmd.CommandText = "INSERT OR IGNORE INTO cache.FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
         cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
         cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
@@ -607,11 +832,10 @@ public class FileTagRepository
 
     public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
+        cmd.CommandText = "DELETE FROM cache.FileTags WHERE FileId = @FileId AND TagId = @TagId";
         cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
         cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
@@ -621,11 +845,10 @@ public class FileTagRepository
     {
         List<Guid> ids = [];
 
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT TagId FROM FileTags WHERE FileId = @FileId";
+        cmd.CommandText = "SELECT TagId FROM cache.FileTags WHERE FileId = @FileId";
         cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -662,8 +885,7 @@ public class LibraryRootRepository
     public List<LibraryRoot> GetAll()
     {
         List<LibraryRoot> roots = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Path, IsEnabled, LastScanTime FROM LibraryRoots ORDER BY Path ASC";
@@ -678,8 +900,7 @@ public class LibraryRootRepository
 
     public void Add(string path)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO LibraryRoots (Id, Path, IsEnabled, LastScanTime) VALUES (@Id, @Path, 1, NULL)";
@@ -690,8 +911,7 @@ public class LibraryRootRepository
 
     public void Update(LibraryRoot root)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "UPDATE LibraryRoots SET IsEnabled = @IsEnabled, LastScanTime = @LastScanTime WHERE Id = @Id";
@@ -703,8 +923,7 @@ public class LibraryRootRepository
 
     public void Delete(Guid id, string path)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
 
         try
@@ -720,7 +939,7 @@ public class LibraryRootRepository
             using (SqliteCommand cmd = conn.CreateCommand())
             {
                 cmd.Transaction = trans;
-                cmd.CommandText = $"DELETE FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+                cmd.CommandText = $"DELETE FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
                 _ = cmd.Parameters.AddWithValue("@Path", path);
                 _ = cmd.ExecuteNonQuery();
             }
@@ -770,15 +989,14 @@ public class TagRepository
     public List<Tag> GetAll(TagSortBy sortBy = TagSortBy.Name, SortDirection direction = SortDirection.Asc)
     {
         List<Tag> tags = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = $@"
-            SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount
+            SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount, T.Category
             FROM Tags T
-            LEFT JOIN FileTags FT ON T.Id = FT.TagId
+            LEFT JOIN cache.FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id
             {orderBy}";
 
@@ -813,15 +1031,13 @@ public class TagRepository
         }
 
         List<Tag> tags = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        // SQLite can handle 'guid'|'guid'|... syntax for IN clause with TEXT
         cmd.CommandText = @"
-            SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount
+            SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount, T.Category
             FROM Tags T
-            LEFT JOIN FileTags FT ON T.Id = FT.TagId
+            LEFT JOIN cache.FileTags FT ON T.Id = FT.TagId
             WHERE T.Id IN (" + string.Join(",", idList.Select(id => $"'{id:N}'")) + @")
             GROUP BY T.Id";
 
@@ -835,46 +1051,157 @@ public class TagRepository
         return tags;
     }
 
-    public void Add(string name, string colorHex, string? emoji)
+    public void Add(string name, string colorHex, string? emoji, string? category = null)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji) VALUES (@Id, @Name, @Color, @Emoji)";
+        cmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji, Category) VALUES (@Id, @Name, @Color, @Emoji, @Category)";
         _ = cmd.Parameters.AddWithValue("@Id", Guid.NewGuid().ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Name", name);
         _ = cmd.Parameters.AddWithValue("@Color", colorHex);
         _ = cmd.Parameters.AddWithValue("@Emoji", (object?)emoji ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Category", (object?)category ?? DBNull.Value);
 
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore duplicates */ }
     }
 
     public void Update(Tag tag)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
             UPDATE Tags 
-            SET Name = @Name, ColorHex = @Color, Emoji = @Emoji 
+            SET Name = @Name, ColorHex = @Color, Emoji = @Emoji, Category = @Category 
             WHERE Id = @Id";
 
         _ = cmd.Parameters.AddWithValue("@Id", tag.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Name", tag.Name);
         _ = cmd.Parameters.AddWithValue("@Color", tag.ColorHex);
         _ = cmd.Parameters.AddWithValue("@Emoji", (object?)tag.Emoji ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Category", (object?)tag.Category ?? DBNull.Value);
 
         try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore name collision */ }
     }
 
     public void Delete(Guid id)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM Tags WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
         _ = cmd.ExecuteNonQuery();
+    }
+
+    public void AddHierarchy(Guid parentId, Guid childId)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "INSERT OR IGNORE INTO TagHierarchy (ParentTagId, ChildTagId) VALUES (@Parent, @Child)";
+        _ = cmd.Parameters.AddWithValue("@Parent", parentId.ToString("N"));
+        _ = cmd.Parameters.AddWithValue("@Child", childId.ToString("N"));
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    public void RemoveHierarchy(Guid parentId, Guid childId)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM TagHierarchy WHERE ParentTagId = @Parent AND ChildTagId = @Child";
+        _ = cmd.Parameters.AddWithValue("@Parent", parentId.ToString("N"));
+        _ = cmd.Parameters.AddWithValue("@Child", childId.ToString("N"));
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    public List<Guid> GetChildren(Guid parentId)
+    {
+        List<Guid> list = [];
+        using SqliteConnection conn = _db.GetConnection();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT ChildTagId FROM TagHierarchy WHERE ParentTagId = @Parent";
+        _ = cmd.Parameters.AddWithValue("@Parent", parentId.ToString("N"));
+        using SqliteDataReader r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(Guid.Parse(r.GetString(0)));
+        }
+        return list;
+    }
+
+    public List<Guid> GetParents(Guid childId)
+    {
+        List<Guid> list = [];
+        using SqliteConnection conn = _db.GetConnection();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT ParentTagId FROM TagHierarchy WHERE ChildTagId = @Child";
+        _ = cmd.Parameters.AddWithValue("@Child", childId.ToString("N"));
+        using SqliteDataReader r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(Guid.Parse(r.GetString(0)));
+        }
+        return list;
+    }
+
+    public void AddAlias(Guid tagId, string alias)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "INSERT OR IGNORE INTO TagAliases (Id, TagId, Alias) VALUES (@Id, @TagId, @Alias)";
+        _ = cmd.Parameters.AddWithValue("@Id", Guid.NewGuid().ToString("N"));
+        _ = cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
+        _ = cmd.Parameters.AddWithValue("@Alias", alias);
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    public void RemoveAlias(Guid tagId, string alias)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM TagAliases WHERE TagId = @TagId AND Alias = @Alias";
+        _ = cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
+        _ = cmd.Parameters.AddWithValue("@Alias", alias);
+        _ = cmd.ExecuteNonQuery();
+    }
+
+    public List<string> GetAliases(Guid tagId)
+    {
+        List<string> list = [];
+        using SqliteConnection conn = _db.GetConnection();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Alias FROM TagAliases WHERE TagId = @TagId ORDER BY Alias ASC";
+        _ = cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
+        using SqliteDataReader r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(r.GetString(0));
+        }
+        return list;
+    }
+
+    public Guid? ResolveTagId(string input)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT Id FROM Tags WHERE Name = @Name";
+            _ = cmd.Parameters.AddWithValue("@Name", input);
+            string? id = (string?)cmd.ExecuteScalar();
+            if (id != null)
+            {
+                return Guid.Parse(id);
+            }
+        }
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT TagId FROM TagAliases WHERE Alias = @Alias";
+            _ = cmd.Parameters.AddWithValue("@Alias", input);
+            string? id = (string?)cmd.ExecuteScalar();
+            if (id != null)
+            {
+                return Guid.Parse(id);
+            }
+        }
+        return null;
     }
 
     private static Tag ReadTag(SqliteDataReader reader)
@@ -885,7 +1212,8 @@ public class TagRepository
             Name = reader.GetString(1),
             ColorHex = reader.GetString(2),
             Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
-            FileCount = reader.GetInt32(4)
+            FileCount = reader.GetInt32(4),
+            Category = reader.IsDBNull(5) ? null : reader.GetString(5)
         };
     }
 }
@@ -1029,6 +1357,9 @@ public class FileEntry
     public long Size { get; set; }
     public long ModifiedTime { get; set; }
     public List<Tag> Tags { get; set; } = [];
+    public int? Rating { get; set; }
+    public string? Title { get; set; }
+    public string? Description { get; set; }
 }
 ```
 
@@ -1053,7 +1384,7 @@ public class LibraryRoot
 ### `Tagium.Core\Models\MediaMetadata.cs`
 
 ```csharp
-namespace Tagium.Photino.Blazor.Components.Modals;
+namespace Tagium.Core.Models;
 
 public class MediaMetadata
 {
@@ -1078,19 +1409,13 @@ public class Tag
     public string ColorHex { get; set; } = "#757575";
     public string? Emoji { get; set; }
     public int FileCount { get; set; }
+    public string? Category { get; set; }
 
     public override string ToString()
     {
         return Name;
     }
 }
-```
-
----
-
-### `Tagium.Core\Services\ExifToolLocator.cs`
-
-```csharp
 ```
 
 ---
@@ -1102,7 +1427,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using Tagium.Photino.Blazor.Components.Modals;
+using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
 
@@ -1145,7 +1470,6 @@ public class ExifToolService : IDisposable
                 _stdin = _exifToolProcess.StandardInput;
                 _stdout = _exifToolProcess.StandardOutput;
 
-                // Asynchronously drain standard error to prevent OS buffer locks
                 _exifToolProcess.ErrorDataReceived += (s, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
@@ -1310,7 +1634,6 @@ public class ExifToolService : IDisposable
                 _stdin!.WriteLine("-execute");
                 _stdin!.Flush();
 
-                // Clear stream output until we read the boundary token
                 while (true)
                 {
                     string? line = _stdout!.ReadLine();
@@ -1381,7 +1704,6 @@ public class ExifToolService : IDisposable
             }
             catch
             {
-                // Suppress shutdown race condition failures
             }
             finally
             {
@@ -1463,7 +1785,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
-using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -1783,7 +2104,10 @@ public class LibraryService
 
         MediaMetadata metadata = new()
         {
-            Tags = tags.Select(t => t.Name).ToList()
+            Tags = tags.Select(t => t.Name).ToList(),
+            Rating = file.Rating,
+            Title = file.Title,
+            Description = file.Description
         };
 
         _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
@@ -1841,7 +2165,6 @@ using System.Diagnostics;
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
-using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -1944,6 +2267,7 @@ public class LibraryScanService
 
             try
             {
+                using CancellationTokenSource searchCts = new(TimeSpan.FromSeconds(30));
                 IEnumerable<string> files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
                     .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
 
@@ -2029,6 +2353,14 @@ public class LibraryScanService
             existing.Size = size;
             existing.ModifiedTime = modifiedTime;
             existing.IsMissing = false;
+
+            MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(filePath);
+            if (metadata is not null)
+            {
+                existing.Rating = metadata.Rating;
+                existing.Title = metadata.Title;
+                existing.Description = metadata.Description;
+            }
 
             _fileRepo.Update(existing);
             context.HasChanges = true;
@@ -2152,7 +2484,7 @@ public class LibraryScanService
                     FileEntry? newEntry = _fileRepo.GetByHash(hash);
                     if (newEntry is not null)
                     {
-                        await ImportMetadataTagsAsync(path, newEntry);
+                        await ImportFileMetadataAsync(path, newEntry);
                     }
                 }
             }
@@ -2166,15 +2498,24 @@ public class LibraryScanService
         }
     }
 
-    private async Task ImportMetadataTagsAsync(string path, FileEntry newEntry)
+    private async Task ImportFileMetadataAsync(string path, FileEntry newEntry)
     {
         MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(path);
-        if (metadata is null || metadata.Tags.Count == 0)
+        if (metadata is null)
         {
             return;
         }
 
-        Dictionary<string, Tag> existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        newEntry.Rating = metadata.Rating;
+        newEntry.Title = metadata.Title;
+        newEntry.Description = metadata.Description;
+        _fileRepo.Update(newEntry);
+
+        if (metadata.Tags.Count == 0)
+        {
+            return;
+        }
+
         foreach (string rawTag in metadata.Tags)
         {
             string norm = TagFormatter.Normalize(rawTag);
@@ -2183,18 +2524,19 @@ public class LibraryScanService
                 continue;
             }
 
-            if (!existingTags.TryGetValue(norm, out Tag? dbTag))
+            Guid? resolvedId = _tagRepo.ResolveTagId(norm);
+            if (resolvedId.HasValue)
             {
-                _tagRepo.Add(norm, "#757575", null);
-                Tag? refreshed = _tagRepo.GetAll().FirstOrDefault(t => string.Equals(t.Name, norm, StringComparison.OrdinalIgnoreCase));
-                if (refreshed is not null)
-                {
-                    _fileTagRepo.AddTagToFile(newEntry.Id, refreshed.Id);
-                }
+                _fileTagRepo.AddTagToFile(newEntry.Id, resolvedId.Value);
             }
             else
             {
-                _fileTagRepo.AddTagToFile(newEntry.Id, dbTag.Id);
+                _tagRepo.Add(norm, "#757575", null);
+                Guid? refreshedId = _tagRepo.ResolveTagId(norm);
+                if (refreshedId.HasValue)
+                {
+                    _fileTagRepo.AddTagToFile(newEntry.Id, refreshedId.Value);
+                }
             }
         }
     }
@@ -2235,7 +2577,6 @@ public class LibraryScanService
             ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
             uiTimer.Restart();
 
-            // Critical fix: Ensure Blazor UI thread gets enough time to fetch SQLite updates and render the grid.
             await Task.Delay(50, cancellationToken);
         }
     }
@@ -2826,12 +3167,12 @@ public class DataExportService
         Dictionary<Guid, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
         StringBuilder sb = new();
 
-        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,IsMissing,Size,ModifiedTime,Tags");
+        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,IsMissing,Size,ModifiedTime,Rating,Title,Description,Tags");
 
         foreach (FileExportData file in data.Files)
         {
             string tags = string.Join(";", file.TagIds.Select(id => tagLookup.GetValueOrDefault(id, "unknown")));
-            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},{file.IsMissing},{file.Size},{file.ModifiedTime},\"{Escape(tags)}\"";
+            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},{file.IsMissing},{file.Size},{file.ModifiedTime},{file.Rating},\"{Escape(file.Title ?? string.Empty)}\",\"{Escape(file.Description ?? string.Empty)}\",\"{Escape(tags)}\"";
             _ = sb.AppendLine(line);
         }
 
@@ -2859,6 +3200,9 @@ public class DataExportService
                 IsMissing = f.IsMissing,
                 Size = f.Size,
                 ModifiedTime = f.ModifiedTime,
+                Rating = f.Rating,
+                Title = f.Title,
+                Description = f.Description,
                 TagIds = tagIds
             });
         }
@@ -2890,6 +3234,9 @@ public class FileExportData
     public long Size { get; set; }
     public long ModifiedTime { get; set; }
     public List<Guid> TagIds { get; set; } = [];
+    public int? Rating { get; set; }
+    public string? Title { get; set; }
+    public string? Description { get; set; }
 }
 ```
 
@@ -2966,6 +3313,11 @@ public class DatabaseMergeService
                 continue;
             }
 
+            added.Rating = sFile.Rating;
+            added.Title = sFile.Title;
+            added.Description = sFile.Description;
+            _targetFileRepo.Update(added);
+
             if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<Guid>? sTagIds))
             {
                 continue;
@@ -3020,7 +3372,7 @@ public class DatabaseMergeService
         List<FileEntry> list = [];
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files";
 
         using SqliteDataReader r = cmd.ExecuteReader();
 
@@ -3035,7 +3387,10 @@ public class DatabaseMergeService
                 DateAdded = r.GetInt64(4),
                 IsMissing = r.GetBoolean(5),
                 Size = r.GetInt64(6),
-                ModifiedTime = r.GetInt64(7)
+                ModifiedTime = r.GetInt64(7),
+                Rating = r.IsDBNull(8) ? null : r.GetInt32(8),
+                Title = r.IsDBNull(9) ? null : r.GetString(9),
+                Description = r.IsDBNull(10) ? null : r.GetString(10)
             });
         }
 
@@ -3253,7 +3608,6 @@ public interface IUndoCommand
 ```csharp
 using Tagium.Core.Data;
 using Tagium.Core.Models;
-using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services.Undo;
 
@@ -3320,7 +3674,10 @@ public class TagAssignmentUndoCommand : IUndoCommand
 
         MediaMetadata metadata = new()
         {
-            Tags = tags.Select(t => t.Name).ToList()
+            Tags = tags.Select(t => t.Name).ToList(),
+            Rating = file.Rating,
+            Title = file.Title,
+            Description = file.Description
         };
 
         _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
@@ -3555,6 +3912,64 @@ public partial class AppToolbar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\AppToolbar.razor.css`
+
+```css
+.toolbar {
+    height: var(--toolbar-height);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-sm);
+    background: var(--panel-bg);
+    gap: var(--space-xs);
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.icon-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-color);
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    transition: background 0.1s;
+}
+
+    .btn:hover {
+        background: var(--surface-hover);
+        border-color: var(--border-color);
+    }
+
+    .btn.active {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border-color: var(--border-color);
+    }
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    font-weight: 500;
+}
+
+    .btn-primary:hover {
+        background: var(--primary-hover);
+        border-color: var(--primary-hover);
+    }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\FileGrid.razor`
 
 ```
@@ -3569,36 +3984,69 @@ public partial class AppToolbar
 @inject SystemLauncherService Launcher
 @inject IJSRuntime JS
 
+<style>
+    #file-grid-container {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        overflow-y: auto !important;
+        box-sizing: border-box !important;
+        padding: 16px !important;
+    }
+
+    .file-grid-row {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 16px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        margin-bottom: 16px !important;
+    }
+
+    .file-card {
+        width: var(--thumb-size) !important;
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
+        box-sizing: border-box !important;
+    }
+</style>
+
 <div id="file-grid-container"
      class="grid-container"
      style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
 
-    @foreach (var file in Files)
-    {
-        bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
-        bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+    <Virtualize Items="FileRows" Context="row">
+        <div class="file-grid-row">
+            @foreach (var file in row)
+            {
+                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+                TriggerThumbnailIfMissing(file, hasThumb);
 
-        <div class="file-card @(isSelected ? "selected" : "")"
-             data-id="@file.Id"
-             @onclick="e => OnCardClick(e, file.Id)"
-             @ondblclick="e => OnCardDoubleClick(e, file)"
-             @onclick:stopPropagation="true">
+                <div class="file-card @(isSelected ? "selected" : "")"
+                     data-id="@file.Id"
+                     @onclick="e => OnCardClick(e, file.Id)"
+                     @ondblclick="e => OnCardDoubleClick(e, file)"
+                     @onclick:stopPropagation="true">
 
-            <div class="thumbnail @(hasThumb ? "" : "broken")">
-                @if (hasThumb)
-                {
-                    <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
-                }
-                else
-                {
-                    <div class="placeholder-icon">📷</div>
-                }
-            </div>
-            <div class="filename" title="@file.Name">
-                @file.Name
-            </div>
+                    <div class="thumbnail @(hasThumb ? "" : "broken")">
+                        @if (hasThumb)
+                        {
+                            <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
+                        }
+                        else
+                        {
+                            <div class="placeholder-icon">📷</div>
+                        }
+                    </div>
+                    <div class="filename" title="@file.Name">
+                        @file.Name
+                    </div>
+                </div>
+            }
         </div>
-    }
+    </Virtualize>
 </div>
 ```
 
@@ -3621,7 +4069,10 @@ public partial class FileGrid : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
 
     private List<FileEntry> Files = [];
+    private List<List<FileEntry>> FileRows = [];
+    private int _columnsCount = 5;
     private DotNetObjectReference<FileGrid>? _objRef;
+    private CancellationTokenSource? _thumbnailThrottleCts;
 
     protected override void OnInitialized()
     {
@@ -3643,6 +4094,30 @@ public partial class FileGrid : IDisposable
 
         _objRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
+
+        await JS.InvokeVoidAsync("eval", @"
+            window.setupGridResizeObserver = (helper, containerId) => {
+                const el = document.getElementById(containerId);
+                if (!el) return;
+                let lastCols = -1;
+                const observer = new ResizeObserver(entries => {
+                    for (let entry of entries) {
+                        const width = entry.contentRect.width;
+                        const thumbSize = parseInt(el.style.getPropertyValue('--thumb-size')) || 120;
+                        const gap = 16;
+                        const cols = Math.floor((width + gap) / (thumbSize + gap)) || 1;
+                        if (cols !== lastCols) {
+                            lastCols = cols;
+                            helper.invokeMethodAsync('UpdateColumnsCount', cols);
+                        }
+                    }
+                });
+                observer.observe(el);
+                window.gridObserverInstance = observer;
+            };
+        ");
+
+        await JS.InvokeVoidAsync("setupGridResizeObserver", _objRef, "file-grid-container");
     }
 
     private void ReloadData()
@@ -3661,23 +4136,60 @@ public partial class FileGrid : IDisposable
 
     private void OnThumbnailGenerated(Guid fileId)
     {
-        _ = InvokeAsync(StateHasChanged);
+        _thumbnailThrottleCts?.Cancel();
+        _thumbnailThrottleCts = new CancellationTokenSource();
+        CancellationToken token = _thumbnailThrottleCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(150, token);
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
     }
 
     private void LoadFiles()
     {
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
-        TriggerThumbnailGeneration();
+        RebuildRows();
     }
 
-    private void TriggerThumbnailGeneration()
+    private void RebuildRows()
     {
-        foreach (FileEntry file in Files)
+        FileRows = [];
+        if (Files == null || Files.Count == 0)
         {
-            if (!ThumbnailService.HasThumbnail(file.Id, file.Hash))
-            {
-                _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
-            }
+            return;
+        }
+
+        int cols = _columnsCount > 0 ? _columnsCount : 1;
+        for (int i = 0; i < Files.Count; i += cols)
+        {
+            FileRows.Add(Files.GetRange(i, Math.Min(cols, Files.Count - i)));
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateColumnsCount(int count)
+    {
+        if (_columnsCount != count)
+        {
+            _columnsCount = count;
+            RebuildRows();
+            StateHasChanged();
+        }
+    }
+
+    private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
+    {
+        if (!hasThumb)
+        {
+            _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
         }
     }
 
@@ -3761,8 +4273,96 @@ public partial class FileGrid : IDisposable
         Settings.SettingsChanged -= ReloadData;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 
+        _thumbnailThrottleCts?.Cancel();
+        _thumbnailThrottleCts?.Dispose();
+
         _objRef?.Dispose();
+        _ = JS.InvokeVoidAsync("eval", "if (window.gridObserverInstance) { window.gridObserverInstance.disconnect(); delete window.gridObserverInstance; }");
     }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileGrid.razor.css`
+
+```css
+.grid-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-content: flex-start;
+    height: 100%;
+    overflow-y: auto;
+    padding: 10px;
+    position: relative;
+    background-color: var(--bg-color);
+}
+
+.file-card {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.1s; /* Removed width/height transition for instant responsiveness */
+    /* Dynamic Sizing via CSS Variable */
+    width: var(--thumb-size);
+    height: calc(var(--thumb-size) + 30px);
+}
+
+    .file-card:hover {
+        border-color: #666;
+        background: var(--panel-bg);
+    }
+
+    .file-card.selected {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.3);
+    }
+
+.thumbnail {
+    flex: 1;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+    .thumbnail img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        position: relative;
+        z-index: 2;
+    }
+
+.placeholder-icon {
+    position: absolute;
+    font-size: 2em;
+    color: var(--border-color);
+    z-index: 1;
+}
+
+.thumbnail.broken .placeholder-icon {
+    color: var(--text-muted);
+}
+
+.filename {
+    height: 30px;
+    line-height: 30px;
+    padding: 0 5px;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border-top: 1px solid var(--border-color);
 }
 ```
 
@@ -3795,11 +4395,12 @@ public partial class FileGrid : IDisposable
             </tr>
         </thead>
         <tbody>
-            @foreach (var file in Files)
-            {
-                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
-                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
-
+            <Virtualize Items="Files" Context="file" SpacerElement="tr">
+                @{
+                    bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                    bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+                    TriggerThumbnailIfMissing(file, hasThumb);
+                }
                 <tr class="file-row @(isSelected ? "selected" : "")"
                     data-id="@file.Id"
                     @onclick="e => OnRowClick(e, file.Id)"
@@ -3827,7 +4428,7 @@ public partial class FileGrid : IDisposable
                     </td>
                     <td class="date-cell">@FormatDate(file.DateAdded)</td>
                 </tr>
-            }
+            </Virtualize>
         </tbody>
     </table>
 </div>
@@ -3885,17 +4486,13 @@ public partial class FileListView : IDisposable
     private void LoadFiles()
     {
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
-        TriggerThumbnailGeneration();
     }
 
-    private void TriggerThumbnailGeneration()
+    private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
     {
-        foreach (FileEntry file in Files)
+        if (!hasThumb)
         {
-            if (!ThumbnailService.HasThumbnail(file.Id, file.Hash))
-            {
-                _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
-            }
+            _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
         }
     }
 
@@ -3929,6 +4526,151 @@ public partial class FileListView : IDisposable
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileListView.razor.css`
+
+```css
+.list-container {
+    height: 100%;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    padding: 0;
+    position: relative;
+}
+
+.file-list {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    color: var(--text-color);
+    table-layout: fixed;
+}
+
+.file-list thead {
+    position: sticky;
+    top: 0;
+    background: var(--panel-bg);
+    z-index: 10;
+}
+
+.file-list th {
+    text-align: left;
+    padding: 8px 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.file-list tbody tr {
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
+
+.file-list tbody tr:hover {
+    background: var(--surface-hover);
+}
+
+.file-list tbody tr.selected {
+    background: rgba(66, 165, 245, 0.15);
+    border-left: 3px solid var(--primary-color);
+}
+
+.file-list td {
+    padding: 6px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.thumbnail-cell {
+    width: 40px;
+    padding: 2px 0 2px 10px !important;
+}
+
+.thumbnail {
+    width: 40px;
+    height: 40px;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    position: relative;
+    z-index: 2;
+}
+
+.thumbnail .placeholder-icon {
+    position: absolute;
+    font-size: 1.5em;
+    color: var(--border-color);
+    z-index: 1;
+}
+
+.thumbnail.broken .placeholder-icon {
+    color: var(--text-muted);
+}
+
+.name-cell {
+    width: 25%;
+    font-weight: 500;
+}
+
+.path-cell {
+    width: 35%;
+    color: var(--text-muted);
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.tags-cell {
+    width: 25%;
+    white-space: normal !important;
+    line-height: 1.4;
+}
+
+.tag-pill {
+    display: inline-block;
+    background: var(--surface-bg);
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    margin-right: 4px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+.date-cell {
+    width: 10%;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+/* Column widths */
+.file-list th:nth-child(1) { width: 60px; } /* thumbnail */
+.file-list th:nth-child(2) { width: 25%; }  /* name */
+.file-list th:nth-child(3) { width: 35%; }  /* path */
+.file-list th:nth-child(4) { width: 25%; }  /* tags */
+.file-list th:nth-child(5) { width: 10%; }  /* date */
 ```
 
 ---
@@ -4227,6 +4969,118 @@ public partial class MainLayout : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\MainLayout.razor.css`
+
+```css
+/* Main Window Shell (Column: Toolbar | Workspace) */
+.app-window {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+}
+
+/* Workspace Row (Sidebar | Content | Inspector) */
+.workspace-layout {
+    display: flex;
+    flex: 1; /* Fills remaining height after Toolbar */
+    flex-direction: row;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-color);
+}
+
+.left-panel {
+    width: 250px;
+    background: var(--panel-bg);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-color);
+}
+
+.center-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-color);
+    min-width: 0; /* Prevents flex items from overflowing horizontally */
+}
+
+.right-panel {
+    width: 300px;
+    background: var(--panel-bg);
+    display: flex; /* Ensure inner content can fill height */
+    flex-direction: column;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border-color);
+}
+
+.content-area {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Splitter Styles */
+.splitter {
+    width: 4px;
+    background: var(--bg-color);
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 30; /* Draw above toolbar during resize */
+    transition: background 0.2s;
+    margin-left: -2px;
+    margin-right: -2px;
+}
+
+    .splitter:hover, .splitter.active {
+        background: var(--primary-color);
+    }
+
+/* Error Boundary Fallback */
+.error-boundary-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: var(--space-md);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+    .error-boundary-fallback h3 {
+        margin: 0 0 var(--space-sm) 0;
+        color: var(--danger-color);
+    }
+
+    .error-boundary-fallback p {
+        margin: 0 0 var(--space-md) 0;
+        font-size: var(--font-size-sm);
+    }
+
+    .error-boundary-fallback .btn {
+        background: var(--primary-color);
+        border: none;
+        color: white;
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+    }
+
+        .error-boundary-fallback .btn:hover {
+            background: var(--primary-hover);
+        }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\ModalHost.razor`
 
 ```
@@ -4280,6 +5134,67 @@ public partial class ModalHost
         ModalService.OnClose -= StateHasChanged;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\ModalHost.razor.css`
+
+```css
+.modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-container {
+        background: #313131;
+        border-radius: 8px;
+        width: 500px;
+        max-width: 90%;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    .modal-header {
+        padding: 15px;
+        border-bottom: 1px solid #444;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.2em;
+            color: #eee;
+        }
+
+    .close-btn {
+        background: none;
+        border: none;
+        color: #aaa;
+        font-size: 1.5em;
+        cursor: pointer;
+    }
+
+        .close-btn:hover {
+            color: #fff;
+        }
+
+    .modal-body {
+        padding: 15px;
+        overflow-y: auto;
+    }
 ```
 
 ---
@@ -4403,6 +5318,131 @@ public partial class TagSidebar
         Library.LibraryChanged -= RefreshData;
         Settings.SettingsChanged -= StateHasChanged;
     }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\TagSidebar.razor.css`
+
+```css
+/* ::deep combinator pierces CSS isolation */
+::deep .sidebar-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--text-color);
+}
+
+::deep .tag-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-xs);
+}
+
+/* ====== Pill Mode (Modern) ====== */
+::deep .tag-item.pill {
+    padding: 3px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 12px;
+    margin-bottom: 3px;
+    color: var(--text-color);
+    transition: background-color 0.1s, border-color 0.1s, color 0.1s;
+    user-select: none;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    border: 1px dashed;
+}
+
+    ::deep .tag-item.pill:hover {
+        background: var(--surface-bg);
+    }
+
+    ::deep .tag-item.pill.active {
+        color: white;
+    }
+
+    ::deep .tag-item.pill .count {
+        font-size: 0.8em;
+        margin-left: auto;
+    }
+
+    ::deep .tag-item.pill .item-emoji {
+        margin-right: 6px;
+    }
+
+/* ====== Legacy Mode (Minimal Circles) ====== */
+::deep .tag-item.legacy {
+    padding: 3px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    color: var(--text-color);
+    transition: background-color 0.1s;
+    user-select: none;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    border: none;
+}
+
+    ::deep .tag-item.legacy:hover {
+        background: var(--surface-bg);
+    }
+
+    ::deep .tag-item.legacy.active {
+        background: var(--primary-color);
+        color: white;
+    }
+
+    ::deep .tag-item.legacy .count {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        margin-left: auto;
+    }
+
+    ::deep .tag-item.legacy .tag-emoji {
+        margin-right: 8px;
+        width: 1.2em;
+        text-align: center;
+        font-size: var(--font-size-sm);
+    }
+
+/* ====== Shared Styles ====== */
+::deep .system-item {
+    border: none !important;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    padding: 3px 8px;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s;
+}
+
+    ::deep .system-item.active {
+        background: var(--primary-color) !important;
+        color: white !important;
+    }
+
+::deep .icon {
+    margin-right: 6px;
+    display: inline-block;
+    width: 1.2em;
+    text-align: center;
+    font-size: 1em;
+}
+
+::deep hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: var(--space-xs) 0;
 }
 ```
 
@@ -5075,6 +6115,87 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\wwwroot\index.html`
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tagium</title>
+    <base href="/" />
+    <link href="css/app.css" rel="stylesheet" />
+    <!-- Required for Blazor CSS Isolation (MainLayout.razor.css, etc.) -->
+    <link href="Tagium.styles.css" rel="stylesheet" />
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #app {
+            height: 100%;
+        }
+
+        .drag-over::after {
+            content: 'Drop files to add';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(66, 165, 245, 0.3);
+            border: 4px dashed #42a5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            z-index: 9999;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+
+        /* Utility class used by layout.js during drag */
+        .no-select {
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">Loading...</div>
+    <script>
+        window.globalShortcuts = {
+            init: function (dotNetRef) {
+                document.addEventListener('keydown', function (e) {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
+                        return;
+                    }
+
+                    if (e.ctrlKey || e.metaKey) {
+                        const key = e.key.toLowerCase();
+                        if (['z', 'f', 't', 'r'].includes(key)) {
+                            e.preventDefault();
+                            dotNetRef.invokeMethodAsync('HandleGlobalKeyDown', key, e.ctrlKey || e.metaKey, e.shiftKey);
+                        }
+                    }
+                });
+            }
+        };
+    </script>
+    <script src="js/dragdrop.js"></script>
+    <script src="js/grid.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="_framework/blazor.webview.js"></script>
+</body>
+</html>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Inspectors\Component.razor`
 
 ```
@@ -5297,6 +6418,87 @@ public partial class FileInspector
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor.css`
+
+```css
+.inspector-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--panel-bg);
+    color: var(--text-color);
+    border-left: 1px solid var(--border-color);
+    min-width: 0; /* Allow container to shrink below intrinsic width */
+}
+
+.inspector-header {
+    padding: 8px var(--space-sm);
+    background: var(--surface-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-shrink: 0;
+}
+
+.title {
+    font-weight: 600;
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.badge {
+    font-size: var(--font-size-xs);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-muted);
+}
+
+.inspector-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden; /* Explicitly prevent horizontal scrolling */
+    padding: var(--space-sm);
+    position: relative;
+    min-width: 0; /* Critical: allows flex item to shrink below content size */
+}
+
+.state-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    opacity: 0.7;
+}
+
+    .state-message .icon {
+        font-size: 1.5em;
+        margin-bottom: 8px;
+    }
+
+    .state-message.error {
+        color: var(--danger-color);
+        opacity: 1;
+    }
+
+.btn {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 8px;
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Inspectors\InspectorMode.cs`
 
 ```csharp
@@ -5380,6 +6582,127 @@ public partial class MultiFileInspector
     {
         Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
     }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor.css`
+
+```css
+.summary-text {
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-size: var(--font-size-xs);
+}
+
+.help-text {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    margin: -4px 0 8px 0;
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background: var(--danger-hover);
+    }
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.empty-tag {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-size-xs);
+}
+
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 3px 6px; /* Increased from 2px for better optical centering */
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+    line-height: 1; /* Force consistent baseline */
+}
+
+    .tag-pill:hover {
+        background: var(--border-color);
+    }
+
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
+        display: flex; /* Ensure perfect vertical alignment */
+        align-items: center;
+        line-height: 1;
+    }
+
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
+        }
+
+/* Subtle separator styling */
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
+
+/* Natural, readable section headings */
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
 }
 ```
 
@@ -5502,6 +6825,257 @@ public partial class SingleFileInspector
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor.css`
+
+```css
+.single-inspector {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    /* Variables for blur control */
+    --blur-radius: 20px;
+    --bg-opacity: 0.5;
+}
+
+.preview-container {
+    flex: 1 1 0;
+    min-height: 200px;
+    width: 100%;
+    background: #000; /* Fallback for transparency */
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    position: relative;
+    z-index: 0;
+}
+
+/* Blurred Background Layer */
+.preview-bg {
+    position: absolute;
+    top: -10%;
+    left: -10%;
+    width: 120%; /* Expand slightly to avoid blurred edge vignetting */
+    height: 120%;
+    object-fit: cover;
+    filter: blur(var(--blur-radius));
+    opacity: var(--bg-opacity);
+    z-index: 0;
+    pointer-events: none;
+}
+
+.preview-video-thumbnail {
+    position: relative;
+    cursor: pointer;
+    height: 100%;
+    width: 100%;
+    background: transparent;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1; /* Sit above background */
+}
+
+.preview-media {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    position: relative;
+    z-index: 1; /* Sit above background */
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5)); /* Pop off the background */
+}
+
+.play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 3rem;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.preview-placeholder {
+    font-size: 3em;
+    color: var(--border-color);
+    position: relative;
+    z-index: 1;
+}
+
+    .preview-placeholder.error {
+        color: var(--danger-color);
+    }
+
+.missing-warning,
+.actions-row,
+.prop-row,
+hr,
+h4,
+.tags-container {
+    flex-shrink: 0;
+}
+
+.prop-row {
+    margin-bottom: 8px;
+}
+
+    .prop-row label {
+        display: block;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+    }
+
+.path {
+    word-break: break-all;
+    font-size: var(--font-size-xs);
+    font-family: monospace;
+    color: var(--text-muted);
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background: var(--danger-hover);
+    }
+
+.btn-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+    .btn-primary:hover {
+        background: var(--primary-hover);
+    }
+
+.btn-small {
+    font-size: var(--font-size-xs);
+    padding: 2px 6px;
+}
+
+.missing-warning {
+    background: rgba(198, 40, 40, 0.15);
+    border: 1px solid var(--danger-color);
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+    .missing-warning h4 {
+        margin: 0 0 4px 0;
+        color: var(--danger-color);
+        font-size: var(--font-size-sm);
+    }
+
+    .missing-warning p {
+        margin: 0 0 8px 0;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+    }
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 3px 6px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+    line-height: 1;
+}
+
+    .tag-pill:hover {
+        background: var(--border-color);
+    }
+
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        line-height: 1;
+    }
+
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
+        }
+
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
+
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor`
 
 ```
@@ -5618,10 +7192,10 @@ public partial class DataManagementModal
 
     private void BackupDb()
     {
-        string source = DbManager.ConnectionString.Replace("Data Source=", "");
+        string source = DbManager.LibraryDbPath;
         string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
         File.Copy(source, dest, true);
-        Toast.Show($"Backup saved to {dest}", ToastType.Success);
+        Toast.Show($"Library configuration backup saved to {dest}", ToastType.Success);
     }
 
     private void MergeDb()
@@ -5648,12 +7222,12 @@ public partial class DataManagementModal
         }
 
         string source = files[0];
-        string dest = DbManager.ConnectionString.Replace("Data Source=", "");
+        string dest = DbManager.LibraryDbPath;
 
         try
         {
             File.Copy(source, dest, true);
-            Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
+            Toast.Show("Library database restored. Please restart Tagium.", ToastType.Success);
         }
         catch (Exception ex)
         {
@@ -5661,6 +7235,79 @@ public partial class DataManagementModal
         }
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor.css`
+
+```css
+.data-tools {
+        padding: 5px;
+    }
+
+    .section {
+        margin-bottom: 15px;
+    }
+
+    h4 {
+        margin: 0 0 5px 0;
+        color: #eee;
+    }
+
+    .desc {
+        font-size: 0.9em;
+        color: #aaa;
+        margin: 0 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        border: 1px solid #555;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+    .btn-danger {
+        background: #c62828;
+        border-color: #b71c1c;
+    }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+    .btn-row {
+        display: flex;
+        gap: 10px;
+    }
+
+    .result-box {
+        margin-top: 10px;
+        padding: 8px;
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 4px;
+        font-size: 0.9em;
+        color: #ccc;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 15px 0;
+    }
 ```
 
 ---
@@ -5717,6 +7364,56 @@ public partial class DuplicateFileModal
         ModalService.Close();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor.css`
+
+```css
+.duplicate-modal p {
+        color: #eee;
+        margin-top: 0;
+    }
+
+    .file-path {
+        background: #222;
+        padding: 10px;
+        border: 1px solid #444;
+        border-radius: 4px;
+        font-family: monospace;
+        word-break: break-all;
+        margin: 15px 0;
+        color: #aaa;
+    }
+
+    .footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 20px;
+    }
+
+    .btn {
+        padding: 6px 15px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        background: #444;
+        color: white;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+    .btn-primary {
+        background: #42a5f5;
+    }
+
+        .btn-primary:hover {
+            background: #1e88e5;
+        }
 ```
 
 ---
@@ -5974,6 +7671,46 @@ public partial class PreferencesModal
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor.css`
+
+```css
+.radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+    .hint {
+        font-size: 0.85em;
+        color: #888;
+        margin: -5px 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor`
 
 ```
@@ -6005,6 +7742,37 @@ public partial class IconButton
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public EventCallback OnClick { get; set; }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor.css`
+
+```css
+.icon-button {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    width: var(--toolbar-icon-size);
+    height: var(--toolbar-icon-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.1s, background-color 0.1s;
+}
+
+    .icon-button:hover {
+        color: var(--text-color);
+        background: var(--surface-hover);
+    }
+
+    .icon-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 ```
 
 ---
@@ -6087,6 +7855,36 @@ public partial class SearchInput
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\SearchInput.razor.css`
+
+```css
+.search-input {
+    width: 100%;
+    /* Ensure padding doesn't overflow width */
+    box-sizing: border-box;
+    /* Visual Styles moved from Toolbar */
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px var(--space-sm);
+    border-radius: 15px;
+    font-size: var(--font-size-sm);
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        background: #000;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor`
 
 ```
@@ -6143,6 +7941,33 @@ public partial class SortControls
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor.css`
+
+```css
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+select {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: var(--font-size-sm);
+    height: 24px;
+    outline: none;
+}
+
+    select:hover {
+        border-color: #555;
+    }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
 
 ```
@@ -6178,6 +8003,31 @@ public partial class TagIcon
     [Parameter, EditorRequired] public required Tag Tag { get; set; }
     [Parameter] public bool ShowIcon { get; set; } = true;
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor.css`
+
+```css
+.tag-emoji {
+        display: inline-block;
+        width: 1.2em;
+        text-align: center;
+        margin-right: 6px;
+        line-height: 1;
+        font-size: 1.1em;
+    }
+
+    .tag-color {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 8px;
+        flex-shrink: 0;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
 ```
 
 ---
@@ -6225,6 +8075,53 @@ public partial class ThumbnailSizeSlider
         Settings.Save();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\ThumbnailSizeSlider.razor.css`
+
+```css
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+input[type=range] {
+    -webkit-appearance: none;
+    width: 100px;
+    background: transparent;
+    margin: 0;
+    height: 20px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+    input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 4px;
+        cursor: pointer;
+        background: #444;
+        border-radius: 2px;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 12px;
+        width: 12px;
+        border-radius: 50%;
+        background: var(--primary-color);
+        margin-top: -4px;
+        cursor: pointer;
+        box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        transition: transform 0.1s;
+    }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            background: var(--primary-hover);
+        }
 ```
 
 ---
@@ -6309,6 +8206,117 @@ public partial class FilesViewToolbar
     private void SetViewMode(FileViewMode mode)
     {
         Settings.Update(s => s.FileViewMode = mode);
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor.css`
+
+```css
+.files-view-toolbar {
+    display: flex;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    gap: var(--space-sm);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 20;
+}
+
+.search-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.view-options-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.btn-icon {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    transition: background 0.1s;
+}
+
+    .btn-icon:hover {
+        background: var(--surface-hover);
+        color: var(--text-color);
+    }
+
+    .btn-icon.active {
+        background: var(--surface-hover);
+        color: var(--primary-color);
+        border-color: var(--border-color);
+    }
+
+/* Dropdown Menu */
+.view-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 1001;
+    min-width: 200px;
+    animation: fadeIn 0.1s ease-out;
+}
+
+.view-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+}
+
+.menu-section {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+    .menu-section label {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: 10px 0;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
 ```
@@ -6539,6 +8547,224 @@ public partial class TagManagerView
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Views\TagManagerView.razor.css`
+
+```css
+.tag-manager-view {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-md);
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: var(--space-sm);
+}
+
+    .header-row h3 {
+        margin: 0;
+        color: var(--text-color);
+        font-size: var(--font-size-sm);
+    }
+
+.add-row {
+    display: flex;
+    gap: var(--space-xs);
+}
+
+    .add-row input {
+        padding: 4px var(--space-xs);
+        background: var(--surface-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        border-radius: 4px;
+        flex: 1;
+        font-size: var(--font-size-sm);
+    }
+
+        .add-row input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+.btn-primary {
+    background: var(--primary-color);
+    border: none;
+    color: white;
+    padding: 0 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    height: 24px;
+}
+
+    .btn-primary:hover {
+        background: var(--primary-hover);
+    }
+
+.sort-controls {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-sm);
+    padding: var(--space-xs);
+    background: var(--panel-bg);
+    border-radius: 4px;
+}
+
+    .sort-controls select {
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: var(--font-size-sm);
+        outline: none;
+    }
+
+        .sort-controls select:hover {
+            border-color: #555;
+        }
+
+.tag-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tag-row {
+    display: flex;
+    align-items: center;
+    padding: 4px var(--space-sm);
+    background: var(--surface-bg);
+    border-radius: 4px;
+    gap: var(--space-xs);
+    transition: background 0.1s;
+}
+
+    .tag-row:hover {
+        background: var(--panel-bg);
+    }
+
+.color-picker-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.color-circle {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    cursor: pointer;
+    display: block;
+}
+
+.color-popup {
+    position: absolute;
+    top: 25px;
+    left: 0;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    padding: 6px;
+    z-index: 1000;
+    border-radius: 6px;
+    width: 140px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.color-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    position: relative;
+    z-index: 2;
+}
+
+.swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+    .swatch:hover {
+        border-color: white;
+        transform: scale(1.1);
+    }
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+}
+
+.emoji-input {
+    width: 24px;
+    text-align: center;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: var(--font-size-sm);
+}
+
+    .emoji-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+
+.name-input {
+    flex: 1;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-color);
+    padding: 3px var(--space-xs);
+    border-radius: 4px;
+    font-size: var(--font-size-sm);
+}
+
+    .name-input:focus {
+        background: var(--bg-color);
+        border-color: var(--border-color);
+    }
+
+.count {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    width: 60px;
+    text-align: right;
+}
+
+.btn-icon.delete {
+    background: none;
+    border: none;
+    color: var(--danger-color);
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 0 var(--space-xs);
+    line-height: 1;
+    display: flex;
+    align-items: center;
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Services\Toasting\Toast.cs`
 
 ```csharp
@@ -6619,6 +8845,404 @@ public enum ToastType
     Success,
     Error
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\css\app.css`
+
+```css
+:root {
+    /* Global Color Palette */
+    --bg-color: #181818;
+    --panel-bg: #202020;
+    --surface-bg: #2D2D2D;
+    --surface-hover: rgba(255, 255, 255, 0.05);
+    --border-color: #383838;
+    --text-color: #E0E0E0;
+    --text-muted: #9E9E9E;
+    --primary-color: #42a5f5;
+    --primary-hover: #1e88e5;
+    --danger-color: #d32f2f; /* Vibrant red */
+    --danger-hover: #b71c1c; /* Deeper red on hover */
+    /* Spacing & Sizing Tokens */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --toolbar-height: 38px;
+    --toolbar-icon-size: 28px;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    /* Responsive Breakpoints */
+    --breakpoint-sm: 700px;
+}
+
+/* Rest of file remains unchanged */
+@font-face {
+    font-family: 'Apple Emoji';
+    src: url('../fonts/AppleColorEmoji.ttf');
+}
+
+body {
+    font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+#app {
+    height: 100%;
+}
+
+.drag-over::after {
+    content: 'Drop files to add';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(66, 165, 245, 0.3);
+    border: 4px dashed #42a5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 2em;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    z-index: 9999;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.no-select {
+    user-select: none;
+}
+
+/* Custom Scrollbar Styling (WebKit) */
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 6px;
+    border: 3px solid var(--bg-color);
+}
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--text-muted);
+    }
+
+    ::-webkit-scrollbar-thumb:active {
+        background: var(--primary-color);
+    }
+
+::-webkit-scrollbar-corner {
+    background: var(--bg-color);
+}
+
+/* Import Progress Overlay */
+.import-progress-overlay {
+    position: fixed;
+    bottom: 60px;
+    left: 20px;
+    right: 20px;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    z-index: 9998;
+}
+
+.import-progress-bar {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 2px;
+    transition: width 0.2s ease;
+}
+
+.import-progress-text {
+    position: absolute;
+    top: -20px;
+    left: 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\dragdrop.js`
+
+```javascript
+window.dragDrop = {
+    init: (dotNetHelper) => {
+        const dropZone = document.getElementById('app');
+
+        // Prevent default browser actions (like opening the file in the tab)
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight visual feedback
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+        });
+
+        // We do NOT handle the data transfer here.
+        // The C# Native Window Handler catches the files before JS sees them.
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\grid.js`
+
+```javascript
+window.gridInteractions = {
+    dotNetRef: null,
+    containerId: '',
+    selectionBox: null,
+    isSelecting: false,
+    startX: 0,
+    startY: 0,
+
+    init: function (dotNetRef, containerId) {
+        this.dotNetRef = dotNetRef;
+        this.containerId = containerId;
+
+        // Create selection box element if it doesn't exist
+        if (!document.getElementById('selection-box')) {
+            this.selectionBox = document.createElement('div');
+            this.selectionBox.id = 'selection-box';
+            this.selectionBox.style.position = 'absolute';
+            this.selectionBox.style.border = '1px solid #42a5f5';
+            this.selectionBox.style.backgroundColor = 'rgba(66, 165, 245, 0.2)';
+            this.selectionBox.style.display = 'none';
+            this.selectionBox.style.zIndex = '9999';
+            this.selectionBox.style.pointerEvents = 'none';
+            document.body.appendChild(this.selectionBox);
+        } else {
+            this.selectionBox = document.getElementById('selection-box');
+        }
+
+        // Attach global events
+        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        }
+    },
+
+    handleKeyDown: function (e) {
+        // Ignore if focus is in an input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+        if (e.key === 'Delete') {
+            this.dotNetRef.invokeMethodAsync('OnDeleteKey');
+        } else if (e.key === 'Enter') {
+            this.dotNetRef.invokeMethodAsync('OnEnterKey');
+        } else if (e.key.startsWith('Arrow')) {
+            e.preventDefault();
+            this.navigate(e.key);
+        } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            this.dotNetRef.invokeMethodAsync('SelectAll');
+        }
+    },
+
+    navigate: function (direction) {
+        const items = Array.from(document.querySelectorAll('.file-card'));
+        if (items.length === 0) return;
+
+        const selected = document.querySelector('.file-card.selected');
+        let index = selected ? items.indexOf(selected) : -1;
+
+        if (index === -1) {
+            index = 0; // Default to first
+        } else {
+            const containerWidth = document.getElementById(this.containerId).clientWidth;
+            const itemWidth = items[0].getBoundingClientRect().width + 10; // + gap
+            const cols = Math.floor(containerWidth / itemWidth) || 1;
+
+            if (direction === 'ArrowRight') index++;
+            else if (direction === 'ArrowLeft') index--;
+            else if (direction === 'ArrowDown') index += cols;
+            else if (direction === 'ArrowUp') index -= cols;
+        }
+
+        // Clamp
+        if (index < 0) index = 0;
+        if (index >= items.length) index = items.length - 1;
+
+        // Get ID (as string)
+        const id = items[index].getAttribute('data-id');
+        items[index].scrollIntoView({ block: 'nearest' });
+
+        this.dotNetRef.invokeMethodAsync('SelectFile', id);
+    },
+
+    handleMouseDown: function (e) {
+        // Ignore clicks on items (handled by Blazor onclick)
+        if (e.target.closest('.file-card')) return;
+
+        // Detect if click is on scrollbar
+        // If the target is the container itself, check if click is outside client area
+        if (e.target.id === this.containerId) {
+            const rect = e.target.getBoundingClientRect();
+            const isVerticalScrollbar = e.clientX > rect.left + e.target.clientWidth;
+            const isHorizontalScrollbar = e.clientY > rect.top + e.target.clientHeight;
+
+            if (isVerticalScrollbar || isHorizontalScrollbar) {
+                return;
+            }
+        }
+
+        e.preventDefault();
+        this.isSelecting = true;
+        this.startX = e.pageX;
+        this.startY = e.pageY;
+
+        this.selectionBox.style.display = 'block';
+        this.updateBox(e.pageX, e.pageY);
+
+        document.addEventListener('mousemove', this.boundMouseMove = this.handleMouseMove.bind(this));
+        document.addEventListener('mouseup', this.boundMouseUp = this.handleMouseUp.bind(this));
+    },
+
+    handleMouseMove: function (e) {
+        if (!this.isSelecting) return;
+        this.updateBox(e.pageX, e.pageY);
+    },
+
+    updateBox: function (currentX, currentY) {
+        const left = Math.min(this.startX, currentX);
+        const top = Math.min(this.startY, currentY);
+        const width = Math.abs(currentX - this.startX);
+        const height = Math.abs(currentY - this.startY);
+
+        this.selectionBox.style.left = left + 'px';
+        this.selectionBox.style.top = top + 'px';
+        this.selectionBox.style.width = width + 'px';
+        this.selectionBox.style.height = height + 'px';
+    },
+
+    handleMouseUp: function (e) {
+        this.isSelecting = false;
+        this.selectionBox.style.display = 'none';
+
+        document.removeEventListener('mousemove', this.boundMouseMove);
+        document.removeEventListener('mouseup', this.boundMouseUp);
+
+        // Calculate intersection
+        const boxRect = {
+            left: Math.min(this.startX, e.pageX),
+            top: Math.min(this.startY, e.pageY),
+            right: Math.max(this.startX, e.pageX),
+            bottom: Math.max(this.startY, e.pageY)
+        };
+
+        const ids = [];
+        document.querySelectorAll('.file-card').forEach(item => {
+            const rect = item.getBoundingClientRect();
+            // Adjust rect to page coordinates
+            const pageRect = {
+                left: rect.left + window.scrollX,
+                top: rect.top + window.scrollY,
+                right: rect.right + window.scrollX,
+                bottom: rect.bottom + window.scrollY
+            };
+
+            const intersect = !(boxRect.right < pageRect.left ||
+                boxRect.left > pageRect.right ||
+                boxRect.bottom < pageRect.top ||
+                boxRect.top > pageRect.bottom);
+
+            if (intersect) {
+                ids.push(item.getAttribute('data-id')); // Keep as string
+            }
+        });
+
+        if (ids.length > 0) {
+            this.dotNetRef.invokeMethodAsync('SelectFiles', ids);
+        } else {
+            this.dotNetRef.invokeMethodAsync('ClearSelection');
+        }
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\layout.js`
+
+```javascript
+window.layoutResizer = {
+    init: function (leftPanelId, leftSplitterId, rightPanelId, rightSplitterId) {
+        const leftPanel = document.getElementById(leftPanelId);
+        const rightPanel = document.getElementById(rightPanelId);
+        const leftSplitter = document.getElementById(leftSplitterId);
+        const rightSplitter = document.getElementById(rightSplitterId);
+
+        if (leftSplitter && leftPanel) {
+            setupResizer(leftSplitter, leftPanel, 'left');
+        }
+
+        if (rightSplitter && rightPanel) {
+            setupResizer(rightSplitter, rightPanel, 'right');
+        }
+
+        function setupResizer(splitter, panel, side) {
+            splitter.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+
+                splitter.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                document.body.classList.add('no-select');
+
+                function onMouseMove(e) {
+                    if (side === 'left') {
+                        const newWidth = Math.min(Math.max(e.clientX, 150), 600);
+                        panel.style.width = newWidth + 'px';
+                    } else {
+                        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 200), 800);
+                        panel.style.width = newWidth + 'px';
+                    }
+                }
+
+                function onMouseUp() {
+                    splitter.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.classList.remove('no-select');
+
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+        }
+    }
+};
 ```
 
 ---

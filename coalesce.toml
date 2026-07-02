@@ -20,7 +20,10 @@ IncludeExtensions = [
   ".xml",
   ".md",
   ".txt",
-  ".razor"
+  ".razor",
+  ".js",
+  ".html",
+  ".css",
 ]
 
 # (Blacklist) Explicitly skip files with these extensions.

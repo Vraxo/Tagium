@@ -11,6 +11,8 @@ public partial class FileListView : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
 
     private List<FileEntry> Files = [];
+    private bool _isRenderPending = false;
+    private readonly object _renderLock = new();
 
     protected override void OnInitialized()
     {
@@ -39,23 +41,36 @@ public partial class FileListView : IDisposable
 
     private void OnThumbnailGenerated(Guid fileId)
     {
-        _ = InvokeAsync(StateHasChanged);
+        lock (_renderLock)
+        {
+            if (_isRenderPending)
+            {
+                return;
+            }
+            _isRenderPending = true;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            lock (_renderLock)
+            {
+                _isRenderPending = false;
+            }
+            await InvokeAsync(StateHasChanged);
+        });
     }
 
     private void LoadFiles()
     {
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
-        TriggerThumbnailGeneration();
     }
 
-    private void TriggerThumbnailGeneration()
+    private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
     {
-        foreach (FileEntry file in Files)
+        if (!hasThumb)
         {
-            if (!ThumbnailService.HasThumbnail(file.Id, file.Hash))
-            {
-                _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
-            }
+            _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
         }
     }
 

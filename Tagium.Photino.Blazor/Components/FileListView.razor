@@ -22,11 +22,12 @@
             </tr>
         </thead>
         <tbody>
-            @foreach (var file in Files)
-            {
-                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
-                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
-
+            <Virtualize Items="Files" ItemSize="53" Context="file" SpacerElement="tr">
+                @{
+                    bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                    bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+                    TriggerThumbnailIfMissing(file, hasThumb);
+                }
                 <tr class="file-row @(isSelected ? "selected" : "")"
                     data-id="@file.Id"
                     @onclick="e => OnRowClick(e, file.Id)"
@@ -36,7 +37,7 @@
                         <div class="thumbnail @(hasThumb ? "" : "broken")">
                             @if (hasThumb)
                             {
-                                <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
+                                <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
                             }
                             else
                             {
@@ -54,7 +55,7 @@
                     </td>
                     <td class="date-cell">@FormatDate(file.DateAdded)</td>
                 </tr>
-            }
+            </Virtualize>
         </tbody>
     </table>
 </div>

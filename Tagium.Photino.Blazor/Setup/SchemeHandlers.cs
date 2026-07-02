@@ -41,16 +41,12 @@ public static class SchemeHandlers
 
         try
         {
-            FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
             ThumbnailService thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
 
-            FileEntry? file = fileRepo.GetById(fileId);
-            if (file is null)
-            {
-                return Stream.Null;
-            }
+            // Extract the hash parameter directly from the second URL segment
+            string hash = segments.Length > 1 && segments[1] != "none" ? segments[1] : "";
 
-            string path = thumbnailService.GetThumbnailPath(file.Hash, file.Id);
+            string path = thumbnailService.GetThumbnailPath(hash, fileId);
 
             if (!File.Exists(path))
             {

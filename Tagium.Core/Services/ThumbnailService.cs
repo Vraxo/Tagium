@@ -13,8 +13,11 @@ public sealed class ThumbnailService
     private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, bool> _activeGenerations = new(StringComparer.OrdinalIgnoreCase);
 
-    private const int DefaultThumbnailSize = 800;
-    private const int PngQuality = 85;
+    // Strict concurrency limit to prevent thread thrashing and CPU spikes
+    private readonly SemaphoreSlim _generationSemaphore = new(2, 2);
+
+    private const int DefaultThumbnailSize = 300;
+    private const int JpegQuality = 75;
     private const int VideoEarlyCaptureSeconds = 5;
     private const int VideoDurationThresholdSeconds = 10;
     private const double VideoLateCaptureRatio = 0.1;
@@ -40,12 +43,28 @@ public sealed class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
-        // Populate the cache with existing thumbnail files from disk
+        // Automatically purge old, bloated PNG thumbnails to migrate to high-performance JPEGs
         if (Directory.Exists(_cacheDir))
         {
             try
             {
-                foreach (string file in Directory.EnumerateFiles(_cacheDir, "*.png"))
+                foreach (string pngFile in Directory.EnumerateFiles(_cacheDir, "*.png"))
+                {
+                    File.Delete(pngFile);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ThumbnailService] Error purging old PNGs: {ex.Message}");
+            }
+        }
+
+        // Populate the cache with high-performance JPEG thumbnail files from disk
+        if (Directory.Exists(_cacheDir))
+        {
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(_cacheDir, "*.jpg"))
                 {
                     string name = Path.GetFileNameWithoutExtension(file);
                     _thumbnailCache.TryAdd(name, true);
@@ -73,7 +92,7 @@ public sealed class ThumbnailService
     public string GetThumbnailPath(string? hash, Guid fileId)
     {
         string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
-        return Path.Combine(_cacheDir, $"{key}.png");
+        return Path.Combine(_cacheDir, $"{key}.jpg");
     }
 
     public bool HasThumbnail(Guid fileId, string? hash)
@@ -87,17 +106,20 @@ public sealed class ThumbnailService
         string key = !string.IsNullOrEmpty(file.Hash) ? file.Hash : file.Id.ToString("N");
         string destPath = GetThumbnailPath(file.Hash, file.Id);
 
-        // Skip immediately if we already know it exists or the original file was removed from disk
+        // Skip immediately if the thumbnail exists or the source file was removed
         if (_thumbnailCache.ContainsKey(key) || !File.Exists(file.Path))
         {
             return;
         }
 
-        // Avoid triggering multiple duplicate task threads for the exact same file
+        // Avoid triggering duplicate concurrent generations for the same file
         if (!_activeGenerations.TryAdd(key, true))
         {
             return;
         }
+
+        // Limit concurrent generations globally to preserve system resources
+        await _generationSemaphore.WaitAsync(cancellationToken);
 
         try
         {
@@ -117,6 +139,7 @@ public sealed class ThumbnailService
         }
         finally
         {
+            _generationSemaphore.Release();
             _activeGenerations.TryRemove(key, out _);
         }
     }
@@ -208,7 +231,7 @@ public sealed class ThumbnailService
 
     private static async Task<string?> ExtractSnapshotAsync(string sourcePath, TimeSpan captureTime)
     {
-        string tempPath = Path.GetTempFileName() + ".png";
+        string tempPath = Path.GetTempFileName() + ".jpg";
 
         try
         {
@@ -296,7 +319,7 @@ public sealed class ThumbnailService
     private static void EncodeAndSave(SKBitmap bitmap, string destPath)
     {
         using SKImage image = SKImage.FromBitmap(bitmap);
-        using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
+        using SKData data = image.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
         using FileStream stream = File.OpenWrite(destPath);
         data.SaveTo(stream);
     }
