@@ -2607,6 +2607,67 @@ public class Program
 
 ---
 
+### `Tagium.Photino.Blazor\Components\App.razor`
+
+```
+@namespace Tagium.Photino.Blazor
+@using Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor
+
+<Router AppAssembly="@typeof(Program).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p>Page not found.</p>
+        </LayoutView>
+    </NotFound>
+</Router>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\AppToolbar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Services.Import
+@using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject ImportService ImportService
+@inject FileDialogService FileDialog
+@inject ModalService ModalService
+@inject AppState AppState
+
+<div class="toolbar">
+    <button class="btn btn-primary" @onclick="ImportFiles">Add Files</button>
+    <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
+            @onclick="ToggleTagView">
+        Tags
+    </button>
+    <button class="btn" @onclick="OpenDataTools">Data Tools</button>
+
+    <div class="icon-actions">
+        <IconButton Title="Settings" OnClick="OpenPreferences">⚙</IconButton>
+        <IconButton Title="Reload Data" OnClick="() => Library.Refresh()">↻</IconButton>
+    </div>
+</div>
+
+@code {
+    private void OpenDataTools() =>
+        ModalService.Show("Data Management", @<DataManagementModal />);
+
+    private void OpenPreferences() =>
+        ModalService.Show("Preferences", @<PreferencesModal />);
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\AppToolbar.razor.cs`
 
 ```csharp
@@ -2637,6 +2698,109 @@ public partial class AppToolbar
         AppState.SwitchView(view);
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\AppToolbar.razor.css`
+
+```css
+.toolbar {
+    height: var(--toolbar-height);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-sm);
+    background: var(--panel-bg);
+    gap: var(--space-xs);
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.icon-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-color);
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    transition: background 0.1s;
+}
+
+    .btn:hover {
+        background: var(--surface-hover);
+        border-color: var(--border-color);
+    }
+
+    .btn.active {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border-color: var(--border-color);
+    }
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    font-weight: 500;
+}
+
+    .btn-primary:hover {
+        background: var(--primary-hover);
+        border-color: var(--primary-hover);
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileGrid.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@implements IDisposable
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+@inject SystemLauncherService Launcher
+@inject IJSRuntime JS
+
+<div id="file-grid-container"
+     class="grid-container"
+     style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
+
+    @foreach (var file in Files)
+    {
+        bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+        <div class="file-card @(isSelected ? "selected" : "")"
+             data-id="@file.Id"
+             @onclick="e => OnCardClick(e, file.Id)"
+             @ondblclick="e => OnCardDoubleClick(e, file)"
+             @onclick:stopPropagation="true">
+
+            <div class="thumbnail">
+                <img src="tagium://thumbnail/@file.Id"
+                     alt="@file.Name"
+                     onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
+                <div class="placeholder-icon">📷</div>
+            </div>
+            <div class="filename" title="@file.Name">
+                @file.Name
+            </div>
+        </div>
+    }
+</div>
+
 ```
 
 ---
@@ -2786,6 +2950,151 @@ public partial class FileGrid : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\FileGrid.razor.css`
+
+```css
+.grid-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-content: flex-start;
+    height: 100%;
+    overflow-y: auto;
+    padding: 10px;
+    position: relative;
+    background-color: var(--bg-color);
+}
+
+.file-card {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.1s; /* Removed width/height transition for instant responsiveness */
+    /* Dynamic Sizing via CSS Variable */
+    width: var(--thumb-size);
+    height: calc(var(--thumb-size) + 30px);
+}
+
+    .file-card:hover {
+        border-color: #666;
+        background: var(--panel-bg);
+    }
+
+    .file-card.selected {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(66, 165, 245, 0.3);
+    }
+
+.thumbnail {
+    flex: 1;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+    .thumbnail img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        position: relative;
+        z-index: 2;
+    }
+
+.placeholder-icon {
+    position: absolute;
+    font-size: 2em;
+    color: var(--border-color);
+    z-index: 1;
+}
+
+.thumbnail.broken .placeholder-icon {
+    color: var(--text-muted);
+}
+
+.filename {
+    height: 30px;
+    line-height: 30px;
+    padding: 0 5px;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border-top: 1px solid var(--border-color);
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FileListView.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@implements IDisposable
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+@inject SystemLauncherService Launcher
+@inject IJSRuntime JS
+
+<div id="file-list-container" class="list-container">
+    <table class="file-list">
+        <thead>
+            <tr>
+                <th></th> <!-- Thumbnail -->
+                <th>Name</th>
+                <th>Path</th>
+                <th>Tags</th>
+                <th>Date Added</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var file in Files)
+            {
+                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                <tr class="file-row @(isSelected ? "selected" : "")"
+                    data-id="@file.Id"
+                    @onclick="e => OnRowClick(e, file.Id)"
+                    @ondblclick="e => OnRowDoubleClick(e, file)">
+                    
+                    <td class="thumbnail-cell">
+                        <div class="thumbnail">
+                            <img src="tagium://thumbnail/@file.Id"
+                                 alt="@file.Name"
+                                 onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
+                            <div class="placeholder-icon">📷</div>
+                        </div>
+                    </td>
+                    <td class="name-cell" title="@file.Name">@file.Name</td>
+                    <td class="path-cell" title="@file.Path">@file.Path</td>
+                    <td class="tags-cell">
+                        @foreach (var tag in file.Tags)
+                        {
+                            <span class="tag-pill" style="border-color: @tag.ColorHex">@tag.Name</span>
+                        }
+                    </td>
+                    <td class="date-cell">@FormatDate(file.DateAdded)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\FileListView.razor.cs`
 
 ```csharp
@@ -2858,6 +3167,251 @@ public partial class FileListView : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\FileListView.razor.css`
+
+```css
+.list-container {
+    height: 100%;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    padding: 0;
+    position: relative;
+}
+
+.file-list {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    color: var(--text-color);
+    table-layout: fixed;
+}
+
+.file-list thead {
+    position: sticky;
+    top: 0;
+    background: var(--panel-bg);
+    z-index: 10;
+}
+
+.file-list th {
+    text-align: left;
+    padding: 8px 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.file-list tbody tr {
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
+
+.file-list tbody tr:hover {
+    background: var(--surface-hover);
+}
+
+.file-list tbody tr.selected {
+    background: rgba(66, 165, 245, 0.15);
+    border-left: 3px solid var(--primary-color);
+}
+
+.file-list td {
+    padding: 6px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.thumbnail-cell {
+    width: 40px;
+    padding: 2px 0 2px 10px !important;
+}
+
+.thumbnail {
+    width: 40px;
+    height: 40px;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    position: relative;
+    z-index: 2;
+}
+
+.thumbnail .placeholder-icon {
+    position: absolute;
+    font-size: 1.5em;
+    color: var(--border-color);
+    z-index: 1;
+}
+
+.thumbnail.broken .placeholder-icon {
+    color: var(--text-muted);
+}
+
+.name-cell {
+    width: 25%;
+    font-weight: 500;
+}
+
+.path-cell {
+    width: 35%;
+    color: var(--text-muted);
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.tags-cell {
+    width: 25%;
+    white-space: normal !important;
+    line-height: 1.4;
+}
+
+.tag-pill {
+    display: inline-block;
+    background: var(--surface-bg);
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    margin-right: 4px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+.date-cell {
+    width: 10%;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+/* Column widths */
+.file-list th:nth-child(1) { width: 60px; } /* thumbnail */
+.file-list th:nth-child(2) { width: 25%; }  /* name */
+.file-list th:nth-child(3) { width: 35%; }  /* path */
+.file-list th:nth-child(4) { width: 25%; }  /* tags */
+.file-list th:nth-child(5) { width: 10%; }  /* date */
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\MainLayout.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@inherits LayoutComponentBase
+@using Tagium.Core.Services
+@using Tagium.Core.Services.Import
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
+@implements IDisposable
+@inject LibraryService Library
+@inject ImportService ImportService
+@inject SettingsManager Settings
+@inject ModalService ModalService
+@inject ToastService Toast
+@inject AppState AppState
+@inject IJSRuntime JS
+
+<FileDropZone>
+    <div class="app-window">
+        <!-- Top Menu Bar -->
+        <AppToolbar />
+
+        <!-- Main Workspace (Sidebars + Content) -->
+        <div class="workspace-layout">
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <aside id="sidebar-panel" class="left-panel">
+                    <TagSidebar />
+                </aside>
+
+                <div id="splitter-left" class="splitter"></div>
+            }
+
+            <main class="center-panel">
+                @if (AppState.CurrentView == AppView.Files)
+                {
+                    <FilesViewToolbar @ref="_filesViewToolbar" />
+                }
+
+                <div class="content-area">
+                    <ErrorBoundary>
+                        <ChildContent>
+                            @if (AppState.CurrentView == AppView.Files)
+                            {
+                                if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                                {
+                                    <FileGrid />
+                                }
+                                else
+                                {
+                                    <FileListView />
+                                }
+                            }
+                            else if (AppState.CurrentView == AppView.Tags)
+                            {
+                                <TagManagerView />
+                            }
+                        </ChildContent>
+                        <ErrorContent Context="ex">
+                            <div class="error-boundary-fallback">
+                                <h3>⚠️ Something went wrong</h3>
+                                <p>@ex.Message</p>
+                                <button class="btn btn-primary" @onclick="ReloadCurrentView">Reload</button>
+                            </div>
+                        </ErrorContent>
+                    </ErrorBoundary>
+                </div>
+            </main>
+
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <div id="splitter-right" class="splitter"></div>
+
+                <aside id="inspector-panel" class="right-panel">
+                    <FileInspector />
+                </aside>
+            }
+        </div>
+
+        <ModalHost />
+        <ToastContainer />
+        @if (_importInProgress)
+        {
+            <div class="import-progress-overlay">
+                <div class="import-progress-bar" style="width: @_importProgress%"></div>
+                <span class="import-progress-text">Importing... @_importProcessed/@_importTotal</span>
+            </div>
+        }
+    </div>
+</FileDropZone>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\MainLayout.razor.cs`
 
 ```csharp
@@ -2924,9 +3478,7 @@ public partial class MainLayout : IDisposable
                 }
                 break;
             case "t":
-                AppState.SwitchView(AppState.CurrentView == AppView.Tags
-                    ? AppView.Files
-                    : AppView.Tags);
+                AppState.SwitchView(AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags);
                 break;
             case "r":
                 Library.Refresh();
@@ -2997,6 +3549,143 @@ public partial class MainLayout : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\MainLayout.razor.css`
+
+```css
+/* Main Window Shell (Column: Toolbar | Workspace) */
+.app-window {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+}
+
+/* Workspace Row (Sidebar | Content | Inspector) */
+.workspace-layout {
+    display: flex;
+    flex: 1; /* Fills remaining height after Toolbar */
+    flex-direction: row;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-color);
+}
+
+.left-panel {
+    width: 250px;
+    background: var(--panel-bg);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-color);
+}
+
+.center-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-color);
+    min-width: 0; /* Prevents flex items from overflowing horizontally */
+}
+
+.right-panel {
+    width: 300px;
+    background: var(--panel-bg);
+    display: flex; /* Ensure inner content can fill height */
+    flex-direction: column;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border-color);
+}
+
+.content-area {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Splitter Styles */
+.splitter {
+    width: 4px;
+    background: var(--bg-color);
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 30; /* Draw above toolbar during resize */
+    transition: background 0.2s;
+    margin-left: -2px;
+    margin-right: -2px;
+}
+
+    .splitter:hover, .splitter.active {
+        background: var(--primary-color);
+    }
+
+/* Error Boundary Fallback */
+.error-boundary-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: var(--space-md);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+    .error-boundary-fallback h3 {
+        margin: 0 0 var(--space-sm) 0;
+        color: var(--danger-color);
+    }
+
+    .error-boundary-fallback p {
+        margin: 0 0 var(--space-md) 0;
+        font-size: var(--font-size-sm);
+    }
+
+    .error-boundary-fallback .btn {
+        background: var(--primary-color);
+        border: none;
+        color: white;
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+    }
+
+        .error-boundary-fallback .btn:hover {
+            background: var(--primary-hover);
+        }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\ModalHost.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@inject ModalService ModalService
+
+@if (IsVisible)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-container" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@ModalService.Title</h3>
+                <button class="close-btn" @onclick="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                @ModalService.Content
+            </div>
+        </div>
+    </div>
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\ModalHost.razor.cs`
 
 ```csharp
@@ -3025,6 +3714,134 @@ public partial class ModalHost
         ModalService.OnClose -= StateHasChanged;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\ModalHost.razor.css`
+
+```css
+.modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-container {
+        background: #313131;
+        border-radius: 8px;
+        width: 500px;
+        max-width: 90%;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    .modal-header {
+        padding: 15px;
+        border-bottom: 1px solid #444;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.2em;
+            color: #eee;
+        }
+
+    .close-btn {
+        background: none;
+        border: none;
+        color: #aaa;
+        font-size: 1.5em;
+        cursor: pointer;
+    }
+
+        .close-btn:hover {
+            color: #fff;
+        }
+
+    .modal-body {
+        padding: 15px;
+        overflow-y: auto;
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\TagSidebar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Shared
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+
+<div class="sidebar-container">
+    <div class="tag-list @GetDisplayModeClass()">
+        <div class="tag-item system-item @(IsAllFilesActive ? "active" : "")"
+             @onclick="() => SetSearch(string.Empty)">
+            <span class="icon">📁</span> All Files
+        </div>
+
+        <div class="tag-item system-item @(IsMissingActive ? "active" : "")"
+             @onclick="() => AppState.SetMissingOnly(true)">
+            <span class="icon">⚠️</span> Missing Files
+        </div>
+
+        <hr />
+
+        @foreach (var tag in Tags)
+        {
+            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase)
+            && !AppState.IsMissingOnly
+            && AppState.CurrentView == AppView.Files;
+
+            if (Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)
+            {
+                // Legacy mode: colored circles
+                <div class="tag-item legacy @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
+                    <TagIcon Tag="@tag" />
+                    <span class="name">@tag.Name</span>
+                    <span class="count">@tag.FileCount</span>
+                </div>
+            }
+            else
+            {
+                // Modern mode: colored pills
+                string tagStyle = isActive
+                ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid;"
+                : $"border-color: {tag.ColorHex};";
+
+                <div class="tag-item pill @(isActive ? "active" : "")"
+                     @onclick="() => SetSearch(tag.Name)"
+                     style="@tagStyle">
+                    @if (!string.IsNullOrWhiteSpace(tag.Emoji))
+                    {
+                        <span class="item-emoji">@tag.Emoji</span>
+                    }
+                    <span class="name">@tag.Name</span>
+                    <span class="count">@tag.FileCount</span>
+                </div>
+            }
+        }
+    </div>
+</div>
 ```
 
 ---
@@ -3083,6 +3900,207 @@ public partial class TagSidebar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\TagSidebar.razor.css`
+
+```css
+/* ::deep combinator pierces CSS isolation */
+::deep .sidebar-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--text-color);
+}
+
+::deep .tag-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-xs);
+}
+
+/* ====== Pill Mode (Modern) ====== */
+::deep .tag-item.pill {
+    padding: 3px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 12px;
+    margin-bottom: 3px;
+    color: var(--text-color);
+    transition: background-color 0.1s, border-color 0.1s, color 0.1s;
+    user-select: none;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    border: 1px dashed;
+}
+
+    ::deep .tag-item.pill:hover {
+        background: var(--surface-bg);
+    }
+
+    ::deep .tag-item.pill.active {
+        color: white;
+    }
+
+    ::deep .tag-item.pill .count {
+        font-size: 0.8em;
+        margin-left: auto;
+    }
+
+    ::deep .tag-item.pill .item-emoji {
+        margin-right: 6px;
+    }
+
+/* ====== Legacy Mode (Minimal Circles) ====== */
+::deep .tag-item.legacy {
+    padding: 3px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    color: var(--text-color);
+    transition: background-color 0.1s;
+    user-select: none;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    border: none;
+}
+
+    ::deep .tag-item.legacy:hover {
+        background: var(--surface-bg);
+    }
+
+    ::deep .tag-item.legacy.active {
+        background: var(--primary-color);
+        color: white;
+    }
+
+    ::deep .tag-item.legacy .count {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        margin-left: auto;
+    }
+
+    ::deep .tag-item.legacy .tag-emoji {
+        margin-right: 8px;
+        width: 1.2em;
+        text-align: center;
+        font-size: var(--font-size-sm);
+    }
+
+/* ====== Shared Styles ====== */
+::deep .system-item {
+    border: none !important;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    padding: 3px 8px;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s;
+}
+
+    ::deep .system-item.active {
+        background: var(--primary-color) !important;
+        color: white !important;
+    }
+
+::deep .icon {
+    margin-right: 6px;
+    display: inline-block;
+    width: 1.2em;
+    text-align: center;
+    font-size: 1em;
+}
+
+::deep hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: var(--space-xs) 0;
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\ToastContainer.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
+@inject ToastService ToastService
+
+<div class="toast-container">
+    @foreach (var toast in ToastService.Toasts)
+    {
+        <div class="toast @GetClass(toast)" @onclick="() => Remove(toast)">
+            @toast.Message
+        </div>
+    }
+</div>
+
+<style>
+    .toast-container {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 9999;
+        pointer-events: none;
+    }
+
+    .toast {
+        background: #333;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        font-size: 0.9em;
+        min-width: 200px;
+        pointer-events: auto;
+        cursor: pointer;
+        animation: slideIn 0.3s ease-out;
+        border-left: 4px solid transparent;
+        opacity: 0.95;
+    }
+
+        .toast:hover {
+            opacity: 1;
+        }
+
+        .toast.info {
+            border-left-color: #42a5f5;
+        }
+
+        .toast.success {
+            border-left-color: #66bb6a;
+        }
+
+        .toast.error {
+            border-left-color: #ef5350;
+        }
+
+    @@keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateX(0);
+            opacity: 0.95;
+        }
+    }
+</style>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\ToastContainer.razor.cs`
 
 ```csharp
@@ -3123,6 +4141,25 @@ public partial class ToastContainer
         ToastService.OnChange -= HandleToastChange;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\_Imports.razor`
+
+```
+@using System.Net.Http
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.JSInterop
+@using Tagium.Photino.Blazor
+@using Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Components.Views
+@using Tagium.Core.Models
+@using Tagium.Core.Services
 ```
 
 ---
@@ -3657,6 +4694,151 @@ public static class ServiceRegistrar
 
 ---
 
+### `Tagium.Photino.Blazor\wwwroot\index.html`
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tagium</title>
+    <base href="/" />
+    <link href="css/app.css" rel="stylesheet" />
+    <!-- Required for Blazor CSS Isolation (MainLayout.razor.css, etc.) -->
+    <link href="Tagium.styles.css" rel="stylesheet" />
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #app {
+            height: 100%;
+        }
+
+        .drag-over::after {
+            content: 'Drop files to add';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(66, 165, 245, 0.3);
+            border: 4px dashed #42a5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            z-index: 9999;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+
+        /* Utility class used by layout.js during drag */
+        .no-select {
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">Loading...</div>
+    <script>
+        window.globalShortcuts = {
+            init: function (dotNetRef) {
+                document.addEventListener('keydown', function (e) {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
+                        return;
+                    }
+
+                    if (e.ctrlKey || e.metaKey) {
+                        const key = e.key.toLowerCase();
+                        if (['z', 'f', 't', 'r'].includes(key)) {
+                            e.preventDefault();
+                            dotNetRef.invokeMethodAsync('HandleGlobalKeyDown', key, e.ctrlKey || e.metaKey, e.shiftKey);
+                        }
+                    }
+                });
+            }
+        };
+    </script>
+    <script src="js/dragdrop.js"></script>
+    <script src="js/grid.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="_framework/blazor.webview.js"></script>
+</body>
+</html>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\Component.razor`
+
+```
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject SystemLauncherService Launcher
+@inject FileDialogService FileDialog
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="inspector-container">
+    <div class="inspector-header">
+        <span class="title">Inspector</span>
+        <span class="badge">@AppState.SelectedFileIds.Count selected</span>
+    </div>
+
+    <div class="inspector-content">
+        @if (HasRenderError)
+        {
+            <div class="state-message error">
+                <p>⚠️ Display Error</p>
+                <button class="btn" @onclick="LoadInspectorDataAsync">Retry</button>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.None)
+        {
+            <div class="state-message">
+                <span class="icon">👆</span>
+                <p>Select a file to view details</p>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.Single && SelectedFile is not null)
+        {
+            <SingleFileInspector File="SelectedFile"
+                                 AssignedTags="AssignedTags"
+                                 AvailableTags="AvailableTags" />
+        }
+        else if (SelectionMode == InspectorMode.Multi)
+        {
+            <MultiFileInspector CommonTags="CommonTags"
+                                AvailableTags="AvailableTags" />
+        }
+        else
+        {
+            <div class="state-message">
+                <p>Loading...</p>
+            </div>
+        }
+    </div>
+</div>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor.cs`
 
 ```csharp
@@ -3815,6 +4997,87 @@ public partial class FileInspector
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor.css`
+
+```css
+.inspector-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--panel-bg);
+    color: var(--text-color);
+    border-left: 1px solid var(--border-color);
+    min-width: 0; /* Allow container to shrink below intrinsic width */
+}
+
+.inspector-header {
+    padding: 8px var(--space-sm);
+    background: var(--surface-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-shrink: 0;
+}
+
+.title {
+    font-weight: 600;
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.badge {
+    font-size: var(--font-size-xs);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-muted);
+}
+
+.inspector-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden; /* Explicitly prevent horizontal scrolling */
+    padding: var(--space-sm);
+    position: relative;
+    min-width: 0; /* Critical: allows flex item to shrink below content size */
+}
+
+.state-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    opacity: 0.7;
+}
+
+    .state-message .icon {
+        font-size: 1.5em;
+        margin-bottom: 8px;
+    }
+
+    .state-message.error {
+        color: var(--danger-color);
+        opacity: 1;
+    }
+
+.btn {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 8px;
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Inspectors\InspectorMode.cs`
 
 ```csharp
@@ -3824,6 +5087,67 @@ public partial class FileInspector
 {
     private enum InspectorMode { None, Single, Multi }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Core.Models
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Shared
+@inject LibraryService Library
+@inject AppState AppState
+
+<h3>Bulk Edit</h3>
+<p class="summary-text">@AppState.SelectedFileIds.Count items selected.</p>
+
+<div class="actions-row">
+    <button class="btn btn-danger" @onclick="RemoveMultipleFiles">Remove All Selected</button>
+</div>
+
+<hr />
+
+<h4>Common Tags</h4>
+<p class="help-text">Click to remove from all selected files.</p>
+<div class="tags-container">
+    @if (CommonTags.Any())
+    {
+        @foreach (var tag in CommonTags)
+        {
+            <span class="tag-pill"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => BulkRemoveTag(tag.Id)">
+                <TagIcon Tag="@tag" ShowIcon="false" />
+                @tag.Name <span class="remove">&times;</span>
+            </span>
+        }
+    }
+    else
+    {
+        <span class="empty-tag">No common tags.</span>
+    }
+</div>
+
+<hr />
+
+<h4>Add Tag</h4>
+<p class="help-text">Click to add to all selected files.</p>
+<div class="tags-container available">
+    @foreach (var tag in AvailableTags)
+    {
+        <span class="tag-pill add"
+              style="border-color: @tag.ColorHex"
+              @onclick="() => BulkAddTag(tag.Id)">
+            <TagIcon Tag="@tag" ShowIcon="false" />
+            @tag.Name
+        </span>
+    }
+</div>
+
 ```
 
 ---
@@ -3856,6 +5180,252 @@ public partial class MultiFileInspector
     {
         Library.RemoveFiles(AppState.SelectedFileIds);
         AppState.ClearSelection();
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor.css`
+
+```css
+.summary-text {
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-size: var(--font-size-xs);
+}
+
+.help-text {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    margin: -4px 0 8px 0;
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background: var(--danger-hover);
+    }
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.empty-tag {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-size-xs);
+}
+
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 3px 6px; /* Increased from 2px for better optical centering */
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+    line-height: 1; /* Force consistent baseline */
+}
+
+    .tag-pill:hover {
+        background: var(--border-color);
+    }
+
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
+        display: flex; /* Ensure perfect vertical alignment */
+        align-items: center;
+        line-height: 1;
+    }
+
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
+        }
+
+/* Subtle separator styling */
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
+
+/* Natural, readable section headings */
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Core.Models
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Photino.Blazor.Components.Shared
+@inject LibraryService Library
+@inject SystemLauncherService Launcher
+@inject FileDialogService FileDialog
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="single-inspector">
+    <div class="preview-container">
+        @if (!File.IsMissing)
+        {
+            @* Ambient Background Layer (Uses low-res thumbnail for performance) *@
+            <img src="tagium://thumbnail/@File.Id" class="preview-bg" alt="" aria-hidden="true" />
+
+            @if (IsImage)
+            {
+                <img src="tagium://preview/@File.Id" class="preview-media" />
+            }
+            else if (IsVideo)
+            {
+                <div class="preview-video-thumbnail" @onclick="OpenFile" title="Click to open video">
+                    <img src="tagium://thumbnail/@File.Id" class="preview-media" alt="Video thumbnail" />
+                    <div class="play-overlay">▶</div>
+                </div>
+            }
+            else
+            {
+                <div class="preview-placeholder">📄</div>
+            }
+        }
+        else
+        {
+            <div class="preview-placeholder error">❓</div>
+        }
+    </div>
+
+    @if (File.IsMissing)
+    {
+        <div class="missing-warning">
+            <h4>⚠️ File Missing</h4>
+            <p>This file was not found at its original path.</p>
+            <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
+        </div>
+    }
+
+    <div class="actions-row">
+        <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
+        <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
+        <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
+    </div>
+
+    <div class="prop-row">
+        <label>Name</label>
+        <span>@File.Name</span>
+    </div>
+    <div class="prop-row">
+        <label>Path</label>
+        <span class="path">@File.Path</span>
+    </div>
+
+    <hr />
+
+    <h4>Tags</h4>
+    <div class="tags-container">
+        @foreach (var tag in AssignedTags)
+        {
+            <span class="tag-pill"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => RemoveTag(tag.Id)">
+                <TagIcon Tag="@tag" ShowIcon="false" />
+                @tag.Name <span class="remove">&times;</span>
+            </span>
+        }
+    </div>
+
+    <hr />
+
+    <h4>Add Tag</h4>
+    <div class="tags-container available">
+        @foreach (var tag in AvailableTags)
+        {
+            <span class="tag-pill add"
+                  style="border-color: @tag.ColorHex"
+                  @onclick="() => AddTag(tag.Id)">
+                <TagIcon Tag="@tag" ShowIcon="false" />
+                @tag.Name
+            </span>
+        }
+    </div>
+</div>
+
+@code{
+    private void RelocateFile()
+    {
+        string[]? files = FileDialogService.OpenFiles();
+
+        if (files is null || files.Length == 0)
+        {
+            return;
+        }
+
+        RelocateResult result = Library.RelocateFile(File.Id, files[0]);
+
+        if (result.Status != RelocateResultStatus.Duplicate || result.ConflictingFile is null)
+        {
+            return;
+        }
+
+        ModalService.Show(
+            "Duplicate File Found",
+            @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
     }
 }
 ```
@@ -3912,6 +5482,328 @@ public partial class SingleFileInspector
         AppState.ClearSelection();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor.css`
+
+```css
+.single-inspector {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    /* Variables for blur control */
+    --blur-radius: 20px;
+    --bg-opacity: 0.5;
+}
+
+.preview-container {
+    flex: 1 1 0;
+    min-height: 200px;
+    width: 100%;
+    background: #000; /* Fallback for transparency */
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    position: relative;
+    z-index: 0;
+}
+
+/* Blurred Background Layer */
+.preview-bg {
+    position: absolute;
+    top: -10%;
+    left: -10%;
+    width: 120%; /* Expand slightly to avoid blurred edge vignetting */
+    height: 120%;
+    object-fit: cover;
+    filter: blur(var(--blur-radius));
+    opacity: var(--bg-opacity);
+    z-index: 0;
+    pointer-events: none;
+}
+
+.preview-video-thumbnail {
+    position: relative;
+    cursor: pointer;
+    height: 100%;
+    width: 100%;
+    background: transparent;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1; /* Sit above background */
+}
+
+.preview-media {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    position: relative;
+    z-index: 1; /* Sit above background */
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5)); /* Pop off the background */
+}
+
+.play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 3rem;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.preview-placeholder {
+    font-size: 3em;
+    color: var(--border-color);
+    position: relative;
+    z-index: 1;
+}
+
+    .preview-placeholder.error {
+        color: var(--danger-color);
+    }
+
+.missing-warning,
+.actions-row,
+.prop-row,
+hr,
+h4,
+.tags-container {
+    flex-shrink: 0;
+}
+
+.prop-row {
+    margin-bottom: 8px;
+}
+
+    .prop-row label {
+        display: block;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+    }
+
+.path {
+    word-break: break-all;
+    font-size: var(--font-size-xs);
+    font-family: monospace;
+    color: var(--text-muted);
+}
+
+.actions-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    background: var(--surface-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    flex: 1;
+}
+
+    .btn:hover {
+        background: var(--border-color);
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background: var(--danger-hover);
+    }
+
+.btn-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+    .btn-primary:hover {
+        background: var(--primary-hover);
+    }
+
+.btn-small {
+    font-size: var(--font-size-xs);
+    padding: 2px 6px;
+}
+
+.missing-warning {
+    background: rgba(198, 40, 40, 0.15);
+    border: 1px solid var(--danger-color);
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+    .missing-warning h4 {
+        margin: 0 0 4px 0;
+        color: var(--danger-color);
+        font-size: var(--font-size-sm);
+    }
+
+    .missing-warning p {
+        margin: 0 0 8px 0;
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+    }
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.tag-pill {
+    background: var(--surface-bg);
+    padding: 3px 6px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+    line-height: 1;
+}
+
+    .tag-pill:hover {
+        background: var(--border-color);
+    }
+
+    .tag-pill .remove {
+        margin-left: 4px;
+        color: var(--danger-color);
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        line-height: 1;
+    }
+
+    .tag-pill.add {
+        background: transparent;
+        border-style: dashed;
+        opacity: 0.8;
+    }
+
+        .tag-pill.add:hover {
+            background: var(--surface-bg);
+            border-style: solid;
+            opacity: 1;
+        }
+
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 10px 0;
+}
+
+h4 {
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Data
+@using Tagium.Core.Services
+@using Tagium.Core.Services.DataExport
+@using Tagium.Core.Services.DataMerge
+@using Tagium.Core.Services.LibraryIntegrity
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
+@inject LibraryService Library
+@inject LibraryIntegrityService IntegrityService
+@inject DataExportService ExportService
+@inject DatabaseMergeService MergeService
+@inject DatabaseManager DbManager
+@inject FileDialogService FileDialog
+@inject ModalService ModalService
+@inject ToastService Toast
+
+<div class="data-tools">
+    <div class="section">
+        <h4>Integrity</h4>
+        <p class="desc">Scan for files missing from disk.</p>
+        <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
+        @if (ScanResult is not null)
+        {
+            <div class="result-box">
+                Scanned: @ScanResult.FilesScanned <br />
+                Missing: @ScanResult.NewlyMissing <br />
+                Found: @ScanResult.NewlyFound
+            </div>
+        }
+        <button class="btn btn-danger" @onclick="PurgeMissing" disabled="@(Library.GetFiles(null, true).Count == 0)">Purge Missing Files</button>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Export</h4>
+        <div class="btn-row">
+            <button class="btn" @onclick="ExportJson">Export JSON</button>
+            <button class="btn" @onclick="ExportCsv">Export CSV</button>
+            <button class="btn" @onclick="BackupDb">Backup DB</button>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Merge & Restore</h4>
+        <p class="desc">Import data from another Tagium DB, or restore a backup.</p>
+        <div class="btn-row">
+            <button class="btn" @onclick="MergeDb">Merge...</button>
+            <button class="btn btn-danger" @onclick="RestoreDb">Restore...</button>
+        </div>
+        @if (MergeResult is not null)
+        {
+            <div class="result-box">
+                New Files: @MergeResult.NewFiles <br />
+                New Tags: @MergeResult.NewTags <br />
+                Associations: @MergeResult.NewAssociations
+            </div>
+        }
+    </div>
+</div>
+
 ```
 
 ---
@@ -4008,6 +5900,103 @@ public partial class DataManagementModal
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor.css`
+
+```css
+.data-tools {
+        padding: 5px;
+    }
+
+    .section {
+        margin-bottom: 15px;
+    }
+
+    h4 {
+        margin: 0 0 5px 0;
+        color: #eee;
+    }
+
+    .desc {
+        font-size: 0.9em;
+        color: #aaa;
+        margin: 0 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        border: 1px solid #555;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+    .btn-danger {
+        background: #c62828;
+        border-color: #b71c1c;
+    }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+    .btn-row {
+        display: flex;
+        gap: 10px;
+    }
+
+    .result-box {
+        margin-top: 10px;
+        padding: 8px;
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 4px;
+        font-size: 0.9em;
+        color: #ccc;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #444;
+        margin: 15px 0;
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="duplicate-modal">
+    <p>A file with the same content already exists in your library:</p>
+
+    <div class="file-path">@ExistingFile.Path</div>
+
+    <div class="footer">
+        <button class="btn btn-primary" @onclick="ShowExisting">Show Existing File</button>
+        <button class="btn" @onclick="Close">Close</button>
+    </div>
+</div>
+
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor.cs`
 
 ```csharp
@@ -4040,6 +6029,113 @@ public partial class DuplicateFileModal
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor.css`
+
+```css
+.duplicate-modal p {
+        color: #eee;
+        margin-top: 0;
+    }
+
+    .file-path {
+        background: #222;
+        padding: 10px;
+        border: 1px solid #444;
+        border-radius: 4px;
+        font-family: monospace;
+        word-break: break-all;
+        margin: 15px 0;
+        color: #aaa;
+    }
+
+    .footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 20px;
+    }
+
+    .btn {
+        padding: 6px 15px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        background: #444;
+        color: white;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+
+    .btn-primary {
+        background: #42a5f5;
+    }
+
+        .btn-primary:hover {
+            background: #1e88e5;
+        }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject SettingsManager Settings
+@inject ModalService ModalService
+
+<div class="modal-header">Preferences</div>
+<div class="modal-body">
+    <h4>Tag Sidebar Style</h4>
+    <p class="hint">Choose how tags appear in the sidebar.</p>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="tagSidebarStyle"
+                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.Pill)"
+                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.Pill))" />
+            Colored Pills
+        </label>
+        <label>
+            <input type="radio"
+                   name="tagSidebarStyle"
+                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)"
+                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.MinimalCircle))" />
+            Minimal Circles
+        </label>
+    </div>
+
+    <h4>Emoji Set</h4>
+    <p class="hint">Requires restart to fully apply font changes.</p>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.SystemDefault)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.SystemDefault))" />
+            System Default (Windows)
+        </label>
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.Apple)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.Apple))" />
+            Apple Color Emoji
+        </label>
+    </div>
+</div>
+<div class="modal-footer">
+    <button class="btn" @onclick="Close">Close</button>
+</div>
+
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor.cs`
 
 ```csharp
@@ -4065,6 +6161,79 @@ public partial class PreferencesModal
         ModalService.Close();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor.css`
+
+```css
+.radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+    .hint {
+        font-size: 0.85em;
+        color: #888;
+        margin: -5px 0 10px 0;
+    }
+
+    .btn {
+        background: #444;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .btn:hover {
+            background: #555;
+        }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\FileDropZone.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Services
+@using Tagium.Core.Services.Import
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject ImportService ImportService
+@inject FileImportService FileImportService
+@inject SettingsManager Settings
+
+<div class="drop-zone-wrapper @(Settings.Current.EmojiPreference == EmojiSet.Apple ? "use-apple-emojis" : "")"
+     @ondragenter="OnDragEnter"
+     @ondragleave="OnDragLeave">
+
+    @ChildContent
+
+    <div class="drag-overlay @(_isDragging ? "active" : "")">
+        <div class="drag-message">
+            <div class="drag-icon">📂</div>
+            <h2>@(_isProcessing ? "Processing..." : "Drop files to import")</h2>
+        </div>
+        @if (_isDragging || _isProcessing)
+        {
+            <InputFile OnChange="HandleFileDrop" multiple class="drag-input" />
+        }
+    </div>
+</div>
 ```
 
 ---
@@ -4149,6 +6318,77 @@ public partial class FileDropZone
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\FileDropZone.razor.css`
+
+```css
+.drop-zone-wrapper {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .drag-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+    }
+
+        .drag-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+    .drag-input {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: copy;
+    }
+
+    .drag-message {
+        text-align: center;
+        color: white;
+    }
+
+    .drag-icon {
+        font-size: 3em;
+        color: var(--primary-color);
+        margin-bottom: 20px;
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+
+<button class="icon-button @Class"
+        @onclick="OnClick"
+        title="@Title"
+        aria-label="@Title"
+        disabled="@Disabled">
+    @ChildContent
+</button>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor.cs`
 
 ```csharp
@@ -4164,6 +6404,56 @@ public partial class IconButton
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public EventCallback OnClick { get; set; }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor.css`
+
+```css
+.icon-button {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    width: var(--toolbar-icon-size);
+    height: var(--toolbar-icon-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.1s, background-color 0.1s;
+}
+
+    .icon-button:hover {
+        color: var(--text-color);
+        background: var(--surface-hover);
+    }
+
+    .icon-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\SearchInput.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@implements IDisposable
+
+<input type="text"
+       class="search-input"
+       placeholder="Search files..."
+       value="@_value"
+       @oninput="OnInput"
+       @ref="_inputElement"
+       aria-label="Search files" />
 ```
 
 ---
@@ -4227,6 +6517,58 @@ public partial class SearchInput
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\SearchInput.razor.css`
+
+```css
+.search-input {
+    width: 100%;
+    /* Ensure padding doesn't overflow width */
+    box-sizing: border-box;
+    /* Visual Styles moved from Toolbar */
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px var(--space-sm);
+    border-radius: 15px;
+    font-size: var(--font-size-sm);
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        background: #000;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy" aria-label="Sort by">
+        <option value="@SortBy.DateAdded">Date</option>
+        <option value="@SortBy.Name">Name</option>
+        <option value="@SortBy.Path">Path</option>
+    </select>
+    <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection" aria-label="Sort direction">
+        <option value="@SortDirection.Asc">Asc</option>
+        <option value="@SortDirection.Desc">Desc</option>
+    </select>
+</div>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor.cs`
 
 ```csharp
@@ -4261,6 +6603,55 @@ public partial class SortControls
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor.css`
+
+```css
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+select {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: var(--font-size-sm);
+    height: 24px;
+    outline: none;
+}
+
+    select:hover {
+        border-color: #555;
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Models
+
+@if (ShowIcon)
+{
+    @if (!string.IsNullOrWhiteSpace(Tag.Emoji))
+    {
+        <span class="tag-emoji">@Tag.Emoji</span>
+    }
+    else
+    {
+        <span class="tag-color" style="background-color: @Tag.ColorHex"></span>
+    }
+}
+
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor.cs`
 
 ```csharp
@@ -4274,6 +6665,50 @@ public partial class TagIcon
     [Parameter, EditorRequired] public required Tag Tag { get; set; }
     [Parameter] public bool ShowIcon { get; set; } = true;
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor.css`
+
+```css
+.tag-emoji {
+        display: inline-block;
+        width: 1.2em;
+        text-align: center;
+        margin-right: 6px;
+        line-height: 1;
+        font-size: 1.1em;
+    }
+
+    .tag-color {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 8px;
+        flex-shrink: 0;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\ThumbnailSizeSlider.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <input type="range" min="64" max="256" step="16"
+           value="@Settings.Current.ThumbnailSize"
+           @oninput="OnInput"
+           @onchange="OnCommit"
+           aria-label="Thumbnail size" />
+</div>
+
 ```
 
 ---
@@ -4302,6 +6737,103 @@ public partial class ThumbnailSizeSlider
         Settings.Save();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\ThumbnailSizeSlider.razor.css`
+
+```css
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+input[type=range] {
+    -webkit-appearance: none;
+    width: 100px;
+    background: transparent;
+    margin: 0;
+    height: 20px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+    input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 4px;
+        cursor: pointer;
+        background: #444;
+        border-radius: 2px;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 12px;
+        width: 12px;
+        border-radius: 50%;
+        background: var(--primary-color);
+        margin-top: -4px;
+        cursor: pointer;
+        box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        transition: transform 0.1s;
+    }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            background: var(--primary-hover);
+        }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SearchInput SearchInput
+@inject SettingsManager Settings
+
+<div class="files-view-toolbar">
+    <div class="search-container">
+        <SearchInput @ref="SearchInput" />
+    </div>
+
+    <div class="view-mode-buttons">
+        <button class="btn-icon"
+                @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
+                title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+            <span>@(Settings.Current.FileViewMode == FileViewMode.Grid ? "☰" : "⊞")</span>
+        </button>
+    </div>
+
+    <div class="view-options-wrapper">
+        <button class="btn-icon @(IsMenuOpen ? "active" : "")"
+                @onclick="ToggleMenu"
+                title="View Options">
+            <span>👁</span>
+        </button>
+
+        @if (IsMenuOpen)
+        {
+            <div class="view-menu-overlay" @onclick="CloseMenu"></div>
+            <div class="view-menu-dropdown">
+                <div class="menu-section">
+                    <label>Sort By</label>
+                    <SortControls />
+                </div>
+                <hr />
+                <div class="menu-section">
+                    <label>Thumbnail Size</label>
+                    <ThumbnailSizeSlider />
+                </div>
+            </div>
+        }
+    </div>
+</div>
 ```
 
 ---
@@ -4338,6 +6870,196 @@ public partial class FilesViewToolbar
         Settings.Update(s => s.FileViewMode = mode);
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor.css`
+
+```css
+.files-view-toolbar {
+    display: flex;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    gap: var(--space-sm);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 20;
+}
+
+.search-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.view-options-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.btn-icon {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    transition: background 0.1s;
+}
+
+    .btn-icon:hover {
+        background: var(--surface-hover);
+        color: var(--text-color);
+    }
+
+    .btn-icon.active {
+        background: var(--surface-hover);
+        color: var(--primary-color);
+        border-color: var(--border-color);
+    }
+
+/* Dropdown Menu */
+.view-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 1001;
+    min-width: 200px;
+    animation: fadeIn 0.1s ease-out;
+}
+
+.view-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+}
+
+.menu-section {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+    .menu-section label {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: 10px 0;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\TagManagerView.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject SettingsManager Settings
+
+<div class="tag-manager-view">
+    <div class="header-row">
+        <h3>Manage Tags</h3>
+        <div class="add-row">
+            <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
+            <button class="btn-primary" @onclick="AddTag">Add</button>
+        </div>
+    </div>
+
+    <div class="sort-controls">
+        <select @onchange="OnSortByChange" value="@Settings.Current.TagSortBy">
+            <option value="@TagSortBy.Name">Name</option>
+            <option value="@TagSortBy.FileCount">File Count</option>
+        </select>
+        <select @onchange="OnSortDirChange" value="@Settings.Current.TagSortDirection">
+            <option value="@SortDirection.Asc">Asc</option>
+            <option value="@SortDirection.Desc">Desc</option>
+        </select>
+    </div>
+
+    <div class="tag-list">
+        @foreach (var tag in Tags)
+        {
+            <div class="tag-row">
+                <!-- Color Picker -->
+                <div class="color-picker-wrapper">
+                    <button class="color-circle"
+                            style="background-color: @tag.ColorHex"
+                            @onclick="() => ToggleColorPicker(tag.Id)"></button>
+
+                    @if (ActiveColorPickerId == tag.Id)
+                    {
+                        <div class="color-popup" @onclick:stopPropagation="true">
+                            <div class="color-grid">
+                                @foreach (var color in Palette)
+                                {
+                                    <div class="swatch"
+                                         style="background-color: @color"
+                                         @onclick="() => UpdateTagColor(tag, color)"></div>
+                                }
+                            </div>
+                            <div class="overlay" @onclick="() => ActiveColorPickerId = null"></div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Emoji Input -->
+                <input type="text" class="emoji-input"
+                       value="@tag.Emoji"
+                       @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
+                       maxlength="2" />
+
+                <!-- Name Input -->
+                <input type="text" class="name-input"
+                       value="@tag.Name"
+                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
+
+                <span class="count">@tag.FileCount files</span>
+
+                <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
+            </div>
+        }
+    </div>
+</div>
 ```
 
 ---
@@ -4484,6 +7206,224 @@ public partial class TagManagerView
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Views\TagManagerView.razor.css`
+
+```css
+.tag-manager-view {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-md);
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: var(--space-sm);
+}
+
+    .header-row h3 {
+        margin: 0;
+        color: var(--text-color);
+        font-size: var(--font-size-sm);
+    }
+
+.add-row {
+    display: flex;
+    gap: var(--space-xs);
+}
+
+    .add-row input {
+        padding: 4px var(--space-xs);
+        background: var(--surface-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        border-radius: 4px;
+        flex: 1;
+        font-size: var(--font-size-sm);
+    }
+
+        .add-row input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+.btn-primary {
+    background: var(--primary-color);
+    border: none;
+    color: white;
+    padding: 0 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    height: 24px;
+}
+
+    .btn-primary:hover {
+        background: var(--primary-hover);
+    }
+
+.sort-controls {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-sm);
+    padding: var(--space-xs);
+    background: var(--panel-bg);
+    border-radius: 4px;
+}
+
+    .sort-controls select {
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: var(--font-size-sm);
+        outline: none;
+    }
+
+        .sort-controls select:hover {
+            border-color: #555;
+        }
+
+.tag-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tag-row {
+    display: flex;
+    align-items: center;
+    padding: 4px var(--space-sm);
+    background: var(--surface-bg);
+    border-radius: 4px;
+    gap: var(--space-xs);
+    transition: background 0.1s;
+}
+
+    .tag-row:hover {
+        background: var(--panel-bg);
+    }
+
+.color-picker-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.color-circle {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    cursor: pointer;
+    display: block;
+}
+
+.color-popup {
+    position: absolute;
+    top: 25px;
+    left: 0;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    padding: 6px;
+    z-index: 1000;
+    border-radius: 6px;
+    width: 140px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.color-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    position: relative;
+    z-index: 2;
+}
+
+.swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+    .swatch:hover {
+        border-color: white;
+        transform: scale(1.1);
+    }
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+}
+
+.emoji-input {
+    width: 24px;
+    text-align: center;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: var(--font-size-sm);
+}
+
+    .emoji-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+
+.name-input {
+    flex: 1;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-color);
+    padding: 3px var(--space-xs);
+    border-radius: 4px;
+    font-size: var(--font-size-sm);
+}
+
+    .name-input:focus {
+        background: var(--bg-color);
+        border-color: var(--border-color);
+    }
+
+.count {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    width: 60px;
+    text-align: right;
+}
+
+.btn-icon.delete {
+    background: none;
+    border: none;
+    color: var(--danger-color);
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 0 var(--space-xs);
+    line-height: 1;
+    display: flex;
+    align-items: center;
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Services\Toasting\Toast.cs`
 
 ```csharp
@@ -4564,6 +7504,404 @@ public enum ToastType
     Success,
     Error
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\css\app.css`
+
+```css
+:root {
+    /* Global Color Palette */
+    --bg-color: #181818;
+    --panel-bg: #202020;
+    --surface-bg: #2D2D2D;
+    --surface-hover: rgba(255, 255, 255, 0.05);
+    --border-color: #383838;
+    --text-color: #E0E0E0;
+    --text-muted: #9E9E9E;
+    --primary-color: #42a5f5;
+    --primary-hover: #1e88e5;
+    --danger-color: #d32f2f; /* Vibrant red */
+    --danger-hover: #b71c1c; /* Deeper red on hover */
+    /* Spacing & Sizing Tokens */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --toolbar-height: 38px;
+    --toolbar-icon-size: 28px;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    /* Responsive Breakpoints */
+    --breakpoint-sm: 700px;
+}
+
+/* Rest of file remains unchanged */
+@font-face {
+    font-family: 'Apple Emoji';
+    src: url('../fonts/AppleColorEmoji.ttf');
+}
+
+body {
+    font-family: 'Segoe UI', 'Segoe UI Emoji', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+#app {
+    height: 100%;
+}
+
+.drag-over::after {
+    content: 'Drop files to add';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(66, 165, 245, 0.3);
+    border: 4px dashed #42a5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 2em;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    z-index: 9999;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.no-select {
+    user-select: none;
+}
+
+/* Custom Scrollbar Styling (WebKit) */
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 6px;
+    border: 3px solid var(--bg-color);
+}
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--text-muted);
+    }
+
+    ::-webkit-scrollbar-thumb:active {
+        background: var(--primary-color);
+    }
+
+::-webkit-scrollbar-corner {
+    background: var(--bg-color);
+}
+
+/* Import Progress Overlay */
+.import-progress-overlay {
+    position: fixed;
+    bottom: 60px;
+    left: 20px;
+    right: 20px;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    z-index: 9998;
+}
+
+.import-progress-bar {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 2px;
+    transition: width 0.2s ease;
+}
+
+.import-progress-text {
+    position: absolute;
+    top: -20px;
+    left: 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\dragdrop.js`
+
+```javascript
+window.dragDrop = {
+    init: (dotNetHelper) => {
+        const dropZone = document.getElementById('app');
+
+        // Prevent default browser actions (like opening the file in the tab)
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight visual feedback
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+        });
+
+        // We do NOT handle the data transfer here.
+        // The C# Native Window Handler catches the files before JS sees them.
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\grid.js`
+
+```javascript
+window.gridInteractions = {
+    dotNetRef: null,
+    containerId: '',
+    selectionBox: null,
+    isSelecting: false,
+    startX: 0,
+    startY: 0,
+
+    init: function (dotNetRef, containerId) {
+        this.dotNetRef = dotNetRef;
+        this.containerId = containerId;
+
+        // Create selection box element if it doesn't exist
+        if (!document.getElementById('selection-box')) {
+            this.selectionBox = document.createElement('div');
+            this.selectionBox.id = 'selection-box';
+            this.selectionBox.style.position = 'absolute';
+            this.selectionBox.style.border = '1px solid #42a5f5';
+            this.selectionBox.style.backgroundColor = 'rgba(66, 165, 245, 0.2)';
+            this.selectionBox.style.display = 'none';
+            this.selectionBox.style.zIndex = '9999';
+            this.selectionBox.style.pointerEvents = 'none';
+            document.body.appendChild(this.selectionBox);
+        } else {
+            this.selectionBox = document.getElementById('selection-box');
+        }
+
+        // Attach global events
+        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        }
+    },
+
+    handleKeyDown: function (e) {
+        // Ignore if focus is in an input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+        if (e.key === 'Delete') {
+            this.dotNetRef.invokeMethodAsync('OnDeleteKey');
+        } else if (e.key === 'Enter') {
+            this.dotNetRef.invokeMethodAsync('OnEnterKey');
+        } else if (e.key.startsWith('Arrow')) {
+            e.preventDefault();
+            this.navigate(e.key);
+        } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            this.dotNetRef.invokeMethodAsync('SelectAll');
+        }
+    },
+
+    navigate: function (direction) {
+        const items = Array.from(document.querySelectorAll('.file-card'));
+        if (items.length === 0) return;
+
+        const selected = document.querySelector('.file-card.selected');
+        let index = selected ? items.indexOf(selected) : -1;
+
+        if (index === -1) {
+            index = 0; // Default to first
+        } else {
+            const containerWidth = document.getElementById(this.containerId).clientWidth;
+            const itemWidth = items[0].getBoundingClientRect().width + 10; // + gap
+            const cols = Math.floor(containerWidth / itemWidth) || 1;
+
+            if (direction === 'ArrowRight') index++;
+            else if (direction === 'ArrowLeft') index--;
+            else if (direction === 'ArrowDown') index += cols;
+            else if (direction === 'ArrowUp') index -= cols;
+        }
+
+        // Clamp
+        if (index < 0) index = 0;
+        if (index >= items.length) index = items.length - 1;
+
+        // Get ID (as string)
+        const id = items[index].getAttribute('data-id');
+        items[index].scrollIntoView({ block: 'nearest' });
+
+        this.dotNetRef.invokeMethodAsync('SelectFile', id);
+    },
+
+    handleMouseDown: function (e) {
+        // Ignore clicks on items (handled by Blazor onclick)
+        if (e.target.closest('.file-card')) return;
+
+        // Detect if click is on scrollbar
+        // If the target is the container itself, check if click is outside client area
+        if (e.target.id === this.containerId) {
+            const rect = e.target.getBoundingClientRect();
+            const isVerticalScrollbar = e.clientX > rect.left + e.target.clientWidth;
+            const isHorizontalScrollbar = e.clientY > rect.top + e.target.clientHeight;
+
+            if (isVerticalScrollbar || isHorizontalScrollbar) {
+                return;
+            }
+        }
+
+        e.preventDefault();
+        this.isSelecting = true;
+        this.startX = e.pageX;
+        this.startY = e.pageY;
+
+        this.selectionBox.style.display = 'block';
+        this.updateBox(e.pageX, e.pageY);
+
+        document.addEventListener('mousemove', this.boundMouseMove = this.handleMouseMove.bind(this));
+        document.addEventListener('mouseup', this.boundMouseUp = this.handleMouseUp.bind(this));
+    },
+
+    handleMouseMove: function (e) {
+        if (!this.isSelecting) return;
+        this.updateBox(e.pageX, e.pageY);
+    },
+
+    updateBox: function (currentX, currentY) {
+        const left = Math.min(this.startX, currentX);
+        const top = Math.min(this.startY, currentY);
+        const width = Math.abs(currentX - this.startX);
+        const height = Math.abs(currentY - this.startY);
+
+        this.selectionBox.style.left = left + 'px';
+        this.selectionBox.style.top = top + 'px';
+        this.selectionBox.style.width = width + 'px';
+        this.selectionBox.style.height = height + 'px';
+    },
+
+    handleMouseUp: function (e) {
+        this.isSelecting = false;
+        this.selectionBox.style.display = 'none';
+
+        document.removeEventListener('mousemove', this.boundMouseMove);
+        document.removeEventListener('mouseup', this.boundMouseUp);
+
+        // Calculate intersection
+        const boxRect = {
+            left: Math.min(this.startX, e.pageX),
+            top: Math.min(this.startY, e.pageY),
+            right: Math.max(this.startX, e.pageX),
+            bottom: Math.max(this.startY, e.pageY)
+        };
+
+        const ids = [];
+        document.querySelectorAll('.file-card').forEach(item => {
+            const rect = item.getBoundingClientRect();
+            // Adjust rect to page coordinates
+            const pageRect = {
+                left: rect.left + window.scrollX,
+                top: rect.top + window.scrollY,
+                right: rect.right + window.scrollX,
+                bottom: rect.bottom + window.scrollY
+            };
+
+            const intersect = !(boxRect.right < pageRect.left ||
+                boxRect.left > pageRect.right ||
+                boxRect.bottom < pageRect.top ||
+                boxRect.top > pageRect.bottom);
+
+            if (intersect) {
+                ids.push(item.getAttribute('data-id')); // Keep as string
+            }
+        });
+
+        if (ids.length > 0) {
+            this.dotNetRef.invokeMethodAsync('SelectFiles', ids);
+        } else {
+            this.dotNetRef.invokeMethodAsync('ClearSelection');
+        }
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\layout.js`
+
+```javascript
+window.layoutResizer = {
+    init: function (leftPanelId, leftSplitterId, rightPanelId, rightSplitterId) {
+        const leftPanel = document.getElementById(leftPanelId);
+        const rightPanel = document.getElementById(rightPanelId);
+        const leftSplitter = document.getElementById(leftSplitterId);
+        const rightSplitter = document.getElementById(rightSplitterId);
+
+        if (leftSplitter && leftPanel) {
+            setupResizer(leftSplitter, leftPanel, 'left');
+        }
+
+        if (rightSplitter && rightPanel) {
+            setupResizer(rightSplitter, rightPanel, 'right');
+        }
+
+        function setupResizer(splitter, panel, side) {
+            splitter.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+
+                splitter.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                document.body.classList.add('no-select');
+
+                function onMouseMove(e) {
+                    if (side === 'left') {
+                        const newWidth = Math.min(Math.max(e.clientX, 150), 600);
+                        panel.style.width = newWidth + 'px';
+                    } else {
+                        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 200), 800);
+                        panel.style.width = newWidth + 'px';
+                    }
+                }
+
+                function onMouseUp() {
+                    splitter.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.classList.remove('no-select');
+
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+        }
+    }
+};
 ```
 
 ---
