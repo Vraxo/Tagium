@@ -143,7 +143,6 @@ public class LibraryScanService
 
             await EvaluateSingleFileAsync(filePath, context, cancellationToken);
 
-            ProgressCurrent++;
             await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
         }
     }
@@ -167,6 +166,7 @@ public class LibraryScanService
                         context.HasChanges = true;
                     }
                     _ = context.VerifiedPaths.Add(filePath);
+                    ProgressCurrent++;
                 }
                 else
                 {
@@ -200,6 +200,7 @@ public class LibraryScanService
 
             await _thumbnailService.GenerateThumbnailAsync(existing, cancellationToken: cancellationToken);
         }
+        ProgressCurrent++;
     }
 
     private async Task ResolveMissingAndImportNewAsync(ScanContext context, Stopwatch uiTimer, CancellationToken cancellationToken)
@@ -256,6 +257,7 @@ public class LibraryScanService
 
                             _ = processedUntracked.Add(candidatePath);
                             _ = context.VerifiedPaths.Add(candidatePath);
+                            ProgressCurrent++;
                             break;
                         }
                     }
@@ -326,6 +328,7 @@ public class LibraryScanService
                 Console.WriteLine($"[Scan] Error importing untracked file {path}: {ex.Message}");
             }
 
+            ProgressCurrent++;
             await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
         }
     }
@@ -338,7 +341,7 @@ public class LibraryScanService
             return;
         }
 
-        var existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, Tag> existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         foreach (string rawTag in metadata.Tags)
         {
             string norm = TagFormatter.Normalize(rawTag);
