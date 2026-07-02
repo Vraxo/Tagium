@@ -2,6 +2,7 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -18,6 +19,7 @@ public class LibraryService
     private readonly UndoService _undoService;
     private readonly LibraryRootRepository _rootRepo;
     private readonly LibraryScanService _scanService;
+    private readonly ExifToolService _exifTool;
 
     public event Action? LibraryChanged;
 
@@ -30,7 +32,8 @@ public class LibraryService
         SettingsManager settingsManager,
         UndoService undoService,
         LibraryRootRepository rootRepo,
-        LibraryScanService scanService)
+        LibraryScanService scanService,
+        ExifToolService exifTool)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
@@ -41,6 +44,7 @@ public class LibraryService
         _undoService = undoService;
         _rootRepo = rootRepo;
         _scanService = scanService;
+        _exifTool = exifTool;
 
         _scanService.ScanCompleted += () => LibraryChanged?.Invoke();
     }
@@ -94,10 +98,15 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 [fileId],
                 wasAdding: true));
+
+            _ = SyncMetadataToFileAsync(fileId);
         }
 
         LibraryChanged?.Invoke();
@@ -129,10 +138,18 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
                 wasAdding: true));
+
+            foreach (Guid fileId in modifiedFiles)
+            {
+                _ = SyncMetadataToFileAsync(fileId);
+            }
         }
 
         LibraryChanged?.Invoke();
@@ -149,10 +166,15 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 [fileId],
                 wasAdding: false));
+
+            _ = SyncMetadataToFileAsync(fileId);
         }
 
         LibraryChanged?.Invoke();
@@ -183,10 +205,18 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
                 wasAdding: false));
+
+            foreach (Guid fileId in modifiedFiles)
+            {
+                _ = SyncMetadataToFileAsync(fileId);
+            }
         }
 
         LibraryChanged?.Invoke();
@@ -276,5 +306,24 @@ public class LibraryService
     public async Task ScanAsync()
     {
         await _scanService.ScanAllAsync();
+    }
+
+    private async Task SyncMetadataToFileAsync(Guid fileId)
+    {
+        FileEntry? file = _fileRepo.GetById(fileId);
+        if (file is null)
+        {
+            return;
+        }
+
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Tag> tags = _tagRepo.GetTagsByIds(tagIds);
+
+        MediaMetadata metadata = new()
+        {
+            Tags = tags.Select(t => t.Name).ToList()
+        };
+
+        _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
     }
 }

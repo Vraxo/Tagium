@@ -31,6 +31,7 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<UndoService>();
 
         // Core - Services
+        _ = services.AddSingleton<ExifToolService>();
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryScanService>();
         _ = services.AddSingleton<LibraryService>();

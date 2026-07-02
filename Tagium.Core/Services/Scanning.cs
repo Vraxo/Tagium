@@ -1,6 +1,7 @@
 ﻿using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -9,6 +10,9 @@ public class LibraryScanService
     private readonly LibraryRootRepository _rootRepo;
     private readonly FileRepository _fileRepo;
     private readonly ThumbnailService _thumbnailService;
+    private readonly TagRepository _tagRepo;
+    private readonly FileTagRepository _fileTagRepo;
+    private readonly ExifToolService _exifTool;
 
     public bool IsScanning { get; private set; }
     public int ProgressCurrent { get; private set; }
@@ -26,11 +30,17 @@ public class LibraryScanService
     public LibraryScanService(
         LibraryRootRepository rootRepo,
         FileRepository fileRepo,
-        ThumbnailService thumbnailService)
+        ThumbnailService thumbnailService,
+        TagRepository tagRepo,
+        FileTagRepository fileTagRepo,
+        ExifToolService exifTool)
     {
         _rootRepo = rootRepo;
         _fileRepo = fileRepo;
         _thumbnailService = thumbnailService;
+        _tagRepo = tagRepo;
+        _fileTagRepo = fileTagRepo;
+        _exifTool = exifTool;
     }
 
     public async Task ScanAllAsync(CancellationToken cancellationToken = default)
@@ -113,6 +123,34 @@ public class LibraryScanService
                             if (newEntry is not null)
                             {
                                 await _thumbnailService.GenerateThumbnailAsync(newEntry, cancellationToken: cancellationToken);
+
+                                MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(filePath);
+                                if (metadata is not null && metadata.Tags.Count > 0)
+                                {
+                                    var existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+                                    foreach (string rawTag in metadata.Tags)
+                                    {
+                                        string norm = TagFormatter.Normalize(rawTag);
+                                        if (string.IsNullOrWhiteSpace(norm))
+                                        {
+                                            continue;
+                                        }
+
+                                        if (!existingTags.TryGetValue(norm, out Tag? dbTag))
+                                        {
+                                            _tagRepo.Add(norm, "#757575", null);
+                                            var refreshed = _tagRepo.GetAll().FirstOrDefault(t => string.Equals(t.Name, norm, StringComparison.OrdinalIgnoreCase));
+                                            if (refreshed is not null)
+                                            {
+                                                _fileTagRepo.AddTagToFile(newEntry.Id, refreshed.Id);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            _fileTagRepo.AddTagToFile(newEntry.Id, dbTag.Id);
+                                        }
+                                    }
+                                }
                             }
                         }
 
