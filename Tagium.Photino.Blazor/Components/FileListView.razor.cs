@@ -1,11 +1,15 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Tagium.Core.Models;
+using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
 public partial class FileListView : IDisposable
 {
+    [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+
     private List<FileEntry> Files = [];
 
     protected override void OnInitialized()
@@ -16,6 +20,7 @@ public partial class FileListView : IDisposable
         AppState.OnSelectionChange += RefreshSelection;
         Library.LibraryChanged += ReloadData;
         Settings.SettingsChanged += ReloadData;
+        ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
     private void ReloadData()
@@ -28,6 +33,11 @@ public partial class FileListView : IDisposable
     }
 
     private void RefreshSelection()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnThumbnailGenerated(Guid fileId)
     {
         _ = InvokeAsync(StateHasChanged);
     }
@@ -64,5 +74,6 @@ public partial class FileListView : IDisposable
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
         Settings.SettingsChanged -= ReloadData;
+        ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
     }
 }

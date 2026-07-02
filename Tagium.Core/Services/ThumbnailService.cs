@@ -21,6 +21,8 @@ public sealed class ThumbnailService
     private static readonly SKColor VideoColor = SKColors.DarkSlateBlue;
     private static readonly SKColor GenericColor = SKColors.Gray;
 
+    public event Action<Guid>? ThumbnailGenerated;
+
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"
@@ -71,11 +73,13 @@ public sealed class ThumbnailService
         try
         {
             await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
+            ThumbnailGenerated?.Invoke(file.Id);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
             GeneratePlaceholder(destPath, size, "ERR", ErrorColor);
+            ThumbnailGenerated?.Invoke(file.Id);
         }
     }
 
