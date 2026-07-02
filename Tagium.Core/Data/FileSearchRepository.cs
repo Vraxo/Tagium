@@ -47,7 +47,7 @@ public class FileSearchRepository
         using SqliteCommand cmd = conn.CreateCommand();
 
         StringBuilder query = new();
-        _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime");
+        _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime, F.Rating, F.Title, F.Description");
         _ = query.AppendLine("FROM Files F");
         _ = query.AppendLine($"WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))");
 
@@ -72,7 +72,10 @@ public class FileSearchRepository
                 DateAdded = reader.GetInt64(4),
                 IsMissing = reader.GetBoolean(5),
                 Size = reader.GetInt64(6),
-                ModifiedTime = reader.GetInt64(7)
+                ModifiedTime = reader.GetInt64(7),
+                Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                Title = reader.IsDBNull(9) ? null : reader.GetString(9),
+                Description = reader.IsDBNull(10) ? null : reader.GetString(10)
             });
         }
 

@@ -2,7 +2,6 @@
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
-using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -191,6 +190,14 @@ public class LibraryScanService
             existing.ModifiedTime = modifiedTime;
             existing.IsMissing = false;
 
+            MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(filePath);
+            if (metadata is not null)
+            {
+                existing.Rating = metadata.Rating;
+                existing.Title = metadata.Title;
+                existing.Description = metadata.Description;
+            }
+
             _fileRepo.Update(existing);
             context.HasChanges = true;
             _ = context.VerifiedPaths.Add(filePath);
@@ -313,7 +320,7 @@ public class LibraryScanService
                     FileEntry? newEntry = _fileRepo.GetByHash(hash);
                     if (newEntry is not null)
                     {
-                        await ImportMetadataTagsAsync(path, newEntry);
+                        await ImportFileMetadataAsync(path, newEntry);
                     }
                 }
             }
@@ -327,10 +334,20 @@ public class LibraryScanService
         }
     }
 
-    private async Task ImportMetadataTagsAsync(string path, FileEntry newEntry)
+    private async Task ImportFileMetadataAsync(string path, FileEntry newEntry)
     {
         MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(path);
-        if (metadata is null || metadata.Tags.Count == 0)
+        if (metadata is null)
+        {
+            return;
+        }
+
+        newEntry.Rating = metadata.Rating;
+        newEntry.Title = metadata.Title;
+        newEntry.Description = metadata.Description;
+        _fileRepo.Update(newEntry);
+
+        if (metadata.Tags.Count == 0)
         {
             return;
         }
@@ -396,7 +413,6 @@ public class LibraryScanService
             ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
             uiTimer.Restart();
 
-            // Critical fix: Ensure Blazor UI thread gets enough time to fetch SQLite updates and render the grid.
             await Task.Delay(50, cancellationToken);
         }
     }

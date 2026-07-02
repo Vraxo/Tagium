@@ -1,4 +1,4 @@
-﻿namespace Tagium.Photino.Blazor.Components.Modals;
+﻿namespace Tagium.Core.Models;
 
 public class MediaMetadata
 {

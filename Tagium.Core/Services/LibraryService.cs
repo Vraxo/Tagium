@@ -2,7 +2,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
-using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -322,7 +321,10 @@ public class LibraryService
 
         MediaMetadata metadata = new()
         {
-            Tags = tags.Select(t => t.Name).ToList()
+            Tags = tags.Select(t => t.Name).ToList(),
+            Rating = file.Rating,
+            Title = file.Title,
+            Description = file.Description
         };
 
         _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));

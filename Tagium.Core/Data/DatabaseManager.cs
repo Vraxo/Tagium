@@ -47,7 +47,10 @@ public class DatabaseManager
                 DateAdded INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                 IsMissing INTEGER NOT NULL DEFAULT 0,
                 Size INTEGER NOT NULL DEFAULT 0,
-                ModifiedTime INTEGER NOT NULL DEFAULT 0
+                ModifiedTime INTEGER NOT NULL DEFAULT 0,
+                Rating INTEGER NULL,
+                Title TEXT NULL,
+                Description TEXT NULL
             );
 
             CREATE TABLE IF NOT EXISTS FileTags (
@@ -73,17 +76,24 @@ public class DatabaseManager
 
     private static void MigrateSchema(SqliteConnection connection)
     {
-        string[] columns = ["Size", "ModifiedTime"];
+        string[] columns = ["Size", "ModifiedTime", "Rating", "Title", "Description"];
         foreach (string col in columns)
         {
             try
             {
                 using SqliteCommand cmd = connection.CreateCommand();
-                cmd.CommandText = $"ALTER TABLE Files ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0;";
+                string colType = col switch
+                {
+                    "Rating" => "INTEGER NULL",
+                    "Title" or "Description" => "TEXT NULL",
+                    _ => "INTEGER NOT NULL DEFAULT 0"
+                };
+                cmd.CommandText = $"ALTER TABLE Files ADD COLUMN {col} {colType};";
                 _ = cmd.ExecuteNonQuery();
             }
             catch
             {
+                // Suppress errors if column already exists
             }
         }
     }

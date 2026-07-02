@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using Tagium.Photino.Blazor.Components.Modals;
+using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
 
@@ -45,7 +45,6 @@ public class ExifToolService : IDisposable
                 _stdin = _exifToolProcess.StandardInput;
                 _stdout = _exifToolProcess.StandardOutput;
 
-                // Asynchronously drain standard error to prevent OS buffer locks
                 _exifToolProcess.ErrorDataReceived += (s, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
@@ -210,7 +209,6 @@ public class ExifToolService : IDisposable
                 _stdin!.WriteLine("-execute");
                 _stdin!.Flush();
 
-                // Clear stream output until we read the boundary token
                 while (true)
                 {
                     string? line = _stdout!.ReadLine();
@@ -281,7 +279,6 @@ public class ExifToolService : IDisposable
             }
             catch
             {
-                // Suppress shutdown race condition failures
             }
             finally
             {

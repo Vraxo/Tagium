@@ -1,6 +1,5 @@
 ﻿using Tagium.Core.Data;
 using Tagium.Core.Models;
-using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services.Undo;
 
@@ -67,7 +66,10 @@ public class TagAssignmentUndoCommand : IUndoCommand
 
         MediaMetadata metadata = new()
         {
-            Tags = tags.Select(t => t.Name).ToList()
+            Tags = tags.Select(t => t.Name).ToList(),
+            Rating = file.Rating,
+            Title = file.Title,
+            Description = file.Description
         };
 
         _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));

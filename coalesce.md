@@ -1100,75 +1100,108 @@ public class Tag
 ```csharp
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
-public class ExifToolService
+public class ExifToolService : IDisposable
 {
     private readonly string _commandName;
+    private Process? _exifToolProcess;
+    private StreamWriter? _stdin;
+    private StreamReader? _stdout;
+    private readonly object _lock = new();
+    private bool _isDisposed;
 
-    public bool IsEnabled { get; }
+    public bool IsEnabled { get; private set; }
 
     public ExifToolService()
     {
         _commandName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "exiftool.exe" : "exiftool";
+        InitializeProcess();
+    }
 
+    private void InitializeProcess()
+    {
         try
         {
-            using Process? process = Process.Start(new ProcessStartInfo(_commandName)
+            ProcessStartInfo startInfo = new(_commandName)
             {
+                Arguments = "-stay_open True -@ -",
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                ArgumentList = { "-ver" }
-            });
-            IsEnabled = process is not null && process.WaitForExit(1000) && process.ExitCode == 0;
+                StandardInputEncoding = new UTF8Encoding(false),
+                StandardOutputEncoding = new UTF8Encoding(false)
+            };
+
+            _exifToolProcess = Process.Start(startInfo);
+            if (_exifToolProcess is not null)
+            {
+                _stdin = _exifToolProcess.StandardInput;
+                _stdout = _exifToolProcess.StandardOutput;
+
+                // Asynchronously drain standard error to prevent OS buffer locks
+                _exifToolProcess.ErrorDataReceived += (s, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        Console.WriteLine($"[ExifTool Warning] {e.Data}");
+                    }
+                };
+                _exifToolProcess.BeginErrorReadLine();
+
+                IsEnabled = !_exifToolProcess.HasExited;
+            }
         }
-        catch
+        catch (Exception ex)
         {
             IsEnabled = false;
-        }
-
-        if (!IsEnabled)
-        {
-            Console.WriteLine($"[ExifToolService] WARNING: '{_commandName}' command not found. Metadata writing and reading will be disabled.");
+            Console.WriteLine($"[ExifToolService] WARNING: Failed to initialize persistent daemon: {ex.Message}. Metadata writing and reading will be disabled.");
         }
     }
 
     public async Task<MediaMetadata?> ReadMetadataAsync(string filePath)
     {
-        if (!IsEnabled || !File.Exists(filePath))
+        if (!IsEnabled || _exifToolProcess is null || _exifToolProcess.HasExited)
         {
             return null;
         }
 
         try
         {
-            ProcessStartInfo startInfo = new(_commandName)
+            string output;
+            lock (_lock)
             {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                ArgumentList = { "-json", "-Subject", "-Keywords", "-Title", "-Description", "-Rating", filePath }
-            };
+                _stdin!.WriteLine("-json");
+                _stdin!.WriteLine("-Subject");
+                _stdin!.WriteLine("-Keywords");
+                _stdin!.WriteLine("-Title");
+                _stdin!.WriteLine("-Description");
+                _stdin!.WriteLine("-Rating");
+                _stdin!.WriteLine(filePath);
+                _stdin!.WriteLine("-execute");
+                _stdin!.Flush();
 
-            using Process? process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return null;
+                StringBuilder sb = new();
+                while (true)
+                {
+                    string? line = _stdout!.ReadLine();
+                    if (line is null || line.StartsWith("{ready}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
+                    sb.AppendLine(line);
+                }
+                output = sb.ToString();
             }
 
-            string output = await process.StandardOutput.ReadToEndAsync();
-            string error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
+            if (string.IsNullOrWhiteSpace(output))
             {
-                Console.WriteLine($"[ExifTool] Error reading {filePath}: {error}");
                 return null;
             }
 
@@ -1227,70 +1260,65 @@ public class ExifToolService
 
     public async Task<bool> WriteMetadataAsync(string filePath, MediaMetadata metadata)
     {
-        if (!IsEnabled || !File.Exists(filePath))
+        if (!IsEnabled || _exifToolProcess is null || _exifToolProcess.HasExited)
         {
             return false;
         }
 
         try
         {
-            ProcessStartInfo startInfo = new(_commandName)
+            lock (_lock)
             {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                ArgumentList = { "-overwrite_original", "-Subject=", "-Keywords=" }
-            };
+                _stdin!.WriteLine("-overwrite_original");
+                _stdin!.WriteLine("-Subject=");
+                _stdin!.WriteLine("-Keywords=");
 
-            foreach (string tag in metadata.Tags)
-            {
-                startInfo.ArgumentList.Add($"-Subject={tag}");
-                startInfo.ArgumentList.Add($"-Keywords={tag}");
-            }
+                foreach (string tag in metadata.Tags)
+                {
+                    _stdin!.WriteLine($"-Subject={tag}");
+                    _stdin!.WriteLine($"-Keywords={tag}");
+                }
 
-            if (metadata.Title is not null)
-            {
-                startInfo.ArgumentList.Add($"-Title={metadata.Title}");
-            }
-            else
-            {
-                startInfo.ArgumentList.Add("-Title=");
-            }
+                if (metadata.Title is not null)
+                {
+                    _stdin!.WriteLine($"-Title={metadata.Title}");
+                }
+                else
+                {
+                    _stdin!.WriteLine("-Title=");
+                }
 
-            if (metadata.Description is not null)
-            {
-                startInfo.ArgumentList.Add($"-Description={metadata.Description}");
-            }
-            else
-            {
-                startInfo.ArgumentList.Add("-Description=");
-            }
+                if (metadata.Description is not null)
+                {
+                    _stdin!.WriteLine($"-Description={metadata.Description}");
+                }
+                else
+                {
+                    _stdin!.WriteLine("-Description=");
+                }
 
-            if (metadata.Rating.HasValue)
-            {
-                startInfo.ArgumentList.Add($"-Rating={metadata.Rating.Value}");
-            }
-            else
-            {
-                startInfo.ArgumentList.Add("-Rating=");
-            }
+                if (metadata.Rating.HasValue)
+                {
+                    _stdin!.WriteLine($"-Rating={metadata.Rating.Value}");
+                }
+                else
+                {
+                    _stdin!.WriteLine("-Rating=");
+                }
 
-            startInfo.ArgumentList.Add(filePath);
+                _stdin!.WriteLine(filePath);
+                _stdin!.WriteLine("-execute");
+                _stdin!.Flush();
 
-            using Process? process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return false;
-            }
-
-            string error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                Console.WriteLine($"[ExifTool] Error writing {filePath}: {error}");
-                return false;
+                // Clear stream output until we read the boundary token
+                while (true)
+                {
+                    string? line = _stdout!.ReadLine();
+                    if (line is null || line.StartsWith("{ready}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
+                }
             }
 
             return true;
@@ -1323,6 +1351,45 @@ public class ExifToolService
                 _ = tags.Add(s.Trim());
             }
         }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        if (disposing && _exifToolProcess is not null && !_exifToolProcess.HasExited)
+        {
+            try
+            {
+                lock (_lock)
+                {
+                    _stdin?.WriteLine("-stay_open");
+                    _stdin?.WriteLine("False");
+                    _stdin?.WriteLine("-execute");
+                    _stdin?.Flush();
+                }
+                _exifToolProcess.WaitForExit(3000);
+            }
+            catch
+            {
+                // Suppress shutdown race condition failures
+            }
+            finally
+            {
+                _exifToolProcess.Dispose();
+            }
+        }
+
+        _isDisposed = true;
     }
 }
 ```
@@ -1782,7 +1849,6 @@ public class LibraryScanService
 {
     private readonly LibraryRootRepository _rootRepo;
     private readonly FileRepository _fileRepo;
-    private readonly ThumbnailService _thumbnailService;
     private readonly TagRepository _tagRepo;
     private readonly FileTagRepository _fileTagRepo;
     private readonly ExifToolService _exifTool;
@@ -1804,14 +1870,12 @@ public class LibraryScanService
     public LibraryScanService(
         LibraryRootRepository rootRepo,
         FileRepository fileRepo,
-        ThumbnailService thumbnailService,
         TagRepository tagRepo,
         FileTagRepository fileTagRepo,
         ExifToolService exifTool)
     {
         _rootRepo = rootRepo;
         _fileRepo = fileRepo;
-        _thumbnailService = thumbnailService;
         _tagRepo = tagRepo;
         _fileTagRepo = fileTagRepo;
         _exifTool = exifTool;
@@ -1969,8 +2033,6 @@ public class LibraryScanService
             _fileRepo.Update(existing);
             context.HasChanges = true;
             _ = context.VerifiedPaths.Add(filePath);
-
-            await _thumbnailService.GenerateThumbnailAsync(existing, cancellationToken: cancellationToken);
         }
         ProgressCurrent++;
     }
@@ -2090,7 +2152,6 @@ public class LibraryScanService
                     FileEntry? newEntry = _fileRepo.GetByHash(hash);
                     if (newEntry is not null)
                     {
-                        await _thumbnailService.GenerateThumbnailAsync(newEntry, cancellationToken: cancellationToken);
                         await ImportMetadataTagsAsync(path, newEntry);
                     }
                 }
@@ -2188,6 +2249,7 @@ public class LibraryScanService
 ```csharp
 using FFMpegCore;
 using SkiaSharp;
+using System.Collections.Concurrent;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
@@ -2197,6 +2259,8 @@ public sealed class ThumbnailService
 {
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
+    private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _activeGenerations = new(StringComparer.OrdinalIgnoreCase);
 
     private const int DefaultThumbnailSize = 800;
     private const int PngQuality = 85;
@@ -2225,6 +2289,23 @@ public sealed class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
+        // Populate the cache with existing thumbnail files from disk
+        if (Directory.Exists(_cacheDir))
+        {
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(_cacheDir, "*.png"))
+                {
+                    string name = Path.GetFileNameWithoutExtension(file);
+                    _thumbnailCache.TryAdd(name, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ThumbnailService] Error scanning cache: {ex.Message}");
+            }
+        }
+
         string? ffmpegPath = FFmpegLocator.Find();
         _hasFFmpeg = ffmpegPath is not null;
 
@@ -2246,28 +2327,46 @@ public sealed class ThumbnailService
 
     public bool HasThumbnail(Guid fileId, string? hash)
     {
-        return File.Exists(GetThumbnailPath(hash, fileId));
+        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
+        return _thumbnailCache.ContainsKey(key);
     }
 
     public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultThumbnailSize, CancellationToken cancellationToken = default)
     {
+        string key = !string.IsNullOrEmpty(file.Hash) ? file.Hash : file.Id.ToString("N");
         string destPath = GetThumbnailPath(file.Hash, file.Id);
 
-        if (File.Exists(destPath) || !File.Exists(file.Path))
+        // Skip immediately if we already know it exists or the original file was removed from disk
+        if (_thumbnailCache.ContainsKey(key) || !File.Exists(file.Path))
+        {
+            return;
+        }
+
+        // Avoid triggering multiple duplicate task threads for the exact same file
+        if (!_activeGenerations.TryAdd(key, true))
         {
             return;
         }
 
         try
         {
-            await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
+            if (!File.Exists(destPath))
+            {
+                await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
+            }
+            _thumbnailCache.TryAdd(key, true);
             ThumbnailGenerated?.Invoke(file.Id);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
             GeneratePlaceholder(destPath, size, "ERR", ErrorColor);
+            _thumbnailCache.TryAdd(key, true);
             ThumbnailGenerated?.Invoke(file.Id);
+        }
+        finally
+        {
+            _activeGenerations.TryRemove(key, out _);
         }
     }
 
@@ -3477,17 +3576,23 @@ public partial class AppToolbar
     @foreach (var file in Files)
     {
         bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+        bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+
         <div class="file-card @(isSelected ? "selected" : "")"
              data-id="@file.Id"
              @onclick="e => OnCardClick(e, file.Id)"
              @ondblclick="e => OnCardDoubleClick(e, file)"
              @onclick:stopPropagation="true">
 
-            <div class="thumbnail">
-                <img src="tagium://thumbnail/@file.Id"
-                     alt="@file.Name"
-                     onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
-                <div class="placeholder-icon">📷</div>
+            <div class="thumbnail @(hasThumb ? "" : "broken")">
+                @if (hasThumb)
+                {
+                    <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
+                }
+                else
+                {
+                    <div class="placeholder-icon">📷</div>
+                }
             </div>
             <div class="filename" title="@file.Name">
                 @file.Name
@@ -3495,7 +3600,6 @@ public partial class AppToolbar
         </div>
     }
 </div>
-
 ```
 
 ---
@@ -3563,6 +3667,18 @@ public partial class FileGrid : IDisposable
     private void LoadFiles()
     {
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+        TriggerThumbnailGeneration();
+    }
+
+    private void TriggerThumbnailGeneration()
+    {
+        foreach (FileEntry file in Files)
+        {
+            if (!ThumbnailService.HasThumbnail(file.Id, file.Hash))
+            {
+                _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
+            }
+        }
     }
 
     private void OnCardClick(MouseEventArgs e, Guid id)
@@ -3682,17 +3798,23 @@ public partial class FileGrid : IDisposable
             @foreach (var file in Files)
             {
                 bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+
                 <tr class="file-row @(isSelected ? "selected" : "")"
                     data-id="@file.Id"
                     @onclick="e => OnRowClick(e, file.Id)"
                     @ondblclick="e => OnRowDoubleClick(e, file)">
-                    
+
                     <td class="thumbnail-cell">
-                        <div class="thumbnail">
-                            <img src="tagium://thumbnail/@file.Id"
-                                 alt="@file.Name"
-                                 onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
-                            <div class="placeholder-icon">📷</div>
+                        <div class="thumbnail @(hasThumb ? "" : "broken")">
+                            @if (hasThumb)
+                            {
+                                <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
+                            }
+                            else
+                            {
+                                <div class="placeholder-icon">📷</div>
+                            }
                         </div>
                     </td>
                     <td class="name-cell" title="@file.Name">@file.Name</td>
@@ -3763,6 +3885,18 @@ public partial class FileListView : IDisposable
     private void LoadFiles()
     {
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+        TriggerThumbnailGeneration();
+    }
+
+    private void TriggerThumbnailGeneration()
+    {
+        foreach (FileEntry file in Files)
+        {
+            if (!ThumbnailService.HasThumbnail(file.Id, file.Hash))
+            {
+                _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
+            }
+        }
     }
 
     private void OnRowClick(MouseEventArgs e, Guid id)
@@ -4820,25 +4954,10 @@ public static class SchemeHandlers
 
             if (!File.Exists(path))
             {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await thumbnailService.GenerateThumbnailAsync(file);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[SchemeHandler] Async thumbnail generation failed for {file.Id}: {ex.Message}");
-                    }
-                });
-
                 return Stream.Null;
             }
 
-            if (File.Exists(path))
-            {
-                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            }
+            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         }
         catch (Exception ex)
         {

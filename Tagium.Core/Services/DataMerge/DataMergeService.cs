@@ -66,6 +66,11 @@ public class DatabaseMergeService
                 continue;
             }
 
+            added.Rating = sFile.Rating;
+            added.Title = sFile.Title;
+            added.Description = sFile.Description;
+            _targetFileRepo.Update(added);
+
             if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<Guid>? sTagIds))
             {
                 continue;
@@ -120,7 +125,7 @@ public class DatabaseMergeService
         List<FileEntry> list = [];
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files";
 
         using SqliteDataReader r = cmd.ExecuteReader();
 
@@ -135,7 +140,10 @@ public class DatabaseMergeService
                 DateAdded = r.GetInt64(4),
                 IsMissing = r.GetBoolean(5),
                 Size = r.GetInt64(6),
-                ModifiedTime = r.GetInt64(7)
+                ModifiedTime = r.GetInt64(7),
+                Rating = r.IsDBNull(8) ? null : r.GetInt32(8),
+                Title = r.IsDBNull(9) ? null : r.GetString(9),
+                Description = r.IsDBNull(10) ? null : r.GetString(10)
             });
         }
 

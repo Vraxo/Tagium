@@ -11,4 +11,7 @@ public class FileEntry
     public long Size { get; set; }
     public long ModifiedTime { get; set; }
     public List<Tag> Tags { get; set; } = [];
+    public int? Rating { get; set; }
+    public string? Title { get; set; }
+    public string? Description { get; set; }
 }

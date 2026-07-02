@@ -22,7 +22,7 @@ public class FileRepository
         string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = $@"
-            SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files F
+            SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files F
             WHERE EXISTS (
                 SELECT 1 FROM LibraryRoots LR 
                 WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}')
@@ -51,6 +51,7 @@ public class FileRepository
         cmd.CommandText = $@"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
+                F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM Files F
             LEFT JOIN FileTags FT ON F.Id = FT.FileId
@@ -64,9 +65,9 @@ public class FileRepository
         {
             FileEntry file = ReadFile(reader);
 
-            if (!reader.IsDBNull(8))
+            if (!reader.IsDBNull(11))
             {
-                string tagData = reader.GetString(8);
+                string tagData = reader.GetString(11);
                 file.Tags = ParseTagData(tagData);
             }
 
@@ -84,6 +85,7 @@ public class FileRepository
         cmd.CommandText = @"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
+                F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM Files F
             LEFT JOIN FileTags FT ON F.Id = FT.FileId
@@ -97,9 +99,9 @@ public class FileRepository
         if (reader.Read())
         {
             FileEntry file = ReadFile(reader);
-            if (!reader.IsDBNull(8))
+            if (!reader.IsDBNull(11))
             {
-                string tagData = reader.GetString(8);
+                string tagData = reader.GetString(11);
                 file.Tags = ParseTagData(tagData);
             }
             return file;
@@ -112,7 +114,7 @@ public class FileRepository
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Id = @Id";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -124,7 +126,7 @@ public class FileRepository
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Hash = @Hash";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files WHERE Hash = @Hash";
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -138,7 +140,7 @@ public class FileRepository
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
         _ = cmd.Parameters.AddWithValue("@Path", rootPath);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -156,8 +158,8 @@ public class FileRepository
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime) 
-            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime)";
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime, Rating, Title, Description) 
+            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime, NULL, NULL, NULL)";
 
         Guid newId = Guid.NewGuid();
         _ = cmd.Parameters.AddWithValue("@Id", newId.ToString("N"));
@@ -185,8 +187,8 @@ public class FileRepository
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime) 
-            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime)";
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description) 
+            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime, @Rating, @Title, @Description)";
 
         _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", entry.Path);
@@ -196,6 +198,9 @@ public class FileRepository
         _ = cmd.Parameters.AddWithValue("@IsMissing", entry.IsMissing ? 1 : 0);
         _ = cmd.Parameters.AddWithValue("@Size", entry.Size);
         _ = cmd.Parameters.AddWithValue("@ModifiedTime", entry.ModifiedTime);
+        _ = cmd.Parameters.AddWithValue("@Rating", (object?)entry.Rating ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Title", (object?)entry.Title ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Description", (object?)entry.Description ?? DBNull.Value);
 
         _ = cmd.ExecuteNonQuery();
     }
@@ -207,7 +212,8 @@ public class FileRepository
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
             UPDATE Files 
-            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime 
+            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime, 
+                Rating = @Rating, Title = @Title, Description = @Description 
             WHERE Id = @Id";
 
         _ = cmd.Parameters.AddWithValue("@Id", file.Id.ToString("N"));
@@ -217,6 +223,9 @@ public class FileRepository
         _ = cmd.Parameters.AddWithValue("@IsMissing", file.IsMissing ? 1 : 0);
         _ = cmd.Parameters.AddWithValue("@Size", file.Size);
         _ = cmd.Parameters.AddWithValue("@ModifiedTime", file.ModifiedTime);
+        _ = cmd.Parameters.AddWithValue("@Rating", (object?)file.Rating ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Title", (object?)file.Title ?? DBNull.Value);
+        _ = cmd.Parameters.AddWithValue("@Description", (object?)file.Description ?? DBNull.Value);
 
         _ = cmd.ExecuteNonQuery();
     }
@@ -270,6 +279,9 @@ public class FileRepository
             IsMissing = reader.GetBoolean(5),
             Size = reader.GetInt64(6),
             ModifiedTime = reader.GetInt64(7),
+            Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+            Title = reader.IsDBNull(9) ? null : reader.GetString(9),
+            Description = reader.IsDBNull(10) ? null : reader.GetString(10),
             Tags = []
         };
     }
