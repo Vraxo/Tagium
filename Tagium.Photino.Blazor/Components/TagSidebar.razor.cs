@@ -29,8 +29,11 @@ public partial class TagSidebar
 
     private void RefreshData()
     {
-        Tags = Library.GetTags();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            Tags = Library.GetTags();
+            StateHasChanged();
+        });
     }
 
     private void SetSearch(string text)

@@ -33,8 +33,11 @@ public partial class FileGrid : IDisposable
 
     private void ReloadData()
     {
-        LoadFiles();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            LoadFiles();
+            StateHasChanged();
+        });
     }
 
     private void RefreshSelection()

@@ -45,8 +45,11 @@ public partial class TagManagerView
 
     private void RefreshData()
     {
-        RefreshTags();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            RefreshTags();
+            StateHasChanged();
+        });
     }
 
     private void RefreshTags()
@@ -111,7 +114,7 @@ public partial class TagManagerView
 
     private void OnSortByChange(ChangeEventArgs e)
     {
-        if (Enum.TryParse<TagSortBy>(e.Value?.ToString(), out var result))
+        if (Enum.TryParse<TagSortBy>(e.Value?.ToString(), out TagSortBy result))
         {
             Settings.Update(s => s.TagSortBy = result);
             RefreshTags();
@@ -120,7 +123,7 @@ public partial class TagManagerView
 
     private void OnSortDirChange(ChangeEventArgs e)
     {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out SortDirection result))
         {
             Settings.Update(s => s.TagSortDirection = result);
             RefreshTags();

@@ -20,8 +20,11 @@ public partial class FileListView : IDisposable
 
     private void ReloadData()
     {
-        LoadFiles();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            LoadFiles();
+            StateHasChanged();
+        });
     }
 
     private void RefreshSelection()

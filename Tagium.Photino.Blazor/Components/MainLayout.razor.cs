@@ -19,7 +19,6 @@ public partial class MainLayout : IDisposable
     private double _scanProgress = 0;
     private DotNetObjectReference<MainLayout>? _objRef;
 
-    // Changed to an auto-property so IDEs do not auto-mark it as readonly
     private FilesViewToolbar? FilesViewToolbarRef { get; set; }
 
     protected override void OnInitialized()
@@ -28,6 +27,7 @@ public partial class MainLayout : IDisposable
         ScanService.ScanProgress += UpdateScanProgress;
         ScanService.ScanCompleted += ShowScanStatus;
         AppState.OnChange += StateHasChanged;
+        Library.LibraryChanged += OnLibraryChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -81,22 +81,30 @@ public partial class MainLayout : IDisposable
 
     private void UpdateScanProgress(int current, int total)
     {
-        _scanInProgress = true;
-        _scanProcessed = current;
-        _scanTotal = total;
-        _scanProgress = total > 0 ? (double)current / total * 100 : 0;
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            _scanInProgress = true;
+            _scanProcessed = current;
+            _scanTotal = total;
+            _scanProgress = total > 0 ? (double)current / total * 100 : 0;
+            StateHasChanged();
+        });
     }
 
     private void ShowScanStatus()
     {
-        _scanInProgress = false;
         _ = InvokeAsync(() =>
         {
+            _scanInProgress = false;
             Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
             StateHasChanged();
         });
+    }
+
+    private void OnLibraryChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void ReloadCurrentView()
@@ -112,6 +120,7 @@ public partial class MainLayout : IDisposable
         ScanService.ScanProgress -= UpdateScanProgress;
         ScanService.ScanCompleted -= ShowScanStatus;
         AppState.OnChange -= StateHasChanged;
+        Library.LibraryChanged -= OnLibraryChanged;
 
         _objRef?.Dispose();
     }
