@@ -1,74 +1,107 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
-public class ExifToolService
+public class ExifToolService : IDisposable
 {
     private readonly string _commandName;
+    private Process? _exifToolProcess;
+    private StreamWriter? _stdin;
+    private StreamReader? _stdout;
+    private readonly object _lock = new();
+    private bool _isDisposed;
 
-    public bool IsEnabled { get; }
+    public bool IsEnabled { get; private set; }
 
     public ExifToolService()
     {
         _commandName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "exiftool.exe" : "exiftool";
+        InitializeProcess();
+    }
 
+    private void InitializeProcess()
+    {
         try
         {
-            using Process? process = Process.Start(new ProcessStartInfo(_commandName)
+            ProcessStartInfo startInfo = new(_commandName)
             {
+                Arguments = "-stay_open True -@ -",
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                ArgumentList = { "-ver" }
-            });
-            IsEnabled = process is not null && process.WaitForExit(1000) && process.ExitCode == 0;
+                StandardInputEncoding = new UTF8Encoding(false),
+                StandardOutputEncoding = new UTF8Encoding(false)
+            };
+
+            _exifToolProcess = Process.Start(startInfo);
+            if (_exifToolProcess is not null)
+            {
+                _stdin = _exifToolProcess.StandardInput;
+                _stdout = _exifToolProcess.StandardOutput;
+
+                // Asynchronously drain standard error to prevent OS buffer locks
+                _exifToolProcess.ErrorDataReceived += (s, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        Console.WriteLine($"[ExifTool Warning] {e.Data}");
+                    }
+                };
+                _exifToolProcess.BeginErrorReadLine();
+
+                IsEnabled = !_exifToolProcess.HasExited;
+            }
         }
-        catch
+        catch (Exception ex)
         {
             IsEnabled = false;
-        }
-
-        if (!IsEnabled)
-        {
-            Console.WriteLine($"[ExifToolService] WARNING: '{_commandName}' command not found. Metadata writing and reading will be disabled.");
+            Console.WriteLine($"[ExifToolService] WARNING: Failed to initialize persistent daemon: {ex.Message}. Metadata writing and reading will be disabled.");
         }
     }
 
     public async Task<MediaMetadata?> ReadMetadataAsync(string filePath)
     {
-        if (!IsEnabled || !File.Exists(filePath))
+        if (!IsEnabled || _exifToolProcess is null || _exifToolProcess.HasExited)
         {
             return null;
         }
 
         try
         {
-            ProcessStartInfo startInfo = new(_commandName)
+            string output;
+            lock (_lock)
             {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                ArgumentList = { "-json", "-Subject", "-Keywords", "-Title", "-Description", "-Rating", filePath }
-            };
+                _stdin!.WriteLine("-json");
+                _stdin!.WriteLine("-Subject");
+                _stdin!.WriteLine("-Keywords");
+                _stdin!.WriteLine("-Title");
+                _stdin!.WriteLine("-Description");
+                _stdin!.WriteLine("-Rating");
+                _stdin!.WriteLine(filePath);
+                _stdin!.WriteLine("-execute");
+                _stdin!.Flush();
 
-            using Process? process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return null;
+                StringBuilder sb = new();
+                while (true)
+                {
+                    string? line = _stdout!.ReadLine();
+                    if (line is null || line.StartsWith("{ready}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
+                    sb.AppendLine(line);
+                }
+                output = sb.ToString();
             }
 
-            string output = await process.StandardOutput.ReadToEndAsync();
-            string error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
+            if (string.IsNullOrWhiteSpace(output))
             {
-                Console.WriteLine($"[ExifTool] Error reading {filePath}: {error}");
                 return null;
             }
 
@@ -127,70 +160,65 @@ public class ExifToolService
 
     public async Task<bool> WriteMetadataAsync(string filePath, MediaMetadata metadata)
     {
-        if (!IsEnabled || !File.Exists(filePath))
+        if (!IsEnabled || _exifToolProcess is null || _exifToolProcess.HasExited)
         {
             return false;
         }
 
         try
         {
-            ProcessStartInfo startInfo = new(_commandName)
+            lock (_lock)
             {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                ArgumentList = { "-overwrite_original", "-Subject=", "-Keywords=" }
-            };
+                _stdin!.WriteLine("-overwrite_original");
+                _stdin!.WriteLine("-Subject=");
+                _stdin!.WriteLine("-Keywords=");
 
-            foreach (string tag in metadata.Tags)
-            {
-                startInfo.ArgumentList.Add($"-Subject={tag}");
-                startInfo.ArgumentList.Add($"-Keywords={tag}");
-            }
+                foreach (string tag in metadata.Tags)
+                {
+                    _stdin!.WriteLine($"-Subject={tag}");
+                    _stdin!.WriteLine($"-Keywords={tag}");
+                }
 
-            if (metadata.Title is not null)
-            {
-                startInfo.ArgumentList.Add($"-Title={metadata.Title}");
-            }
-            else
-            {
-                startInfo.ArgumentList.Add("-Title=");
-            }
+                if (metadata.Title is not null)
+                {
+                    _stdin!.WriteLine($"-Title={metadata.Title}");
+                }
+                else
+                {
+                    _stdin!.WriteLine("-Title=");
+                }
 
-            if (metadata.Description is not null)
-            {
-                startInfo.ArgumentList.Add($"-Description={metadata.Description}");
-            }
-            else
-            {
-                startInfo.ArgumentList.Add("-Description=");
-            }
+                if (metadata.Description is not null)
+                {
+                    _stdin!.WriteLine($"-Description={metadata.Description}");
+                }
+                else
+                {
+                    _stdin!.WriteLine("-Description=");
+                }
 
-            if (metadata.Rating.HasValue)
-            {
-                startInfo.ArgumentList.Add($"-Rating={metadata.Rating.Value}");
-            }
-            else
-            {
-                startInfo.ArgumentList.Add("-Rating=");
-            }
+                if (metadata.Rating.HasValue)
+                {
+                    _stdin!.WriteLine($"-Rating={metadata.Rating.Value}");
+                }
+                else
+                {
+                    _stdin!.WriteLine("-Rating=");
+                }
 
-            startInfo.ArgumentList.Add(filePath);
+                _stdin!.WriteLine(filePath);
+                _stdin!.WriteLine("-execute");
+                _stdin!.Flush();
 
-            using Process? process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return false;
-            }
-
-            string error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                Console.WriteLine($"[ExifTool] Error writing {filePath}: {error}");
-                return false;
+                // Clear stream output until we read the boundary token
+                while (true)
+                {
+                    string? line = _stdout!.ReadLine();
+                    if (line is null || line.StartsWith("{ready}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
+                }
             }
 
             return true;
@@ -223,5 +251,44 @@ public class ExifToolService
                 _ = tags.Add(s.Trim());
             }
         }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        if (disposing && _exifToolProcess is not null && !_exifToolProcess.HasExited)
+        {
+            try
+            {
+                lock (_lock)
+                {
+                    _stdin?.WriteLine("-stay_open");
+                    _stdin?.WriteLine("False");
+                    _stdin?.WriteLine("-execute");
+                    _stdin?.Flush();
+                }
+                _exifToolProcess.WaitForExit(3000);
+            }
+            catch
+            {
+                // Suppress shutdown race condition failures
+            }
+            finally
+            {
+                _exifToolProcess.Dispose();
+            }
+        }
+
+        _isDisposed = true;
     }
 }
