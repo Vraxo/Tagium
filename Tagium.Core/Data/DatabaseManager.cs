@@ -54,6 +54,13 @@ public class DatabaseManager
                 FOREIGN KEY(TagId) REFERENCES Tags(Id) ON DELETE CASCADE,
                 PRIMARY KEY (FileId, TagId)
             );
+
+            CREATE TABLE IF NOT EXISTS LibraryRoots (
+                Id TEXT PRIMARY KEY,
+                Path TEXT NOT NULL UNIQUE,
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                LastScanTime INTEGER NULL
+            );
         ";
 
         using SqliteCommand command = connection.CreateCommand();

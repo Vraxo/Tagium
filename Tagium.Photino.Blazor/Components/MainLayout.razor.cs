@@ -61,7 +61,9 @@ public partial class MainLayout : IDisposable
                 }
                 break;
             case "t":
-                AppState.SwitchView(AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags);
+                AppState.SwitchView(AppState.CurrentView == AppView.Tags
+                    ? AppView.Files
+                    : AppView.Tags);
                 break;
             case "r":
                 Library.Refresh();
