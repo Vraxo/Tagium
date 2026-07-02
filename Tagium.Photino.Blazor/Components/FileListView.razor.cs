@@ -45,6 +45,18 @@ public partial class FileListView : IDisposable
     private void LoadFiles()
     {
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+        TriggerThumbnailGeneration();
+    }
+
+    private void TriggerThumbnailGeneration()
+    {
+        foreach (FileEntry file in Files)
+        {
+            if (!ThumbnailService.HasThumbnail(file.Id, file.Hash))
+            {
+                _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
+            }
+        }
     }
 
     private void OnRowClick(MouseEventArgs e, Guid id)

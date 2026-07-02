@@ -1,5 +1,6 @@
 using FFMpegCore;
 using SkiaSharp;
+using System.Collections.Concurrent;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
@@ -9,6 +10,8 @@ public sealed class ThumbnailService
 {
     private readonly string _cacheDir;
     private readonly bool _hasFFmpeg;
+    private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _activeGenerations = new(StringComparer.OrdinalIgnoreCase);
 
     private const int DefaultThumbnailSize = 800;
     private const int PngQuality = 85;
@@ -37,6 +40,23 @@ public sealed class ThumbnailService
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
+        // Populate the cache with existing thumbnail files from disk
+        if (Directory.Exists(_cacheDir))
+        {
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(_cacheDir, "*.png"))
+                {
+                    string name = Path.GetFileNameWithoutExtension(file);
+                    _thumbnailCache.TryAdd(name, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ThumbnailService] Error scanning cache: {ex.Message}");
+            }
+        }
+
         string? ffmpegPath = FFmpegLocator.Find();
         _hasFFmpeg = ffmpegPath is not null;
 
@@ -58,28 +78,46 @@ public sealed class ThumbnailService
 
     public bool HasThumbnail(Guid fileId, string? hash)
     {
-        return File.Exists(GetThumbnailPath(hash, fileId));
+        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
+        return _thumbnailCache.ContainsKey(key);
     }
 
     public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultThumbnailSize, CancellationToken cancellationToken = default)
     {
+        string key = !string.IsNullOrEmpty(file.Hash) ? file.Hash : file.Id.ToString("N");
         string destPath = GetThumbnailPath(file.Hash, file.Id);
 
-        if (File.Exists(destPath) || !File.Exists(file.Path))
+        // Skip immediately if we already know it exists or the original file was removed from disk
+        if (_thumbnailCache.ContainsKey(key) || !File.Exists(file.Path))
+        {
+            return;
+        }
+
+        // Avoid triggering multiple duplicate task threads for the exact same file
+        if (!_activeGenerations.TryAdd(key, true))
         {
             return;
         }
 
         try
         {
-            await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
+            if (!File.Exists(destPath))
+            {
+                await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
+            }
+            _thumbnailCache.TryAdd(key, true);
             ThumbnailGenerated?.Invoke(file.Id);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
             GeneratePlaceholder(destPath, size, "ERR", ErrorColor);
+            _thumbnailCache.TryAdd(key, true);
             ThumbnailGenerated?.Invoke(file.Id);
+        }
+        finally
+        {
+            _activeGenerations.TryRemove(key, out _);
         }
     }
 

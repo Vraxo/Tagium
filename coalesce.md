@@ -2209,6 +2209,8 @@ public sealed class ThumbnailService
     private static readonly SKColor VideoColor = SKColors.DarkSlateBlue;
     private static readonly SKColor GenericColor = SKColors.Gray;
 
+    public event Action<Guid>? ThumbnailGenerated;
+
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"
@@ -2236,19 +2238,20 @@ public sealed class ThumbnailService
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
     }
 
-    public string GetThumbnailPath(Guid fileId)
+    public string GetThumbnailPath(string? hash, Guid fileId)
     {
-        return Path.Combine(_cacheDir, $"{fileId:N}.png");
+        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
+        return Path.Combine(_cacheDir, $"{key}.png");
     }
 
-    public bool HasThumbnail(Guid fileId)
+    public bool HasThumbnail(Guid fileId, string? hash)
     {
-        return File.Exists(GetThumbnailPath(fileId));
+        return File.Exists(GetThumbnailPath(hash, fileId));
     }
 
     public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultThumbnailSize, CancellationToken cancellationToken = default)
     {
-        string destPath = GetThumbnailPath(file.Id);
+        string destPath = GetThumbnailPath(file.Hash, file.Id);
 
         if (File.Exists(destPath) || !File.Exists(file.Path))
         {
@@ -2258,11 +2261,13 @@ public sealed class ThumbnailService
         try
         {
             await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
+            ThumbnailGenerated?.Invoke(file.Id);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
             GeneratePlaceholder(destPath, size, "ERR", ErrorColor);
+            ThumbnailGenerated?.Invoke(file.Id);
         }
     }
 
@@ -3368,6 +3373,54 @@ public class Program
 
 ---
 
+### `Tagium.Photino.Blazor\Components\App.razor`
+
+```
+@namespace Tagium.Photino.Blazor
+@using Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor
+
+<Router AppAssembly="@typeof(Program).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p>Page not found.</p>
+        </LayoutView>
+    </NotFound>
+</Router>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\AppToolbar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+
+<div class="app-toolbar">
+    <div class="toolbar-left">
+        <button class="btn btn-primary" @onclick="OpenLibraryFolders">
+            📁 Library Folders
+        </button>
+    </div>
+
+    <div class="toolbar-center">
+    </div>
+
+    <div class="toolbar-right">
+        <button class="btn btn-secondary" @onclick="ToggleTagView">
+            @(AppState.CurrentView == AppView.Tags ? "Show Files" : "Manage Tags")
+        </button>
+    </div>
+</div>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\AppToolbar.razor.cs`
 
 ```csharp
@@ -3403,18 +3456,66 @@ public partial class AppToolbar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\FileGrid.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@implements IDisposable
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+@inject SystemLauncherService Launcher
+@inject IJSRuntime JS
+
+<div id="file-grid-container"
+     class="grid-container"
+     style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
+
+    @foreach (var file in Files)
+    {
+        bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+        <div class="file-card @(isSelected ? "selected" : "")"
+             data-id="@file.Id"
+             @onclick="e => OnCardClick(e, file.Id)"
+             @ondblclick="e => OnCardDoubleClick(e, file)"
+             @onclick:stopPropagation="true">
+
+            <div class="thumbnail">
+                <img src="tagium://thumbnail/@file.Id"
+                     alt="@file.Name"
+                     onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
+                <div class="placeholder-icon">📷</div>
+            </div>
+            <div class="filename" title="@file.Name">
+                @file.Name
+            </div>
+        </div>
+    }
+</div>
+
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\FileGrid.razor.cs`
 
 ```csharp
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using Tagium.Core.Models;
+using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
 public partial class FileGrid : IDisposable
 {
+    [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+
     private List<FileEntry> Files = [];
     private DotNetObjectReference<FileGrid>? _objRef;
 
@@ -3426,6 +3527,7 @@ public partial class FileGrid : IDisposable
         AppState.OnSelectionChange += RefreshSelection;
         Library.LibraryChanged += ReloadData;
         Settings.SettingsChanged += ReloadData;
+        ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -3449,6 +3551,11 @@ public partial class FileGrid : IDisposable
     }
 
     private void RefreshSelection()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnThumbnailGenerated(Guid fileId)
     {
         _ = InvokeAsync(StateHasChanged);
     }
@@ -3536,6 +3643,7 @@ public partial class FileGrid : IDisposable
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
         Settings.SettingsChanged -= ReloadData;
+        ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 
         _objRef?.Dispose();
     }
@@ -3544,17 +3652,82 @@ public partial class FileGrid : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\FileListView.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@implements IDisposable
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+@inject SystemLauncherService Launcher
+@inject IJSRuntime JS
+
+<div id="file-list-container" class="list-container">
+    <table class="file-list">
+        <thead>
+            <tr>
+                <th></th> <!-- Thumbnail -->
+                <th>Name</th>
+                <th>Path</th>
+                <th>Tags</th>
+                <th>Date Added</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var file in Files)
+            {
+                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                <tr class="file-row @(isSelected ? "selected" : "")"
+                    data-id="@file.Id"
+                    @onclick="e => OnRowClick(e, file.Id)"
+                    @ondblclick="e => OnRowDoubleClick(e, file)">
+                    
+                    <td class="thumbnail-cell">
+                        <div class="thumbnail">
+                            <img src="tagium://thumbnail/@file.Id"
+                                 alt="@file.Name"
+                                 onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
+                            <div class="placeholder-icon">📷</div>
+                        </div>
+                    </td>
+                    <td class="name-cell" title="@file.Name">@file.Name</td>
+                    <td class="path-cell" title="@file.Path">@file.Path</td>
+                    <td class="tags-cell">
+                        @foreach (var tag in file.Tags)
+                        {
+                            <span class="tag-pill" style="border-color: @tag.ColorHex">@tag.Name</span>
+                        }
+                    </td>
+                    <td class="date-cell">@FormatDate(file.DateAdded)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\FileListView.razor.cs`
 
 ```csharp
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Tagium.Core.Models;
+using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
 public partial class FileListView : IDisposable
 {
+    [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+
     private List<FileEntry> Files = [];
 
     protected override void OnInitialized()
@@ -3565,6 +3738,7 @@ public partial class FileListView : IDisposable
         AppState.OnSelectionChange += RefreshSelection;
         Library.LibraryChanged += ReloadData;
         Settings.SettingsChanged += ReloadData;
+        ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
     private void ReloadData()
@@ -3577,6 +3751,11 @@ public partial class FileListView : IDisposable
     }
 
     private void RefreshSelection()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnThumbnailGenerated(Guid fileId)
     {
         _ = InvokeAsync(StateHasChanged);
     }
@@ -3613,8 +3792,169 @@ public partial class FileListView : IDisposable
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
         Settings.SettingsChanged -= ReloadData;
+        ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\MainLayout.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@inherits LayoutComponentBase
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
+@using Tagium.Core.Services
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Components.Views
+@inject AppState AppState
+@inject LibraryService Library
+@inject SettingsManager Settings
+@inject ToastService ToastService
+
+<style>
+    /* 1. Force the main container to be a rigid, full-screen horizontal row that never wraps */
+    .main-layout {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
+    }
+
+    /* 2. Constrain the sidebar panel horizontally and vertically */
+    .sidebar-panel {
+        height: 100% !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    /* 3. Lock the middle content panel to occupy exactly the remaining width and height */
+    .content-panel {
+        flex: 1 !important;
+        min-width: 0 !important;
+        height: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+
+    /* 4. Force the view container to take up remaining height inside content panel */
+    .view-container {
+        flex: 1 !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+
+    /* 5. Force the file grid and list scrolling containers to scroll natively */
+    .list-container,
+    .file-grid-container,
+    .grid-container {
+        flex: 1 !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
+        overflow-x: auto !important;
+    }
+
+    /* 6. Lock the inspector panel width.
+              Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
+              and allows the splitter's JavaScript inline style modification to override it perfectly. */
+    .inspector-panel {
+        width: 320px;
+        height: 100% !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        min-width: 200px !important;
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
+    }
+
+        /* 7. Force all elements inside the inspector panel to respect the outer width bounds */
+        .inspector-panel * {
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+    /* 8. Force all container layers in the inspector subtree to wrap and clip overflow horizontally */
+    .inspector-container,
+    .inspector-content,
+    .single-file-inspector,
+    .multi-file-inspector,
+    .inspector-preview {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    /* 9. Guard splitters from collapsing or wrapping */
+    .splitter {
+        width: 4px !important;
+        cursor: col-resize !important;
+        background-color: #1a1a1a !important;
+        align-self: stretch !important;
+        flex-shrink: 0 !important;
+    }
+</style>
+
+<div class="main-layout">
+    <div class="sidebar-panel" id="sidebar-panel">
+        <TagSidebar />
+    </div>
+
+    <div class="splitter" id="splitter-left"></div>
+
+    <div class="content-panel">
+        <AppToolbar />
+
+        <div class="view-container">
+            @if (AppState.CurrentView == AppView.Files)
+            {
+                <div style="display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;">
+                    <FilesViewToolbar @ref="FilesViewToolbarRef" />
+
+                    @if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                    {
+                        <FileGrid />
+                    }
+                    else
+                    {
+                        <FileListView />
+                    }
+                </div>
+            }
+            else if (AppState.CurrentView == AppView.Tags)
+            {
+                <TagManagerView />
+            }
+        </div>
+
+        @if (_scanInProgress)
+        {
+            <div class="scan-progress-bar">
+                <div class="progress-fill" style="width: @(_scanProgress)%"></div>
+                <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
+            </div>
+        }
+    </div>
+
+    <div class="splitter" id="splitter-right"></div>
+
+    <div class="inspector-panel" id="inspector-panel">
+        <Tagium.Photino.Blazor.Components.Inspectors.FileInspector />
+    </div>
+
+    <ToastContainer />
+    <ModalHost />
+</div>
 ```
 
 ---
@@ -3753,6 +4093,31 @@ public partial class MainLayout : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\ModalHost.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@inject ModalService ModalService
+
+@if (IsVisible)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-container" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@ModalService.Title</h3>
+                <button class="close-btn" @onclick="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                @ModalService.Content
+            </div>
+        </div>
+    </div>
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\ModalHost.razor.cs`
 
 ```csharp
@@ -3781,6 +4146,73 @@ public partial class ModalHost
         ModalService.OnClose -= StateHasChanged;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\TagSidebar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Components.Shared
+@inject LibraryService Library
+@inject AppState AppState
+@inject SettingsManager Settings
+
+<div class="sidebar-container">
+    <div class="tag-list @GetDisplayModeClass()">
+        <div class="tag-item system-item @(IsAllFilesActive ? "active" : "")"
+             @onclick="() => SetSearch(string.Empty)">
+            <span class="icon">📁</span> All Files
+        </div>
+
+        <div class="tag-item system-item @(IsMissingActive ? "active" : "")"
+             @onclick="() => AppState.SetMissingOnly(true)">
+            <span class="icon">⚠️</span> Missing Files
+        </div>
+
+        <hr />
+
+        @foreach (var tag in Tags)
+        {
+            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase)
+            && !AppState.IsMissingOnly
+            && AppState.CurrentView == AppView.Files;
+
+            if (Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)
+            {
+                // Legacy mode: colored circles
+                <div class="tag-item legacy @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
+                    <TagIcon Tag="@tag" />
+                    <span class="name">@tag.Name</span>
+                    <span class="count">@tag.FileCount</span>
+                </div>
+            }
+            else
+            {
+                // Modern mode: colored pills
+                string tagStyle = isActive
+                ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid;"
+                : $"border-color: {tag.ColorHex};";
+
+                <div class="tag-item pill @(isActive ? "active" : "")"
+                     @onclick="() => SetSearch(tag.Name)"
+                     style="@tagStyle">
+                    @if (!string.IsNullOrWhiteSpace(tag.Emoji))
+                    {
+                        <span class="item-emoji">@tag.Emoji</span>
+                    }
+                    <span class="name">@tag.Name</span>
+                    <span class="count">@tag.FileCount</span>
+                </div>
+            }
+        }
+    </div>
+</div>
 ```
 
 ---
@@ -3842,6 +4274,82 @@ public partial class TagSidebar
 
 ---
 
+### `Tagium.Photino.Blazor\Components\ToastContainer.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
+@inject ToastService ToastService
+
+<div class="toast-container">
+    @foreach (var toast in ToastService.Toasts)
+    {
+        <div class="toast @GetClass(toast)" @onclick="() => Remove(toast)">
+            @toast.Message
+        </div>
+    }
+</div>
+
+<style>
+    .toast-container {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 9999;
+        pointer-events: none;
+    }
+
+    .toast {
+        background: #333;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        font-size: 0.9em;
+        min-width: 200px;
+        pointer-events: auto;
+        cursor: pointer;
+        animation: slideIn 0.3s ease-out;
+        border-left: 4px solid transparent;
+        opacity: 0.95;
+    }
+
+        .toast:hover {
+            opacity: 1;
+        }
+
+        .toast.info {
+            border-left-color: #42a5f5;
+        }
+
+        .toast.success {
+            border-left-color: #66bb6a;
+        }
+
+        .toast.error {
+            border-left-color: #ef5350;
+        }
+
+    @@keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateX(0);
+            opacity: 0.95;
+        }
+    }
+</style>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\ToastContainer.razor.cs`
 
 ```csharp
@@ -3882,6 +4390,25 @@ public partial class ToastContainer
         ToastService.OnChange -= HandleToastChange;
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\_Imports.razor`
+
+```
+@using System.Net.Http
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.JSInterop
+@using Tagium.Photino.Blazor
+@using Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Components.Views
+@using Tagium.Core.Models
+@using Tagium.Core.Services
 ```
 
 ---
@@ -4239,7 +4766,6 @@ public class SystemLauncherService
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
-using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Services;
 
@@ -4274,16 +4800,6 @@ public static class SchemeHandlers
             return Stream.Null;
         }
 
-        string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
-        string path = Path.Combine(cacheDir, $"{fileId:N}.png");
-
-        // If thumbnail exists, serve it
-        if (File.Exists(path))
-        {
-            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        }
-
-        // Thumbnail missing – try to generate it on demand
         if (ServiceProvider is null)
         {
             return Stream.Null;
@@ -4291,19 +4807,34 @@ public static class SchemeHandlers
 
         try
         {
-            var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
-            var thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
+            FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+            ThumbnailService thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
 
-            var file = fileRepo.GetById(fileId);
-            if (file == null)
+            FileEntry? file = fileRepo.GetById(fileId);
+            if (file is null)
             {
                 return Stream.Null;
             }
 
-            // Generate thumbnail synchronously (blocks this thread but it's a background handler)
-            thumbnailService.GenerateThumbnailAsync(file).GetAwaiter().GetResult();
+            string path = thumbnailService.GetThumbnailPath(file.Hash, file.Id);
 
-            // If generation succeeded, serve it
+            if (!File.Exists(path))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await thumbnailService.GenerateThumbnailAsync(file);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[SchemeHandler] Async thumbnail generation failed for {file.Id}: {ex.Message}");
+                    }
+                });
+
+                return Stream.Null;
+            }
+
             if (File.Exists(path))
             {
                 return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -4311,7 +4842,7 @@ public static class SchemeHandlers
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SchemeHandler] Failed to generate thumbnail for {fileId}: {ex.Message}");
+            Console.WriteLine($"[SchemeHandler] Failed to resolve thumbnail for {fileId}: {ex.Message}");
         }
 
         return Stream.Null;
@@ -4332,7 +4863,7 @@ public static class SchemeHandlers
             return Stream.Null;
         }
 
-        var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+        FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
         FileEntry? entry = fileRepo.GetById(fileId);
 
         if (entry is null || !File.Exists(entry.Path))
@@ -4421,6 +4952,70 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<KeyboardShortcutService>();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\Component.razor`
+
+```
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\FileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject SystemLauncherService Launcher
+@inject FileDialogService FileDialog
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="inspector-container">
+    <div class="inspector-header">
+        <span class="title">Inspector</span>
+        <span class="badge">@AppState.SelectedFileIds.Count selected</span>
+    </div>
+
+    <div class="inspector-content">
+        @if (HasRenderError)
+        {
+            <div class="state-message error">
+                <p>⚠️ Display Error</p>
+                <button class="btn" @onclick="LoadInspectorDataAsync">Retry</button>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.None)
+        {
+            <div class="state-message">
+                <span class="icon">👆</span>
+                <p>Select a file to view details</p>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.Single && SelectedFile is not null)
+        {
+            <SingleFileInspector File="SelectedFile"
+                                 AssignedTags="AssignedTags"
+                                 AvailableTags="AvailableTags" />
+        }
+        else if (SelectionMode == InspectorMode.Multi)
+        {
+            <MultiFileInspector CommonTags="CommonTags"
+                                AvailableTags="AvailableTags" />
+        }
+        else
+        {
+            <div class="state-message">
+                <p>Loading...</p>
+            </div>
+        }
+    </div>
+</div>
 ```
 
 ---
@@ -4596,6 +5191,53 @@ public partial class FileInspector
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@inject LibraryService Library
+
+<div class="multi-file-inspector">
+    <div class="inspector-header">
+        <h3>@AppState.SelectedFileIds.Count Files Selected</h3>
+    </div>
+
+    <div class="inspector-tags">
+        <h4>Common Tags</h4>
+        <div class="tag-pills">
+            @foreach (var tag in CommonTags)
+            {
+                <span class="tag-pill" style="background-color: @tag.ColorHex">
+                    @if (!string.IsNullOrEmpty(tag.Emoji))
+                    {
+                        <span>@tag.Emoji</span>
+                    }
+                    @tag.Name
+                    <button class="btn-remove-tag" @onclick="() => BulkRemoveTag(tag.Id)">✕</button>
+                </span>
+            }
+        </div>
+
+        @if (AvailableTags.Count > 0)
+        {
+            <div class="add-tag-section">
+                <select @onchange="@(e => { if (Guid.TryParse(e.Value?.ToString(), out var tid)) BulkAddTag(tid); })">
+                    <option value="">Add tag to all...</option>
+                    @foreach (var tag in AvailableTags)
+                    {
+                        <option value="@tag.Id">@tag.Name</option>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+</div>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Inspectors\MultiFileInspector.razor.cs`
 
 ```csharp
@@ -4620,6 +5262,75 @@ public partial class MultiFileInspector
         Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Inspectors\SingleFileInspector.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@inject LibraryService Library
+
+<div class="single-file-inspector" style="display: flex; flex-direction: column; gap: 15px; height: 100%; overflow-y: auto; padding: 15px; box-sizing: border-box; width: 100%; min-width: 0;">
+    <div class="inspector-header" style="overflow-wrap: break-word; word-break: break-all;">
+        <h3 class="file-name" style="margin: 0 0 5px 0; font-size: 1.1em; line-height: 1.3;">@File.Name</h3>
+        <p class="file-path" style="margin: 0; font-size: 0.85em; color: #888;">@File.Path</p>
+    </div>
+
+    <!-- Container uses relative positioning with a locked height -->
+    <div class="inspector-preview" style="position: relative !important; display: block !important; height: 250px !important; background-color: #161616 !important; border-radius: 6px !important; overflow: hidden !important; border: 1px solid #2a2a2a !important; flex-shrink: 0 !important; width: 100% !important; box-sizing: border-box !important;">
+        @if (IsImage)
+        {
+            <!-- Image uses absolute positioning so it never influences parent width calculations -->
+            <img src="tagium://preview/@File.Id" alt="@File.Name" style="position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; object-fit: contain !important; display: block !important;" />
+        }
+        else if (IsVideo)
+        {
+            <!-- Video uses absolute positioning so it never influences parent width calculations -->
+            <video src="tagium://preview/@File.Id" controls style="position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; object-fit: contain !important; display: block !important;"></video>
+        }
+        else
+        {
+            <div class="generic-file-preview" style="font-size: 48px; color: #666; display: flex; align-items: center; justify-content: center; height: 100%; width: 100%;">📄</div>
+        }
+    </div>
+
+    <div class="inspector-tags" style="display: flex; flex-direction: column; gap: 8px;">
+        <h4 style="margin: 0; font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa;">Tags</h4>
+        <div class="tag-pills" style="display: flex; flex-wrap: wrap; gap: 6px;">
+            @foreach (var tag in AssignedTags)
+            {
+                <span class="tag-pill" style="background-color: @tag.ColorHex; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 12px; font-size: 0.85em; color: white;">
+                    @if (!string.IsNullOrEmpty(tag.Emoji))
+                    {
+                        <span>@tag.Emoji</span>
+                    }
+                    @tag.Name
+                    <button class="btn-remove-tag" @onclick="() => RemoveTag(tag.Id)" style="background: none; border: none; color: white; cursor: pointer; padding: 0 2px; font-size: 0.9em; margin-left: 4px; line-height: 1;">✕</button>
+                </span>
+            }
+        </div>
+
+        @if (AvailableTags.Count > 0)
+        {
+            <div class="add-tag-section" style="margin-top: 5px;">
+                <select @onchange="@(e => { if (Guid.TryParse(e.Value?.ToString(), out var tid)) AddTag(tid); })" style="width: 100%; padding: 6px; background-color: #222; border: 1px solid #333; border-radius: 4px; color: white; font-size: 0.9em;">
+                    <option value="">Add tag...</option>
+                    @foreach (var tag in AvailableTags)
+                    {
+                        <option value="@tag.Id">@tag.Name</option>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+
+    <div class="inspector-actions" style="display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 15px; border-top: 1px solid #222;">
+        <button class="btn btn-secondary" @onclick="OpenFile" style="width: 100%; padding: 8px; background-color: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 4px; color: white; cursor: pointer; text-align: center; font-size: 0.9em;">Open File</button>
+        <button class="btn btn-secondary" @onclick="ShowInExplorer" style="width: 100%; padding: 8px; background-color: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 4px; color: white; cursor: pointer; text-align: center; font-size: 0.9em;">Show in Explorer</button>
+    </div>
+</div>
 ```
 
 ---
@@ -4668,6 +5379,77 @@ public partial class SingleFileInspector
         SystemLauncherService.ShowInExplorer(File.Path);
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\DataManagementModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Data
+@using Tagium.Core.Services
+@using Tagium.Core.Services.DataExport
+@using Tagium.Core.Services.DataMerge
+@using Tagium.Core.Services.LibraryIntegrity
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Photino.Blazor.Services.Toasting
+@inject LibraryService Library
+@inject LibraryIntegrityService IntegrityService
+@inject DataExportService ExportService
+@inject DatabaseMergeService MergeService
+@inject DatabaseManager DbManager
+@inject FileDialogService FileDialog
+@inject ModalService ModalService
+@inject ToastService Toast
+
+<div class="data-tools">
+    <div class="section">
+        <h4>Integrity</h4>
+        <p class="desc">Scan for files missing from disk.</p>
+        <button class="btn" @onclick="ScanIntegrity">Scan Now</button>
+        @if (ScanResult is not null)
+        {
+            <div class="result-box">
+                Scanned: @ScanResult.FilesScanned <br />
+                Missing: @ScanResult.NewlyMissing <br />
+                Found: @ScanResult.NewlyFound
+            </div>
+        }
+        <button class="btn btn-danger" @onclick="PurgeMissing" disabled="@(Library.GetFiles(null, true).Count == 0)">Purge Missing Files</button>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Export</h4>
+        <div class="btn-row">
+            <button class="btn" @onclick="ExportJson">Export JSON</button>
+            <button class="btn" @onclick="ExportCsv">Export CSV</button>
+            <button class="btn" @onclick="BackupDb">Backup DB</button>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="section">
+        <h4>Merge & Restore</h4>
+        <p class="desc">Import data from another Tagium DB, or restore a backup.</p>
+        <div class="btn-row">
+            <button class="btn" @onclick="MergeDb">Merge...</button>
+            <button class="btn btn-danger" @onclick="RestoreDb">Restore...</button>
+        </div>
+        @if (MergeResult is not null)
+        {
+            <div class="result-box">
+                New Files: @MergeResult.NewFiles <br />
+                New Tags: @MergeResult.NewTags <br />
+                Associations: @MergeResult.NewAssociations
+            </div>
+        }
+    </div>
+</div>
+
 ```
 
 ---
@@ -4764,6 +5546,30 @@ public partial class DataManagementModal
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Models
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="duplicate-modal">
+    <p>A file with the same content already exists in your library:</p>
+
+    <div class="file-path">@ExistingFile.Path</div>
+
+    <div class="footer">
+        <button class="btn btn-primary" @onclick="ShowExisting">Show Existing File</button>
+        <button class="btn" @onclick="Close">Close</button>
+    </div>
+</div>
+
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Modals\DuplicateFileModal.razor.cs`
 
 ```csharp
@@ -4792,6 +5598,82 @@ public partial class DuplicateFileModal
         ModalService.Close();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Modals\LibraryRootsModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Services
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject LibraryScanService ScanService
+@inject ModalService ModalService
+
+<div class="library-roots-modal">
+    <div class="modal-body">
+        <p class="description">
+            The library syncs automatically with configured root folders. Supported image and video formats will be indexed.
+        </p>
+
+        <div class="actions">
+            <button class="btn btn-primary" @onclick="AddFolder">Add Folder...</button>
+            <button class="btn btn-secondary" @onclick="TriggerRescan" disabled="@ScanService.IsScanning">
+                @(ScanService.IsScanning ? "Scanning..." : "Rescan All")
+            </button>
+        </div>
+
+        @if (ScanService.IsScanning)
+        {
+            <div class="scanning-status">
+                <span class="spinner"></span>
+                <span>Scanning files (@ScanService.ProgressCurrent / @ScanService.ProgressTotal)...</span>
+            </div>
+        }
+
+        <div class="roots-list">
+            @if (Roots.Count == 0)
+            {
+                <div class="empty-state">No library folders configured. Add a folder to start indexing.</div>
+            }
+            else
+            {
+                @foreach (var root in Roots)
+                {
+                    <div class="root-item @(root.IsEnabled ? "" : "disabled")">
+                        <div class="root-info">
+                            <span class="root-path" title="@root.Path">@root.Path</span>
+                            <span class="root-meta">
+                                @if (root.LastScanTime.HasValue)
+                                {
+                                    <span>Last scanned: @FormatDate(root.LastScanTime.Value)</span>
+                                }
+                                else
+                                {
+                                    <span>Never scanned</span>
+                                }
+                            </span>
+                        </div>
+                        <div class="root-actions">
+                            <label class="switch" title="@(root.IsEnabled ? "Disable folder" : "Enable folder")">
+                                <input type="checkbox" checked="@root.IsEnabled" @onchange="() => ToggleRoot(root)" />
+                                <span class="slider"></span>
+                            </label>
+                            <button class="btn btn-danger-icon" @onclick="() => RemoveRoot(root)" title="Remove folder">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-secondary" @onclick="Close">Close</button>
+    </div>
+</div>
 ```
 
 ---
@@ -4887,6 +5769,63 @@ public partial class LibraryRootsModal : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject SettingsManager Settings
+@inject ModalService ModalService
+
+<div class="modal-header">Preferences</div>
+<div class="modal-body">
+    <h4>Tag Sidebar Style</h4>
+    <p class="hint">Choose how tags appear in the sidebar.</p>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="tagSidebarStyle"
+                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.Pill)"
+                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.Pill))" />
+            Colored Pills
+        </label>
+        <label>
+            <input type="radio"
+                   name="tagSidebarStyle"
+                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)"
+                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.MinimalCircle))" />
+            Minimal Circles
+        </label>
+    </div>
+
+    <h4>Emoji Set</h4>
+    <p class="hint">Requires restart to fully apply font changes.</p>
+    <div class="radio-group">
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.SystemDefault)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.SystemDefault))" />
+            System Default (Windows)
+        </label>
+        <label>
+            <input type="radio"
+                   name="emojiSet"
+                   checked="@(Settings.Current.EmojiPreference == EmojiSet.Apple)"
+                   @onchange="@(() => UpdateEmojiSet(EmojiSet.Apple))" />
+            Apple Color Emoji
+        </label>
+    </div>
+</div>
+<div class="modal-footer">
+    <button class="btn" @onclick="Close">Close</button>
+</div>
+
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Modals\PreferencesModal.razor.cs`
 
 ```csharp
@@ -4916,6 +5855,22 @@ public partial class PreferencesModal
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+
+<button class="icon-button @Class"
+        @onclick="OnClick"
+        title="@Title"
+        aria-label="@Title"
+        disabled="@Disabled">
+    @ChildContent
+</button>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\IconButton.razor.cs`
 
 ```csharp
@@ -4931,6 +5886,25 @@ public partial class IconButton
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public EventCallback OnClick { get; set; }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\SearchInput.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Services
+@inject AppState AppState
+@implements IDisposable
+
+<input type="text"
+       class="search-input"
+       placeholder="Search files..."
+       value="@_value"
+       @oninput="OnInput"
+       @ref="_inputElement"
+       aria-label="Search files" />
 ```
 
 ---
@@ -4994,6 +5968,28 @@ public partial class SearchInput
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy" aria-label="Sort by">
+        <option value="@SortBy.DateAdded">Date</option>
+        <option value="@SortBy.Name">Name</option>
+        <option value="@SortBy.Path">Path</option>
+    </select>
+    <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection" aria-label="Sort direction">
+        <option value="@SortDirection.Asc">Asc</option>
+        <option value="@SortDirection.Desc">Desc</option>
+    </select>
+</div>
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\SortControls.razor.cs`
 
 ```csharp
@@ -5028,6 +6024,28 @@ public partial class SortControls
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Models
+
+@if (ShowIcon)
+{
+    @if (!string.IsNullOrWhiteSpace(Tag.Emoji))
+    {
+        <span class="tag-emoji">@Tag.Emoji</span>
+    }
+    else
+    {
+        <span class="tag-color" style="background-color: @Tag.ColorHex"></span>
+    }
+}
+
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor.cs`
 
 ```csharp
@@ -5041,6 +6059,25 @@ public partial class TagIcon
     [Parameter, EditorRequired] public required Tag Tag { get; set; }
     [Parameter] public bool ShowIcon { get; set; } = true;
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\ThumbnailSizeSlider.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <input type="range" min="64" max="256" step="16"
+           value="@Settings.Current.ThumbnailSize"
+           @oninput="OnInput"
+           @onchange="OnCommit"
+           aria-label="Thumbnail size" />
+</div>
+
 ```
 
 ---
@@ -5069,6 +6106,56 @@ public partial class ThumbnailSizeSlider
         Settings.Save();
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\FilesViewToolbar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
+@inject SearchInput SearchInput
+@inject SettingsManager Settings
+
+<div class="files-view-toolbar">
+    <div class="search-container">
+        <SearchInput @ref="SearchInput" />
+    </div>
+
+    <div class="view-mode-buttons">
+        <button class="btn-icon"
+                @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
+                title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+            <span>@(Settings.Current.FileViewMode == FileViewMode.Grid ? "☰" : "⊞")</span>
+        </button>
+    </div>
+
+    <div class="view-options-wrapper">
+        <button class="btn-icon @(IsMenuOpen ? "active" : "")"
+                @onclick="ToggleMenu"
+                title="View Options">
+            <span>👁</span>
+        </button>
+
+        @if (IsMenuOpen)
+        {
+            <div class="view-menu-overlay" @onclick="CloseMenu"></div>
+            <div class="view-menu-dropdown">
+                <div class="menu-section">
+                    <label>Sort By</label>
+                    <SortControls />
+                </div>
+                <hr />
+                <div class="menu-section">
+                    <label>Thumbnail Size</label>
+                    <ThumbnailSizeSlider />
+                </div>
+            </div>
+        }
+    </div>
+</div>
 ```
 
 ---
@@ -5105,6 +6192,85 @@ public partial class FilesViewToolbar
         Settings.Update(s => s.FileViewMode = mode);
     }
 }
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Views\TagManagerView.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Views
+@using Tagium.Core.Services
+@using Tagium.Core.Models
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Services
+@inject LibraryService Library
+@inject SettingsManager Settings
+
+<div class="tag-manager-view">
+    <div class="header-row">
+        <h3>Manage Tags</h3>
+        <div class="add-row">
+            <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
+            <button class="btn-primary" @onclick="AddTag">Add</button>
+        </div>
+    </div>
+
+    <div class="sort-controls">
+        <select @onchange="OnSortByChange" value="@Settings.Current.TagSortBy">
+            <option value="@TagSortBy.Name">Name</option>
+            <option value="@TagSortBy.FileCount">File Count</option>
+        </select>
+        <select @onchange="OnSortDirChange" value="@Settings.Current.TagSortDirection">
+            <option value="@SortDirection.Asc">Asc</option>
+            <option value="@SortDirection.Desc">Desc</option>
+        </select>
+    </div>
+
+    <div class="tag-list">
+        @foreach (var tag in Tags)
+        {
+            <div class="tag-row">
+                <!-- Color Picker -->
+                <div class="color-picker-wrapper">
+                    <button class="color-circle"
+                            style="background-color: @tag.ColorHex"
+                            @onclick="() => ToggleColorPicker(tag.Id)"></button>
+
+                    @if (ActiveColorPickerId == tag.Id)
+                    {
+                        <div class="color-popup" @onclick:stopPropagation="true">
+                            <div class="color-grid">
+                                @foreach (var color in Palette)
+                                {
+                                    <div class="swatch"
+                                         style="background-color: @color"
+                                         @onclick="() => UpdateTagColor(tag, color)"></div>
+                                }
+                            </div>
+                            <div class="overlay" @onclick="() => ActiveColorPickerId = null"></div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Emoji Input -->
+                <input type="text" class="emoji-input"
+                       value="@tag.Emoji"
+                       @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
+                       maxlength="2" />
+
+                <!-- Name Input -->
+                <input type="text" class="name-input"
+                       value="@tag.Name"
+                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
+
+                <span class="count">@tag.FileCount files</span>
+
+                <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
+            </div>
+        }
+    </div>
+</div>
 ```
 
 ---

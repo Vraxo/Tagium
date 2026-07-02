@@ -54,25 +54,10 @@ public static class SchemeHandlers
 
             if (!File.Exists(path))
             {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await thumbnailService.GenerateThumbnailAsync(file);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[SchemeHandler] Async thumbnail generation failed for {file.Id}: {ex.Message}");
-                    }
-                });
-
                 return Stream.Null;
             }
 
-            if (File.Exists(path))
-            {
-                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            }
+            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         }
         catch (Exception ex)
         {

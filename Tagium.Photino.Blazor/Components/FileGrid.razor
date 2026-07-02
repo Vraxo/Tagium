@@ -16,17 +16,23 @@
     @foreach (var file in Files)
     {
         bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+        bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+
         <div class="file-card @(isSelected ? "selected" : "")"
              data-id="@file.Id"
              @onclick="e => OnCardClick(e, file.Id)"
              @ondblclick="e => OnCardDoubleClick(e, file)"
              @onclick:stopPropagation="true">
 
-            <div class="thumbnail">
-                <img src="tagium://thumbnail/@file.Id"
-                     alt="@file.Name"
-                     onerror="this.style.display='none'; this.parentElement.classList.add('broken');" />
-                <div class="placeholder-icon">📷</div>
+            <div class="thumbnail @(hasThumb ? "" : "broken")">
+                @if (hasThumb)
+                {
+                    <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
+                }
+                else
+                {
+                    <div class="placeholder-icon">📷</div>
+                }
             </div>
             <div class="filename" title="@file.Name">
                 @file.Name
@@ -34,4 +40,3 @@
         </div>
     }
 </div>
-

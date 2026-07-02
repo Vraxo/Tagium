@@ -19,7 +19,8 @@ IncludeExtensions = [
   ".json",
   ".xml",
   ".md",
-  ".txt"
+  ".txt",
+  ".razor"
 ]
 
 # (Blacklist) Explicitly skip files with these extensions.
