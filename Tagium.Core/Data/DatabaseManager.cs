@@ -26,6 +26,7 @@ public class DatabaseManager
         }
 
         InitializeSchema(connection);
+        MigrateSchema(connection);
     }
 
     private static void InitializeSchema(SqliteConnection connection)
@@ -44,7 +45,9 @@ public class DatabaseManager
                 Name TEXT NOT NULL DEFAULT '',
                 Hash TEXT NULL,
                 DateAdded INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-                IsMissing INTEGER NOT NULL DEFAULT 0
+                IsMissing INTEGER NOT NULL DEFAULT 0,
+                Size INTEGER NOT NULL DEFAULT 0,
+                ModifiedTime INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS FileTags (
@@ -66,5 +69,22 @@ public class DatabaseManager
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = schema;
         _ = command.ExecuteNonQuery();
+    }
+
+    private static void MigrateSchema(SqliteConnection connection)
+    {
+        string[] columns = ["Size", "ModifiedTime"];
+        foreach (string col in columns)
+        {
+            try
+            {
+                using SqliteCommand cmd = connection.CreateCommand();
+                cmd.CommandText = $"ALTER TABLE Files ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0;";
+                _ = cmd.ExecuteNonQuery();
+            }
+            catch
+            {
+            }
+        }
     }
 }

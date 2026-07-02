@@ -63,7 +63,7 @@ public class LibraryScanService
             }
 
             List<string> allCandidateFiles = [];
-            foreach (var root in roots)
+            foreach (LibraryRoot root in roots)
             {
                 if (!Directory.Exists(root.Path))
                 {
@@ -72,7 +72,7 @@ public class LibraryScanService
 
                 try
                 {
-                    var files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
+                    IEnumerable<string> files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
                         .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
                     allCandidateFiles.AddRange(files);
                 }
@@ -85,7 +85,18 @@ public class LibraryScanService
             ProgressTotal = allCandidateFiles.Count;
             ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
 
-            HashSet<string> foundPaths = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, FileEntry> dbFilesMap = [];
+            foreach (LibraryRoot root in roots)
+            {
+                List<FileEntry> dbFiles = _fileRepo.GetFilesUnderPath(root.Path);
+                foreach (FileEntry dbFile in dbFiles)
+                {
+                    dbFilesMap[dbFile.Path] = dbFile;
+                }
+            }
+
+            List<string> untrackedFiles = [];
+            HashSet<string> verifiedPaths = new(StringComparer.OrdinalIgnoreCase);
 
             foreach (string filePath in allCandidateFiles)
             {
@@ -96,94 +107,199 @@ public class LibraryScanService
 
                 try
                 {
-                    string? hash = await FileHasher.ComputeSha256Async(filePath);
-                    if (hash is not null)
-                    {
-                        FileEntry? existing = _fileRepo.GetByHash(hash);
+                    FileInfo fileInfo = new(filePath);
+                    long size = fileInfo.Length;
+                    long modifiedTime = new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeSeconds();
 
-                        if (existing is not null)
+                    if (dbFilesMap.TryGetValue(filePath, out FileEntry? existing))
+                    {
+                        if (existing.Size == size && existing.ModifiedTime == modifiedTime)
                         {
-                            if (!string.Equals(existing.Path, filePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                existing.Path = filePath;
-                                existing.Name = Path.GetFileName(filePath);
-                                existing.IsMissing = false;
-                                _fileRepo.Update(existing);
-                            }
-                            else if (existing.IsMissing)
+                            if (existing.IsMissing)
                             {
                                 existing.IsMissing = false;
                                 _fileRepo.Update(existing);
                             }
+                            _ = verifiedPaths.Add(filePath);
                         }
                         else
                         {
-                            _ = _fileRepo.Add(filePath, hash);
-                            FileEntry? newEntry = _fileRepo.GetByHash(hash);
-                            if (newEntry is not null)
+                            string? hash = await FileHasher.ComputeSha256Async(filePath);
+                            if (hash is not null)
                             {
-                                await _thumbnailService.GenerateThumbnailAsync(newEntry, cancellationToken: cancellationToken);
+                                existing.Hash = hash;
+                                existing.Size = size;
+                                existing.ModifiedTime = modifiedTime;
+                                existing.IsMissing = false;
+                                _fileRepo.Update(existing);
 
-                                MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(filePath);
-                                if (metadata is not null && metadata.Tags.Count > 0)
-                                {
-                                    var existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
-                                    foreach (string rawTag in metadata.Tags)
-                                    {
-                                        string norm = TagFormatter.Normalize(rawTag);
-                                        if (string.IsNullOrWhiteSpace(norm))
-                                        {
-                                            continue;
-                                        }
-
-                                        if (!existingTags.TryGetValue(norm, out Tag? dbTag))
-                                        {
-                                            _tagRepo.Add(norm, "#757575", null);
-                                            var refreshed = _tagRepo.GetAll().FirstOrDefault(t => string.Equals(t.Name, norm, StringComparison.OrdinalIgnoreCase));
-                                            if (refreshed is not null)
-                                            {
-                                                _fileTagRepo.AddTagToFile(newEntry.Id, refreshed.Id);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            _fileTagRepo.AddTagToFile(newEntry.Id, dbTag.Id);
-                                        }
-                                    }
-                                }
+                                await _thumbnailService.GenerateThumbnailAsync(existing, cancellationToken: cancellationToken);
+                                _ = verifiedPaths.Add(filePath);
                             }
                         }
-
-                        _ = foundPaths.Add(filePath);
+                    }
+                    else
+                    {
+                        untrackedFiles.Add(filePath);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Scan] Error processing file {filePath}: {ex.Message}");
+                    Console.WriteLine($"[Scan] Error examining path {filePath}: {ex.Message}");
                 }
 
                 ProgressCurrent++;
                 ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
             }
 
-            foreach (var root in roots)
+            List<FileEntry> missingFilesInDb = [];
+            foreach (FileEntry entry in dbFilesMap.Values)
             {
-                var dbFiles = _fileRepo.GetFilesUnderPath(root.Path);
-                List<Guid> missingIds = [];
-
-                foreach (var dbFile in dbFiles)
+                if (!verifiedPaths.Contains(entry.Path))
                 {
-                    if (!foundPaths.Contains(dbFile.Path) && !dbFile.IsMissing)
+                    missingFilesInDb.Add(entry);
+                }
+            }
+
+            Dictionary<long, List<string>> untrackedBySize = [];
+            foreach (string path in untrackedFiles)
+            {
+                try
+                {
+                    long s = new FileInfo(path).Length;
+                    if (!untrackedBySize.TryGetValue(s, out List<string>? value))
                     {
-                        missingIds.Add(dbFile.Id);
+                        value = [];
+                        untrackedBySize[s] = value;
+                    }
+                    value.Add(path);
+                }
+                catch { }
+            }
+
+            HashSet<string> processedUntracked = [];
+
+            foreach (FileEntry missing in missingFilesInDb)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                if (string.IsNullOrEmpty(missing.Hash))
+                {
+                    continue;
+                }
+
+                if (untrackedBySize.TryGetValue(missing.Size, out List<string>? candidates))
+                {
+                    foreach (string candidatePath in candidates)
+                    {
+                        if (processedUntracked.Contains(candidatePath))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            FileInfo info = new(candidatePath);
+                            long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
+
+                            if (missing.ModifiedTime == modifiedTime)
+                            {
+                                string? candidateHash = await FileHasher.ComputeSha256Async(candidatePath);
+                                if (candidateHash == missing.Hash)
+                                {
+                                    missing.Path = candidatePath;
+                                    missing.Name = Path.GetFileName(candidatePath);
+                                    missing.IsMissing = false;
+                                    _fileRepo.Update(missing);
+
+                                    _ = processedUntracked.Add(candidatePath);
+                                    _ = verifiedPaths.Add(candidatePath);
+                                    break;
+                                }
+                            }
+                        }
+                        catch { }
                     }
                 }
+            }
 
-                if (missingIds.Count > 0)
+            foreach (string path in untrackedFiles)
+            {
+                if (processedUntracked.Contains(path))
                 {
-                    _fileRepo.SetMissingStatus(missingIds, true);
+                    continue;
                 }
 
+                try
+                {
+                    FileInfo info = new(path);
+                    long size = info.Length;
+                    long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
+
+                    string? hash = await FileHasher.ComputeSha256Async(path);
+                    if (hash is not null)
+                    {
+                        _ = _fileRepo.Add(path, hash, size, modifiedTime);
+                        FileEntry? newEntry = _fileRepo.GetByHash(hash);
+                        if (newEntry is not null)
+                        {
+                            await _thumbnailService.GenerateThumbnailAsync(newEntry, cancellationToken: cancellationToken);
+
+                            MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(path);
+                            if (metadata is not null && metadata.Tags.Count > 0)
+                            {
+                                var existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+                                foreach (string rawTag in metadata.Tags)
+                                {
+                                    string norm = TagFormatter.Normalize(rawTag);
+                                    if (string.IsNullOrWhiteSpace(norm))
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!existingTags.TryGetValue(norm, out Tag? dbTag))
+                                    {
+                                        _tagRepo.Add(norm, "#757575", null);
+                                        Tag? refreshed = _tagRepo.GetAll().FirstOrDefault(t => string.Equals(t.Name, norm, StringComparison.OrdinalIgnoreCase));
+                                        if (refreshed is not null)
+                                        {
+                                            _fileTagRepo.AddTagToFile(newEntry.Id, refreshed.Id);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        _fileTagRepo.AddTagToFile(newEntry.Id, dbTag.Id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Scan] Error importing untracked file {path}: {ex.Message}");
+                }
+            }
+
+            List<Guid> finalMissingIds = [];
+            foreach (FileEntry missing in missingFilesInDb)
+            {
+                if (!verifiedPaths.Contains(missing.Path) && !missing.IsMissing)
+                {
+                    finalMissingIds.Add(missing.Id);
+                }
+            }
+
+            if (finalMissingIds.Count > 0)
+            {
+                _fileRepo.SetMissingStatus(finalMissingIds, true);
+            }
+
+            foreach (LibraryRoot root in roots)
+            {
                 root.LastScanTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 _rootRepo.Update(root);
             }

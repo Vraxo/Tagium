@@ -39,7 +39,6 @@ public class DatabaseMergeService
             .Where(f => f.Hash is not null)
             .ToDictionary(f => f.Hash!);
 
-        // Merge Tags - UUIDs allow direct insertion, no ID remapping needed
         foreach (Tag sTag in sourceTags)
         {
             if (!targetTags.ContainsKey(sTag.Name))
@@ -49,10 +48,8 @@ public class DatabaseMergeService
             }
         }
 
-        // Refresh target tags to get new ones with their UUIDs
         targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
 
-        // Merge Files
         foreach (FileEntry sFile in sourceFiles)
         {
             if (sFile.Hash is null || targetFiles.ContainsKey(sFile.Hash))
@@ -60,17 +57,15 @@ public class DatabaseMergeService
                 continue;
             }
 
-            _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
+            _ = _targetFileRepo.Add(sFile.Path, sFile.Hash, sFile.Size, sFile.ModifiedTime);
             result.NewFiles++;
 
-            // Get the newly added file to establish associations
             FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
             if (added is null)
             {
                 continue;
             }
 
-            // Merge Associations
             if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<Guid>? sTagIds))
             {
                 continue;
@@ -78,14 +73,13 @@ public class DatabaseMergeService
 
             foreach (Guid sTagId in sTagIds)
             {
-                // Find corresponding tag in source by ID, then match by name to target
-                var sourceTag = sourceTags.FirstOrDefault(t => t.Id == sTagId);
+                Tag? sourceTag = sourceTags.FirstOrDefault(t => t.Id == sTagId);
                 if (sourceTag is null)
                 {
                     continue;
                 }
 
-                var targetTag = targetTags.GetValueOrDefault(sourceTag.Name);
+                Tag? targetTag = targetTags.GetValueOrDefault(sourceTag.Name);
                 if (targetTag is null)
                 {
                     continue;
@@ -126,7 +120,7 @@ public class DatabaseMergeService
         List<FileEntry> list = [];
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files";
 
         using SqliteDataReader r = cmd.ExecuteReader();
 
@@ -139,7 +133,9 @@ public class DatabaseMergeService
                 Name = r.GetString(2),
                 Hash = r.IsDBNull(3) ? null : r.GetString(3),
                 DateAdded = r.GetInt64(4),
-                IsMissing = r.GetBoolean(5)
+                IsMissing = r.GetBoolean(5),
+                Size = r.GetInt64(6),
+                ModifiedTime = r.GetInt64(7)
             });
         }
 

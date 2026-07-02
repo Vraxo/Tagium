@@ -32,12 +32,12 @@ public class DataExportService
         Dictionary<Guid, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
         StringBuilder sb = new();
 
-        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,Tags");
+        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,IsMissing,Size,ModifiedTime,Tags");
 
-        foreach (var file in data.Files)
+        foreach (FileExportData file in data.Files)
         {
             string tags = string.Join(";", file.TagIds.Select(id => tagLookup.GetValueOrDefault(id, "unknown")));
-            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},\"{Escape(tags)}\"";
+            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},{file.IsMissing},{file.Size},{file.ModifiedTime},\"{Escape(tags)}\"";
             _ = sb.AppendLine(line);
         }
 
@@ -63,6 +63,8 @@ public class DataExportService
                 Hash = f.Hash,
                 DateAdded = f.DateAdded,
                 IsMissing = f.IsMissing,
+                Size = f.Size,
+                ModifiedTime = f.ModifiedTime,
                 TagIds = tagIds
             });
         }

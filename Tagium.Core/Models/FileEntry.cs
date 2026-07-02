@@ -8,5 +8,7 @@ public class FileEntry
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
+    public long Size { get; set; }
+    public long ModifiedTime { get; set; }
     public List<Tag> Tags { get; set; } = [];
 }
