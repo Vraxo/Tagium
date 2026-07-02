@@ -59,15 +59,39 @@
         overflow-x: auto !important;
     }
 
-    /* 6. Constrain the inspector panel horizontally and vertically */
+    /* 6. Lock the inspector panel width.
+              Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
+              and allows the splitter's JavaScript inline style modification to override it perfectly. */
     .inspector-panel {
+        width: 320px;
         height: 100% !important;
         overflow: hidden !important;
         display: flex !important;
         flex-direction: column !important;
+        min-width: 200px !important;
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
     }
 
-    /* 7. Guard splitters from collapsing or wrapping */
+        /* 7. Force all elements inside the inspector panel to respect the outer width bounds */
+        .inspector-panel * {
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+    /* 8. Force all container layers in the inspector subtree to wrap and clip overflow horizontally */
+    .inspector-container,
+    .inspector-content,
+    .single-file-inspector,
+    .multi-file-inspector,
+    .inspector-preview {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    /* 9. Guard splitters from collapsing or wrapping */
     .splitter {
         width: 4px !important;
         cursor: col-resize !important;
