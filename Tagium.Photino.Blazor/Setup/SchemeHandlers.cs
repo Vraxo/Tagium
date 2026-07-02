@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Tagium.Core.Data;
-using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Services;
 
@@ -35,16 +34,6 @@ public static class SchemeHandlers
             return Stream.Null;
         }
 
-        string cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
-        string path = Path.Combine(cacheDir, $"{fileId:N}.png");
-
-        // If thumbnail exists, serve it
-        if (File.Exists(path))
-        {
-            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        }
-
-        // Thumbnail missing – try to generate it on demand
         if (ServiceProvider is null)
         {
             return Stream.Null;
@@ -52,19 +41,22 @@ public static class SchemeHandlers
 
         try
         {
-            var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
-            var thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
+            FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+            ThumbnailService thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
 
-            var file = fileRepo.GetById(fileId);
-            if (file == null)
+            FileEntry? file = fileRepo.GetById(fileId);
+            if (file is null)
             {
                 return Stream.Null;
             }
 
-            // Generate thumbnail synchronously (blocks this thread but it's a background handler)
-            thumbnailService.GenerateThumbnailAsync(file).GetAwaiter().GetResult();
+            string path = thumbnailService.GetThumbnailPath(file.Hash, file.Id);
 
-            // If generation succeeded, serve it
+            if (!File.Exists(path))
+            {
+                thumbnailService.GenerateThumbnailAsync(file).GetAwaiter().GetResult();
+            }
+
             if (File.Exists(path))
             {
                 return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -72,7 +64,7 @@ public static class SchemeHandlers
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SchemeHandler] Failed to generate thumbnail for {fileId}: {ex.Message}");
+            Console.WriteLine($"[SchemeHandler] Failed to resolve thumbnail for {fileId}: {ex.Message}");
         }
 
         return Stream.Null;
@@ -93,7 +85,7 @@ public static class SchemeHandlers
             return Stream.Null;
         }
 
-        var fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+        FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
         FileEntry? entry = fileRepo.GetById(fileId);
 
         if (entry is null || !File.Exists(entry.Path))

@@ -48,19 +48,20 @@ public sealed class ThumbnailService
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
     }
 
-    public string GetThumbnailPath(Guid fileId)
+    public string GetThumbnailPath(string? hash, Guid fileId)
     {
-        return Path.Combine(_cacheDir, $"{fileId:N}.png");
+        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
+        return Path.Combine(_cacheDir, $"{key}.png");
     }
 
-    public bool HasThumbnail(Guid fileId)
+    public bool HasThumbnail(Guid fileId, string? hash)
     {
-        return File.Exists(GetThumbnailPath(fileId));
+        return File.Exists(GetThumbnailPath(hash, fileId));
     }
 
     public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultThumbnailSize, CancellationToken cancellationToken = default)
     {
-        string destPath = GetThumbnailPath(file.Id);
+        string destPath = GetThumbnailPath(file.Hash, file.Id);
 
         if (File.Exists(destPath) || !File.Exists(file.Path))
         {
