@@ -10,7 +10,6 @@ public class LibraryScanService
 {
     private readonly LibraryRootRepository _rootRepo;
     private readonly FileRepository _fileRepo;
-    private readonly ThumbnailService _thumbnailService;
     private readonly TagRepository _tagRepo;
     private readonly FileTagRepository _fileTagRepo;
     private readonly ExifToolService _exifTool;
@@ -32,14 +31,12 @@ public class LibraryScanService
     public LibraryScanService(
         LibraryRootRepository rootRepo,
         FileRepository fileRepo,
-        ThumbnailService thumbnailService,
         TagRepository tagRepo,
         FileTagRepository fileTagRepo,
         ExifToolService exifTool)
     {
         _rootRepo = rootRepo;
         _fileRepo = fileRepo;
-        _thumbnailService = thumbnailService;
         _tagRepo = tagRepo;
         _fileTagRepo = fileTagRepo;
         _exifTool = exifTool;
@@ -197,8 +194,6 @@ public class LibraryScanService
             _fileRepo.Update(existing);
             context.HasChanges = true;
             _ = context.VerifiedPaths.Add(filePath);
-
-            await _thumbnailService.GenerateThumbnailAsync(existing, cancellationToken: cancellationToken);
         }
         ProgressCurrent++;
     }
@@ -318,7 +313,6 @@ public class LibraryScanService
                     FileEntry? newEntry = _fileRepo.GetByHash(hash);
                     if (newEntry is not null)
                     {
-                        await _thumbnailService.GenerateThumbnailAsync(newEntry, cancellationToken: cancellationToken);
                         await ImportMetadataTagsAsync(path, newEntry);
                     }
                 }
