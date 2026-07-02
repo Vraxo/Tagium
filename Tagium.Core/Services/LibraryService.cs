@@ -1,5 +1,4 @@
 using Tagium.Core.Data;
-using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
@@ -17,6 +16,8 @@ public class LibraryService
     private readonly ThumbnailService _thumbnailService;
     private readonly SettingsManager _settingsManager;
     private readonly UndoService _undoService;
+    private readonly LibraryRootRepository _rootRepo;
+    private readonly LibraryScanService _scanService;
 
     public event Action? LibraryChanged;
 
@@ -27,7 +28,9 @@ public class LibraryService
         FileSearchRepository searchRepo,
         ThumbnailService thumbnailService,
         SettingsManager settingsManager,
-        UndoService undoService)
+        UndoService undoService,
+        LibraryRootRepository rootRepo,
+        LibraryScanService scanService)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
@@ -36,6 +39,10 @@ public class LibraryService
         _thumbnailService = thumbnailService;
         _settingsManager = settingsManager;
         _undoService = undoService;
+        _rootRepo = rootRepo;
+        _scanService = scanService;
+
+        _scanService.ScanCompleted += () => LibraryChanged?.Invoke();
     }
 
     public void Refresh()
@@ -74,110 +81,6 @@ public class LibraryService
     public FileEntry? GetFileWithTagsById(Guid id)
     {
         return _fileRepo.GetFileWithTagsById(id);
-    }
-
-    [Obsolete]
-    public RelocateResult RelocateFile(Guid fileId, string newPath)
-    {
-        if (!File.Exists(newPath))
-        {
-            return new RelocateResult(RelocateResultStatus.NotFound, null);
-        }
-
-        string? newHash = FileHasher.ComputeSha256Async(newPath).GetAwaiter().GetResult();
-
-        if (newHash is null)
-        {
-            return new RelocateResult(RelocateResultStatus.Error, null);
-        }
-
-        FileEntry? existing = _fileRepo.GetByHash(newHash);
-
-        if (existing is not null && existing.Id != fileId)
-        {
-            return new RelocateResult(RelocateResultStatus.Duplicate, existing);
-        }
-
-        FileEntry? file = _fileRepo.GetById(fileId);
-
-        if (file is null)
-        {
-            return new RelocateResult(RelocateResultStatus.Error, null);
-        }
-
-        file.Path = newPath;
-        file.Name = Path.GetFileName(newPath);
-        file.Hash = newHash;
-        file.IsMissing = false;
-
-        _fileRepo.Update(file);
-
-        _ = _thumbnailService.GenerateThumbnailAsync(file);
-
-        LibraryChanged?.Invoke();
-        return new RelocateResult(RelocateResultStatus.Success, null);
-    }
-
-    public void RemoveFile(Guid fileId)
-    {
-        FileEntry? file = _fileRepo.GetById(fileId);
-
-        if (file is null)
-        {
-            return;
-        }
-
-        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
-
-        _undoService.Push(new FileDeletionUndoCommand(
-            _fileRepo,
-            _fileTagRepo,
-            () => LibraryChanged?.Invoke(),
-            [(file, tagIds)]));
-
-        _fileRepo.Remove(fileId);
-        LibraryChanged?.Invoke();
-    }
-
-    public void RemoveFiles(IEnumerable<Guid> fileIds)
-    {
-        List<Guid> idsList = fileIds.ToList();
-
-        if (idsList.Count == 0)
-        {
-            return;
-        }
-
-        var deletedItems = new List<(FileEntry file, List<Guid> tagIds)>();
-
-        foreach (var id in idsList)
-        {
-            FileEntry? file = _fileRepo.GetById(id);
-
-            if (file is null)
-            {
-                continue;
-            }
-
-            List<Guid> tags = _fileTagRepo.GetTagIdsForFile(id);
-            deletedItems.Add((file, tags));
-        }
-
-        if (deletedItems.Count != 0)
-        {
-            _undoService.Push(new FileDeletionUndoCommand(
-                _fileRepo,
-                _fileTagRepo,
-                () => LibraryChanged?.Invoke(),
-                deletedItems));
-        }
-
-        foreach (var id in idsList)
-        {
-            _fileRepo.Remove(id);
-        }
-
-        LibraryChanged?.Invoke();
     }
 
     public void AddTagToFile(Guid fileId, Guid tagId)
@@ -345,5 +248,33 @@ public class LibraryService
     {
         _tagRepo.Delete(id);
         LibraryChanged?.Invoke();
+    }
+
+    public List<LibraryRoot> GetRoots()
+    {
+        return _rootRepo.GetAll();
+    }
+
+    public void AddRoot(string path)
+    {
+        _rootRepo.Add(path);
+        LibraryChanged?.Invoke();
+    }
+
+    public void UpdateRoot(LibraryRoot root)
+    {
+        _rootRepo.Update(root);
+        LibraryChanged?.Invoke();
+    }
+
+    public void DeleteRoot(Guid id, string path)
+    {
+        _rootRepo.Delete(id, path);
+        LibraryChanged?.Invoke();
+    }
+
+    public async Task ScanAsync()
+    {
+        await _scanService.ScanAllAsync();
     }
 }

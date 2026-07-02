@@ -18,10 +18,4 @@ public partial class MultiFileInspector
     {
         Library.RemoveTagFromFiles(AppState.SelectedFileIds, tagId);
     }
-
-    private void RemoveMultipleFiles()
-    {
-        Library.RemoveFiles(AppState.SelectedFileIds);
-        AppState.ClearSelection();
-    }
 }

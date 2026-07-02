@@ -1,33 +1,20 @@
-﻿@namespace Tagium.Photino.Blazor.Components
-@using Tagium.Core.Services
-@using Tagium.Core.Services.Import
-@using Tagium.Photino.Blazor.Components.Modals
-@using Tagium.Photino.Blazor.Components.Shared
+@namespace Tagium.Photino.Blazor.Components
 @using Tagium.Photino.Blazor.Services
-@inject LibraryService Library
-@inject ImportService ImportService
-@inject FileDialogService FileDialog
-@inject ModalService ModalService
 @inject AppState AppState
 
-<div class="toolbar">
-    <button class="btn btn-primary" @onclick="ImportFiles">Add Files</button>
-    <button class="btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
-            @onclick="ToggleTagView">
-        Tags
-    </button>
-    <button class="btn" @onclick="OpenDataTools">Data Tools</button>
+<div class="app-toolbar">
+    <div class="toolbar-left">
+        <button class="btn btn-primary" @onclick="OpenLibraryFolders">
+            📁 Library Folders
+        </button>
+    </div>
 
-    <div class="icon-actions">
-        <IconButton Title="Settings" OnClick="OpenPreferences">⚙</IconButton>
-        <IconButton Title="Reload Data" OnClick="() => Library.Refresh()">↻</IconButton>
+    <div class="toolbar-center">
+    </div>
+
+    <div class="toolbar-right">
+        <button class="btn btn-secondary" @onclick="ToggleTagView">
+            @(AppState.CurrentView == AppView.Tags ? "Show Files" : "Manage Tags")
+        </button>
     </div>
 </div>
-
-@code {
-    private void OpenDataTools() =>
-        ModalService.Show("Data Management", @<DataManagementModal />);
-
-    private void OpenPreferences() =>
-        ModalService.Show("Preferences", @<PreferencesModal />);
-}

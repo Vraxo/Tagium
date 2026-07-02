@@ -213,7 +213,7 @@ public sealed class ThumbnailService
         int y = (size - drawHeight) / 2;
 
         SKImageInfo info = new(drawWidth, drawHeight);
-        using SKBitmap? resized = original.Resize(info, SKFilterQuality.Medium);
+        using SKBitmap? resized = original.Resize(info, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Nearest));
 
         if (resized is null)
         {
@@ -234,15 +234,19 @@ public sealed class ThumbnailService
         using SKPaint textPaint = new()
         {
             Color = SKColors.White,
-            TextSize = size / 4.0f,
-            IsAntialias = true,
-            TextAlign = SKTextAlign.Center
+            IsAntialias = true
+        };
+
+        float fontSize = size / 4.0f;
+        using SKFont font = new()
+        {
+            Size = fontSize
         };
 
         float x = size / 2.0f;
-        float y = (size / 2.0f) + (textPaint.TextSize / 2.0f) - 5;
+        float y = (size / 2.0f) + (fontSize / 2.0f) - 5;
 
-        canvas.DrawText(text, x, y, textPaint);
+        canvas.DrawText(text, x, y, SKTextAlign.Center, font, textPaint);
         EncodeAndSave(bitmap, destPath);
     }
 

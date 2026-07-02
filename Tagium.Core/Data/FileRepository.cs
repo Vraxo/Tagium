@@ -21,7 +21,13 @@ public class FileRepository
 
         string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files {orderBy}";
+        cmd.CommandText = $@"
+            SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files F
+            WHERE EXISTS (
+                SELECT 1 FROM LibraryRoots LR 
+                WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}')
+            )
+            {orderBy}";
 
         using SqliteDataReader reader = cmd.ExecuteReader();
         while (reader.Read())
@@ -38,7 +44,8 @@ public class FileRepository
         conn.Open();
 
         string orderBy = GetOrderByClause(sortBy, direction);
-        string missingFilter = includeMissing ? "" : "WHERE F.IsMissing = 0";
+        string rootFilter = $"EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))";
+        string missingFilter = includeMissing ? $"WHERE {rootFilter}" : $"WHERE {rootFilter} AND F.IsMissing = 0";
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = $@"
@@ -55,7 +62,7 @@ public class FileRepository
         using SqliteDataReader reader = cmd.ExecuteReader();
         while (reader.Read())
         {
-            var file = ReadFile(reader);
+            FileEntry file = ReadFile(reader);
 
             if (!reader.IsDBNull(6))
             {
@@ -89,7 +96,7 @@ public class FileRepository
         using SqliteDataReader reader = cmd.ExecuteReader();
         if (reader.Read())
         {
-            var file = ReadFile(reader);
+            FileEntry file = ReadFile(reader);
             if (!reader.IsDBNull(6))
             {
                 string tagData = reader.GetString(6);
@@ -124,13 +131,26 @@ public class FileRepository
         return reader.Read() ? ReadFile(reader) : null;
     }
 
-    public AddFileResult Add(string path, string hash)
+    public List<FileEntry> GetFilesUnderPath(string rootPath)
     {
-        if (GetByHash(hash) is not null)
-        {
-            return AddFileResult.Duplicate;
-        }
+        List<FileEntry> files = [];
+        using SqliteConnection conn = new(_db.ConnectionString);
+        conn.Open();
 
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+        _ = cmd.Parameters.AddWithValue("@Path", rootPath);
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            files.Add(ReadFile(reader));
+        }
+        return files;
+    }
+
+    public bool Add(string path, string hash)
+    {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
@@ -148,15 +168,11 @@ public class FileRepository
         try
         {
             _ = cmd.ExecuteNonQuery();
-            return AddFileResult.Success;
-        }
-        catch (SqliteException)
-        {
-            return AddFileResult.Duplicate;
+            return true;
         }
         catch
         {
-            return AddFileResult.Error;
+            return false;
         }
     }
 
@@ -264,7 +280,7 @@ public class FileRepository
     private Tag? ParseTagFromData(string tagData)
     {
         var parts = tagData.Split(':', 4);
-        return parts.Length < 3 || !Guid.TryParse(parts[0], out var tagId)
+        return parts.Length < 3 || !Guid.TryParse(parts[0], out Guid tagId)
             ? null
             : new Tag
             {

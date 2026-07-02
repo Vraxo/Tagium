@@ -1,93 +1,62 @@
 @namespace Tagium.Photino.Blazor.Components
 @inherits LayoutComponentBase
-@using Tagium.Core.Services
-@using Tagium.Core.Services.Import
-@using Tagium.Core.Settings
-@using Tagium.Photino.Blazor.Components.Inspectors
-@using Tagium.Photino.Blazor.Components.Modals
-@using Tagium.Photino.Blazor.Components.Shared
-@using Tagium.Photino.Blazor.Components.Views
 @using Tagium.Photino.Blazor.Services
 @using Tagium.Photino.Blazor.Services.Toasting
-@implements IDisposable
-@inject LibraryService Library
-@inject ImportService ImportService
-@inject SettingsManager Settings
-@inject ModalService ModalService
-@inject ToastService Toast
+@using Tagium.Core.Services
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.Components.Views
 @inject AppState AppState
-@inject IJSRuntime JS
+@inject LibraryService Library
+@inject SettingsManager Settings
+@inject ToastService ToastService
 
-<FileDropZone>
-    <div class="app-window">
-        <!-- Top Menu Bar -->
+<div class="main-layout">
+    <div class="sidebar-panel" id="sidebar-panel">
+        <TagSidebar />
+    </div>
+
+    <div class="splitter" id="splitter-left"></div>
+
+    <div class="content-panel">
         <AppToolbar />
 
-        <!-- Main Workspace (Sidebars + Content) -->
-        <div class="workspace-layout">
+        <div class="view-container">
             @if (AppState.CurrentView == AppView.Files)
             {
-                <aside id="sidebar-panel" class="left-panel">
-                    <TagSidebar />
-                </aside>
+                <div style="display: flex; flex-direction: column; height: 100%;">
+                    <FilesViewToolbar @ref="FilesViewToolbarRef" />
 
-                <div id="splitter-left" class="splitter"></div>
-            }
-
-            <main class="center-panel">
-                @if (AppState.CurrentView == AppView.Files)
-                {
-                    <FilesViewToolbar @ref="_filesViewToolbar" />
-                }
-
-                <div class="content-area">
-                    <ErrorBoundary>
-                        <ChildContent>
-                            @if (AppState.CurrentView == AppView.Files)
-                            {
-                                if (Settings.Current.FileViewMode == FileViewMode.Grid)
-                                {
-                                    <FileGrid />
-                                }
-                                else
-                                {
-                                    <FileListView />
-                                }
-                            }
-                            else if (AppState.CurrentView == AppView.Tags)
-                            {
-                                <TagManagerView />
-                            }
-                        </ChildContent>
-                        <ErrorContent Context="ex">
-                            <div class="error-boundary-fallback">
-                                <h3>⚠️ Something went wrong</h3>
-                                <p>@ex.Message</p>
-                                <button class="btn btn-primary" @onclick="ReloadCurrentView">Reload</button>
-                            </div>
-                        </ErrorContent>
-                    </ErrorBoundary>
+                    @if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                    {
+                        <FileGrid />
+                    }
+                    else
+                    {
+                        <FileListView />
+                    }
                 </div>
-            </main>
-
-            @if (AppState.CurrentView == AppView.Files)
+            }
+            else if (AppState.CurrentView == AppView.Tags)
             {
-                <div id="splitter-right" class="splitter"></div>
-
-                <aside id="inspector-panel" class="right-panel">
-                    <FileInspector />
-                </aside>
+                <TagManagerView />
             }
         </div>
 
-        <ModalHost />
-        <ToastContainer />
-        @if (_importInProgress)
+        @if (_scanInProgress)
         {
-            <div class="import-progress-overlay">
-                <div class="import-progress-bar" style="width: @_importProgress%"></div>
-                <span class="import-progress-text">Importing... @_importProcessed/@_importTotal</span>
+            <div class="scan-progress-bar">
+                <div class="progress-fill" style="width: @(_scanProgress)%"></div>
+                <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
             </div>
         }
     </div>
-</FileDropZone>
+
+    <div class="splitter" id="splitter-right"></div>
+
+    <div class="inspector-panel" id="inspector-panel">
+        <Tagium.Photino.Blazor.Components.Inspectors.FileInspector />
+    </div>
+
+    <ToastContainer />
+    <ModalHost />
+</div>

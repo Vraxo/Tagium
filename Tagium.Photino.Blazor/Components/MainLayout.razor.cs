@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Components.Views;
 using Tagium.Photino.Blazor.Services;
 using Tagium.Photino.Blazor.Services.Toasting;
@@ -7,18 +9,24 @@ namespace Tagium.Photino.Blazor.Components;
 
 public partial class MainLayout : IDisposable
 {
-    private bool _importInProgress = false;
-    private int _importProcessed = 0;
-    private int _importTotal = 0;
-    private double _importProgress = 0;
+    [Inject] private LibraryScanService ScanService { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private ToastService Toast { get; set; } = default!;
+
+    private bool _scanInProgress = false;
+    private int _scanProcessed = 0;
+    private int _scanTotal = 0;
+    private double _scanProgress = 0;
     private DotNetObjectReference<MainLayout>? _objRef;
-    private FilesViewToolbar? _filesViewToolbar;
+
+    // Changed to an auto-property so IDEs do not auto-mark it as readonly
+    private FilesViewToolbar? FilesViewToolbarRef { get; set; }
 
     protected override void OnInitialized()
     {
         Settings.SettingsChanged += StateHasChanged;
-        ImportService.ImportCompleted += ShowImportStatus;
-        ImportService.ImportProgress += UpdateImportProgress;
+        ScanService.ScanProgress += UpdateScanProgress;
+        ScanService.ScanCompleted += ShowScanStatus;
         AppState.OnChange += StateHasChanged;
     }
 
@@ -55,60 +63,40 @@ public partial class MainLayout : IDisposable
                 AppState.Undo();
                 break;
             case "f":
-                if (_filesViewToolbar != null)
+                if (FilesViewToolbarRef != null)
                 {
-                    await _filesViewToolbar.FocusSearchAsync();
+                    await FilesViewToolbarRef.FocusSearchAsync();
                 }
                 break;
             case "t":
-                AppState.SwitchView(AppState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags);
+                AppState.SwitchView(AppState.CurrentView == AppView.Tags
+                    ? AppView.Files
+                    : AppView.Tags);
                 break;
             case "r":
-                Library.Refresh();
+                await ScanService.ScanAllAsync();
                 break;
         }
     }
 
-    private void UpdateImportProgress(int processed, int total)
+    private void UpdateScanProgress(int current, int total)
     {
-        _importInProgress = processed < total;
-        _importProcessed = processed;
-        _importTotal = total;
-        _importProgress = (double)processed / total * 100;
+        _scanInProgress = true;
+        _scanProcessed = current;
+        _scanTotal = total;
+        _scanProgress = total > 0 ? (double)current / total * 100 : 0;
         _ = InvokeAsync(StateHasChanged);
     }
 
-    private void ShowImportStatus(int added, int duplicates, int errors)
+    private void ShowScanStatus()
     {
-        _importInProgress = false;
-        int total = added + duplicates + errors;
-        if (total == 0)
+        _scanInProgress = false;
+        _ = InvokeAsync(() =>
         {
-            return;
-        }
-
-        List<string> parts = [];
-
-        if (added > 0)
-        {
-            parts.Add($"{added} added");
+            Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
-        }
-
-        if (duplicates > 0)
-        {
-            parts.Add($"{duplicates} duplicate{(duplicates == 1 ? "" : "s")}");
-        }
-
-        if (errors > 0)
-        {
-            parts.Add($"{errors} failed");
-        }
-
-        string message = $"Import: {string.Join(", ", parts)}";
-
-        ToastType type = errors > 0 ? ToastType.Error : added > 0 ? ToastType.Success : ToastType.Info;
-        Toast.Show(message, type);
+            StateHasChanged();
+        });
     }
 
     private void ReloadCurrentView()
@@ -121,8 +109,8 @@ public partial class MainLayout : IDisposable
     public void Dispose()
     {
         Settings.SettingsChanged -= StateHasChanged;
-        ImportService.ImportCompleted -= ShowImportStatus;
-        ImportService.ImportProgress -= UpdateImportProgress;
+        ScanService.ScanProgress -= UpdateScanProgress;
+        ScanService.ScanCompleted -= ShowScanStatus;
         AppState.OnChange -= StateHasChanged;
 
         _objRef?.Dispose();

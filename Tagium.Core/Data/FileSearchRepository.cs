@@ -49,7 +49,7 @@ public class FileSearchRepository
         StringBuilder query = new();
         _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing");
         _ = query.AppendLine("FROM Files F");
-        _ = query.AppendLine("WHERE 1=1");
+        _ = query.AppendLine($"WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))");
 
         BuildIncludeClauses(includeTerms, cmd, query);
         BuildExcludeClauses(excludeTerms, cmd, query);

@@ -1,118 +1,59 @@
 @namespace Tagium.Photino.Blazor.Components.Inspectors
-@using Tagium.Core.Models
-@using Tagium.Core.Services
-@using Tagium.Photino.Blazor.Services
-@using Tagium.Photino.Blazor.Components.Modals
-@using Tagium.Photino.Blazor.Components.Shared
 @inject LibraryService Library
-@inject SystemLauncherService Launcher
-@inject FileDialogService FileDialog
-@inject AppState AppState
-@inject ModalService ModalService
 
-<div class="single-inspector">
-    <div class="preview-container">
-        @if (!File.IsMissing)
+<div class="single-file-inspector">
+    <div class="inspector-header">
+        <h3 class="file-name">@File.Name</h3>
+        <p class="file-path">@File.Path</p>
+    </div>
+
+    <div class="inspector-preview">
+        @if (IsImage)
         {
-            @* Ambient Background Layer (Uses low-res thumbnail for performance) *@
-            <img src="tagium://thumbnail/@File.Id" class="preview-bg" alt="" aria-hidden="true" />
-
-            @if (IsImage)
-            {
-                <img src="tagium://preview/@File.Id" class="preview-media" />
-            }
-            else if (IsVideo)
-            {
-                <div class="preview-video-thumbnail" @onclick="OpenFile" title="Click to open video">
-                    <img src="tagium://thumbnail/@File.Id" class="preview-media" alt="Video thumbnail" />
-                    <div class="play-overlay">▶</div>
-                </div>
-            }
-            else
-            {
-                <div class="preview-placeholder">📄</div>
-            }
+            <img src="tagium://preview/@File.Id" alt="@File.Name" />
+        }
+        else if (IsVideo)
+        {
+            <video src="tagium://preview/@File.Id" controls></video>
         }
         else
         {
-            <div class="preview-placeholder error">❓</div>
+            <div class="generic-file-preview">📄</div>
         }
     </div>
 
-    @if (File.IsMissing)
-    {
-        <div class="missing-warning">
-            <h4>⚠️ File Missing</h4>
-            <p>This file was not found at its original path.</p>
-            <button class="btn btn-primary btn-small" @onclick="RelocateFile">Relocate...</button>
+    <div class="inspector-tags">
+        <h4>Tags</h4>
+        <div class="tag-pills">
+            @foreach (var tag in AssignedTags)
+            {
+                <span class="tag-pill" style="background-color: @tag.ColorHex">
+                    @if (!string.IsNullOrEmpty(tag.Emoji))
+                    {
+                        <span>@tag.Emoji</span>
+                    }
+                    @tag.Name
+                    <button class="btn-remove-tag" @onclick="() => RemoveTag(tag.Id)">✕</button>
+                </span>
+            }
         </div>
-    }
 
-    <div class="actions-row">
-        <button class="btn" @onclick="OpenFile" disabled="@File.IsMissing">Open</button>
-        <button class="btn" @onclick="ShowInExplorer" disabled="@File.IsMissing">Folder</button>
-        <button class="btn btn-danger" @onclick="RemoveFile">Remove</button>
-    </div>
-
-    <div class="prop-row">
-        <label>Name</label>
-        <span>@File.Name</span>
-    </div>
-    <div class="prop-row">
-        <label>Path</label>
-        <span class="path">@File.Path</span>
-    </div>
-
-    <hr />
-
-    <h4>Tags</h4>
-    <div class="tags-container">
-        @foreach (var tag in AssignedTags)
+        @if (AvailableTags.Count > 0)
         {
-            <span class="tag-pill"
-                  style="border-color: @tag.ColorHex"
-                  @onclick="() => RemoveTag(tag.Id)">
-                <TagIcon Tag="@tag" ShowIcon="false" />
-                @tag.Name <span class="remove">&times;</span>
-            </span>
+            <div class="add-tag-section">
+                <select @onchange="@(e => { if (Guid.TryParse(e.Value?.ToString(), out var tid)) AddTag(tid); })">
+                    <option value="">Add tag...</option>
+                    @foreach (var tag in AvailableTags)
+                    {
+                        <option value="@tag.Id">@tag.Name</option>
+                    }
+                </select>
+            </div>
         }
     </div>
 
-    <hr />
-
-    <h4>Add Tag</h4>
-    <div class="tags-container available">
-        @foreach (var tag in AvailableTags)
-        {
-            <span class="tag-pill add"
-                  style="border-color: @tag.ColorHex"
-                  @onclick="() => AddTag(tag.Id)">
-                <TagIcon Tag="@tag" ShowIcon="false" />
-                @tag.Name
-            </span>
-        }
+    <div class="inspector-actions">
+        <button class="btn btn-secondary" @onclick="OpenFile">Open File</button>
+        <button class="btn btn-secondary" @onclick="ShowInExplorer">Show in Explorer</button>
     </div>
 </div>
-
-@code{
-    private void RelocateFile()
-    {
-        string[]? files = FileDialogService.OpenFiles();
-
-        if (files is null || files.Length == 0)
-        {
-            return;
-        }
-
-        RelocateResult result = Library.RelocateFile(File.Id, files[0]);
-
-        if (result.Status != RelocateResultStatus.Duplicate || result.ConflictingFile is null)
-        {
-            return;
-        }
-
-        ModalService.Show(
-            "Duplicate File Found",
-            @<DuplicateFileModal ExistingFile="result.ConflictingFile" />);
-    }
-}

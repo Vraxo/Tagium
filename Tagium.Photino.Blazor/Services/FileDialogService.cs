@@ -12,4 +12,13 @@ public class FileDialogService
             ? paths
             : null;
     }
+
+    public static string? PickFolder()
+    {
+        NfdStatus result = Nfd.PickFolder(out string path, null);
+
+        return result == NfdStatus.Ok
+            ? path
+            : null;
+    }
 }

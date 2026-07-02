@@ -8,8 +8,8 @@
 
   <ItemGroup>
     <PackageReference Include="FFMpegCore" Version="5.4.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.1" />
-    <PackageReference Include="SkiaSharp" Version="3.119.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="SkiaSharp" Version="4.148.0" />
   </ItemGroup>
 
 </Project>

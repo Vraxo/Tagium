@@ -1,19 +1,20 @@
-﻿using Tagium.Core.Services;
+﻿using Microsoft.AspNetCore.Components;
+using Tagium.Photino.Blazor.Components.Modals;
 using Tagium.Photino.Blazor.Services;
 
 namespace Tagium.Photino.Blazor.Components;
 
 public partial class AppToolbar
 {
-    [Obsolete]
-    private async Task ImportFiles()
-    {
-        string[]? paths = FileDialogService.OpenFiles();
+    [Inject] private ModalService ModalService { get; set; } = default!;
 
-        if (paths is { Length: > 0 })
+    private void OpenLibraryFolders()
+    {
+        ModalService.Show("Library Folders", builder =>
         {
-            await ImportService.ImportBatchAsync(paths);
-        }
+            builder.OpenComponent<LibraryRootsModal>(0);
+            builder.CloseComponent();
+        });
     }
 
     private void ToggleTagView()

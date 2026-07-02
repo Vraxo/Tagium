@@ -38,10 +38,4 @@ public partial class SingleFileInspector
     {
         SystemLauncherService.ShowInExplorer(File.Path);
     }
-
-    private void RemoveFile()
-    {
-        Library.RemoveFile(File.Id);
-        AppState.ClearSelection();
-    }
 }

@@ -3,7 +3,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
 using Tagium.Core.Services.DataMerge;
-using Tagium.Core.Services.Import;
 using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
@@ -26,13 +25,14 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<FileRepository>();
         _ = services.AddSingleton<FileTagRepository>();
         _ = services.AddSingleton<FileSearchRepository>();
+        _ = services.AddSingleton<LibraryRootRepository>();
 
         // Core - Undo
         _ = services.AddSingleton<UndoService>();
 
         // Core - Services
         _ = services.AddSingleton<ThumbnailService>();
-        _ = services.AddSingleton<ImportService>();
+        _ = services.AddSingleton<LibraryScanService>();
         _ = services.AddSingleton<LibraryService>();
         _ = services.AddSingleton<LibraryIntegrityService>();
         _ = services.AddSingleton<DataExportService>();
@@ -47,7 +47,6 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<FileDialogService>();
         _ = services.AddSingleton<SystemLauncherService>();
         _ = services.AddSingleton<ToastService>();
-        _ = services.AddSingleton<FileImportService>();
         _ = services.AddSingleton<KeyboardShortcutService>();
     }
 }
