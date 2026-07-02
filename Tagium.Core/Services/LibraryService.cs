@@ -47,6 +47,7 @@ public class LibraryService
         _exifTool = exifTool;
 
         _scanService.ScanCompleted += () => LibraryChanged?.Invoke();
+        _scanService.FilesImported += () => LibraryChanged?.Invoke();
     }
 
     public void Refresh()

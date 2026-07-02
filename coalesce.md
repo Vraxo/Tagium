@@ -51,6 +51,7 @@ public class DatabaseManager
         }
 
         InitializeSchema(connection);
+        MigrateSchema(connection);
     }
 
     private static void InitializeSchema(SqliteConnection connection)
@@ -69,7 +70,9 @@ public class DatabaseManager
                 Name TEXT NOT NULL DEFAULT '',
                 Hash TEXT NULL,
                 DateAdded INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-                IsMissing INTEGER NOT NULL DEFAULT 0
+                IsMissing INTEGER NOT NULL DEFAULT 0,
+                Size INTEGER NOT NULL DEFAULT 0,
+                ModifiedTime INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS FileTags (
@@ -91,6 +94,23 @@ public class DatabaseManager
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = schema;
         _ = command.ExecuteNonQuery();
+    }
+
+    private static void MigrateSchema(SqliteConnection connection)
+    {
+        string[] columns = ["Size", "ModifiedTime"];
+        foreach (string col in columns)
+        {
+            try
+            {
+                using SqliteCommand cmd = connection.CreateCommand();
+                cmd.CommandText = $"ALTER TABLE Files ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0;";
+                _ = cmd.ExecuteNonQuery();
+            }
+            catch
+            {
+            }
+        }
     }
 }
 ```
@@ -124,7 +144,7 @@ public class FileRepository
         string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = $@"
-            SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files F
+            SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files F
             WHERE EXISTS (
                 SELECT 1 FROM LibraryRoots LR 
                 WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}')
@@ -152,7 +172,7 @@ public class FileRepository
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = $@"
             SELECT 
-                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing,
+                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM Files F
             LEFT JOIN FileTags FT ON F.Id = FT.FileId
@@ -166,9 +186,9 @@ public class FileRepository
         {
             FileEntry file = ReadFile(reader);
 
-            if (!reader.IsDBNull(6))
+            if (!reader.IsDBNull(8))
             {
-                string tagData = reader.GetString(6);
+                string tagData = reader.GetString(8);
                 file.Tags = ParseTagData(tagData);
             }
 
@@ -185,7 +205,7 @@ public class FileRepository
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
             SELECT 
-                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing,
+                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM Files F
             LEFT JOIN FileTags FT ON F.Id = FT.FileId
@@ -199,9 +219,9 @@ public class FileRepository
         if (reader.Read())
         {
             FileEntry file = ReadFile(reader);
-            if (!reader.IsDBNull(6))
+            if (!reader.IsDBNull(8))
             {
-                string tagData = reader.GetString(6);
+                string tagData = reader.GetString(8);
                 file.Tags = ParseTagData(tagData);
             }
             return file;
@@ -214,7 +234,7 @@ public class FileRepository
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files WHERE Id = @Id";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -226,7 +246,7 @@ public class FileRepository
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files WHERE Hash = @Hash";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Hash = @Hash";
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -240,7 +260,7 @@ public class FileRepository
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
         _ = cmd.Parameters.AddWithValue("@Path", rootPath);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -251,21 +271,23 @@ public class FileRepository
         return files;
     }
 
-    public bool Add(string path, string hash)
+    public bool Add(string path, string hash, long size, long modifiedTime)
     {
         using SqliteConnection conn = new(_db.ConnectionString);
         conn.Open();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded) 
-            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'))";
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime) 
+            VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime)";
 
         Guid newId = Guid.NewGuid();
         _ = cmd.Parameters.AddWithValue("@Id", newId.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", path);
         _ = cmd.Parameters.AddWithValue("@Name", Path.GetFileName(path));
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
+        _ = cmd.Parameters.AddWithValue("@Size", size);
+        _ = cmd.Parameters.AddWithValue("@ModifiedTime", modifiedTime);
 
         try
         {
@@ -285,8 +307,8 @@ public class FileRepository
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing) 
-            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing)";
+            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime) 
+            VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime)";
 
         _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
         _ = cmd.Parameters.AddWithValue("@Path", entry.Path);
@@ -294,6 +316,8 @@ public class FileRepository
         _ = cmd.Parameters.AddWithValue("@Hash", (object?)entry.Hash ?? DBNull.Value);
         _ = cmd.Parameters.AddWithValue("@DateAdded", entry.DateAdded);
         _ = cmd.Parameters.AddWithValue("@IsMissing", entry.IsMissing ? 1 : 0);
+        _ = cmd.Parameters.AddWithValue("@Size", entry.Size);
+        _ = cmd.Parameters.AddWithValue("@ModifiedTime", entry.ModifiedTime);
 
         _ = cmd.ExecuteNonQuery();
     }
@@ -305,7 +329,7 @@ public class FileRepository
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
             UPDATE Files 
-            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing 
+            SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime 
             WHERE Id = @Id";
 
         _ = cmd.Parameters.AddWithValue("@Id", file.Id.ToString("N"));
@@ -313,6 +337,8 @@ public class FileRepository
         _ = cmd.Parameters.AddWithValue("@Name", file.Name);
         _ = cmd.Parameters.AddWithValue("@Hash", (object?)file.Hash ?? DBNull.Value);
         _ = cmd.Parameters.AddWithValue("@IsMissing", file.IsMissing ? 1 : 0);
+        _ = cmd.Parameters.AddWithValue("@Size", file.Size);
+        _ = cmd.Parameters.AddWithValue("@ModifiedTime", file.ModifiedTime);
 
         _ = cmd.ExecuteNonQuery();
     }
@@ -364,6 +390,8 @@ public class FileRepository
             Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
             DateAdded = reader.GetInt64(4),
             IsMissing = reader.GetBoolean(5),
+            Size = reader.GetInt64(6),
+            ModifiedTime = reader.GetInt64(7),
             Tags = []
         };
     }
@@ -381,7 +409,7 @@ public class FileRepository
 
     private Tag? ParseTagFromData(string tagData)
     {
-        var parts = tagData.Split(':', 4);
+        string[] parts = tagData.Split(':', 4);
         return parts.Length < 3 || !Guid.TryParse(parts[0], out Guid tagId)
             ? null
             : new Tag
@@ -462,7 +490,7 @@ public class FileSearchRepository
         using SqliteCommand cmd = conn.CreateCommand();
 
         StringBuilder query = new();
-        _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing");
+        _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime");
         _ = query.AppendLine("FROM Files F");
         _ = query.AppendLine($"WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))");
 
@@ -485,7 +513,9 @@ public class FileSearchRepository
                 Name = reader.GetString(2),
                 Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
                 DateAdded = reader.GetInt64(4),
-                IsMissing = reader.GetBoolean(5)
+                IsMissing = reader.GetBoolean(5),
+                Size = reader.GetInt64(6),
+                ModifiedTime = reader.GetInt64(7)
             });
         }
 
@@ -923,17 +953,60 @@ public static class FileHasher
 
         try
         {
-            using SHA256 sha256 = SHA256.Create();
             using FileStream stream = File.OpenRead(filePath);
-            byte[] hash = await sha256.ComputeHashAsync(stream);
+            long length = stream.Length;
 
-            return Convert.ToHexStringLower(hash);
+            if (length <= 256 * 1024)
+            {
+                using SHA256 sha256 = SHA256.Create();
+                byte[] hash = await sha256.ComputeHashAsync(stream);
+                return Convert.ToHexStringLower(hash);
+            }
+
+            byte[] buffer = new byte[256 * 1024];
+
+            int bytesReadStart = await stream.ReadAsync(buffer.AsMemory(0, 128 * 1024));
+
+            stream.Seek(-128 * 1024, SeekOrigin.End);
+            int bytesReadEnd = await stream.ReadAsync(buffer.AsMemory(128 * 1024, 128 * 1024));
+
+            using SHA256 sha256Combined = SHA256.Create();
+            byte[] hashBytes = sha256Combined.ComputeHash(buffer, 0, bytesReadStart + bytesReadEnd);
+
+            return $"{length:X}-{Convert.ToHexStringLower(hashBytes)}";
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[FileHasher] Error: {ex.Message}");
             return null;
         }
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Helpers\TagFormatter.cs`
+
+```csharp
+using System.Text.RegularExpressions;
+
+namespace Tagium.Core.Helpers;
+
+public static class TagFormatter
+{
+    public static string Normalize(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        string s = input.Trim().ToLowerInvariant();
+        s = Regex.Replace(s, @"[\s\-_\+\.]+", "_");
+        s = Regex.Replace(s, @"[^a-z0-9_]", "");
+        s = Regex.Replace(s, @"_+", "_");
+        return s.Trim('_');
     }
 }
 ```
@@ -953,6 +1026,8 @@ public class FileEntry
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
+    public long Size { get; set; }
+    public long ModifiedTime { get; set; }
     public List<Tag> Tags { get; set; } = [];
 }
 ```
@@ -975,6 +1050,22 @@ public class LibraryRoot
 
 ---
 
+### `Tagium.Core\Models\MediaMetadata.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Components.Modals;
+
+public class MediaMetadata
+{
+    public string? Title { get; set; }
+    public string? Description { get; set; }
+    public int? Rating { get; set; }
+    public List<string> Tags { get; set; } = [];
+}
+```
+
+---
+
 ### `Tagium.Core\Models\Tag.cs`
 
 ```csharp
@@ -991,6 +1082,247 @@ public class Tag
     public override string ToString()
     {
         return Name;
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\ExifToolLocator.cs`
+
+```csharp
+```
+
+---
+
+### `Tagium.Core\Services\ExifToolService.cs`
+
+```csharp
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using Tagium.Photino.Blazor.Components.Modals;
+
+namespace Tagium.Core.Services;
+
+public class ExifToolService
+{
+    private readonly string _commandName;
+
+    public bool IsEnabled { get; }
+
+    public ExifToolService()
+    {
+        _commandName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "exiftool.exe" : "exiftool";
+
+        try
+        {
+            using Process? process = Process.Start(new ProcessStartInfo(_commandName)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                ArgumentList = { "-ver" }
+            });
+            IsEnabled = process is not null && process.WaitForExit(1000) && process.ExitCode == 0;
+        }
+        catch
+        {
+            IsEnabled = false;
+        }
+
+        if (!IsEnabled)
+        {
+            Console.WriteLine($"[ExifToolService] WARNING: '{_commandName}' command not found. Metadata writing and reading will be disabled.");
+        }
+    }
+
+    public async Task<MediaMetadata?> ReadMetadataAsync(string filePath)
+    {
+        if (!IsEnabled || !File.Exists(filePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            ProcessStartInfo startInfo = new(_commandName)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                ArgumentList = { "-json", "-Subject", "-Keywords", "-Title", "-Description", "-Rating", filePath }
+            };
+
+            using Process? process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return null;
+            }
+
+            string output = await process.StandardOutput.ReadToEndAsync();
+            string error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                Console.WriteLine($"[ExifTool] Error reading {filePath}: {error}");
+                return null;
+            }
+
+            using JsonDocument doc = JsonDocument.Parse(output);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            JsonElement first = doc.RootElement[0];
+            MediaMetadata metadata = new();
+
+            if (first.TryGetProperty("Title", out JsonElement titleProp))
+            {
+                metadata.Title = titleProp.GetString();
+            }
+
+            if (first.TryGetProperty("Description", out JsonElement descProp))
+            {
+                metadata.Description = descProp.GetString();
+            }
+
+            if (first.TryGetProperty("Rating", out JsonElement ratingProp))
+            {
+                if (ratingProp.ValueKind == JsonValueKind.Number)
+                {
+                    metadata.Rating = ratingProp.GetInt32();
+                }
+                else if (ratingProp.ValueKind == JsonValueKind.String && int.TryParse(ratingProp.GetString(), out int r))
+                {
+                    metadata.Rating = r;
+                }
+            }
+
+            HashSet<string> uniqueTags = new(StringComparer.OrdinalIgnoreCase);
+
+            if (first.TryGetProperty("Subject", out JsonElement subjProp))
+            {
+                PopulateTags(subjProp, uniqueTags);
+            }
+
+            if (first.TryGetProperty("Keywords", out JsonElement kwProp))
+            {
+                PopulateTags(kwProp, uniqueTags);
+            }
+
+            metadata.Tags = [.. uniqueTags];
+            return metadata;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ExifTool] Exception reading {filePath}: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task<bool> WriteMetadataAsync(string filePath, MediaMetadata metadata)
+    {
+        if (!IsEnabled || !File.Exists(filePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            ProcessStartInfo startInfo = new(_commandName)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                ArgumentList = { "-overwrite_original", "-Subject=", "-Keywords=" }
+            };
+
+            foreach (string tag in metadata.Tags)
+            {
+                startInfo.ArgumentList.Add($"-Subject={tag}");
+                startInfo.ArgumentList.Add($"-Keywords={tag}");
+            }
+
+            if (metadata.Title is not null)
+            {
+                startInfo.ArgumentList.Add($"-Title={metadata.Title}");
+            }
+            else
+            {
+                startInfo.ArgumentList.Add("-Title=");
+            }
+
+            if (metadata.Description is not null)
+            {
+                startInfo.ArgumentList.Add($"-Description={metadata.Description}");
+            }
+            else
+            {
+                startInfo.ArgumentList.Add("-Description=");
+            }
+
+            if (metadata.Rating.HasValue)
+            {
+                startInfo.ArgumentList.Add($"-Rating={metadata.Rating.Value}");
+            }
+            else
+            {
+                startInfo.ArgumentList.Add("-Rating=");
+            }
+
+            startInfo.ArgumentList.Add(filePath);
+
+            using Process? process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return false;
+            }
+
+            string error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                Console.WriteLine($"[ExifTool] Error writing {filePath}: {error}");
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ExifTool] Exception writing {filePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static void PopulateTags(JsonElement element, HashSet<string> tags)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                string? s = item.GetString();
+                if (!string.IsNullOrWhiteSpace(s))
+                {
+                    _ = tags.Add(s.Trim());
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.String)
+        {
+            string? s = element.GetString();
+            if (!string.IsNullOrWhiteSpace(s))
+            {
+                _ = tags.Add(s.Trim());
+            }
+        }
     }
 }
 ```
@@ -1064,6 +1396,7 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
+using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -1080,6 +1413,7 @@ public class LibraryService
     private readonly UndoService _undoService;
     private readonly LibraryRootRepository _rootRepo;
     private readonly LibraryScanService _scanService;
+    private readonly ExifToolService _exifTool;
 
     public event Action? LibraryChanged;
 
@@ -1092,7 +1426,8 @@ public class LibraryService
         SettingsManager settingsManager,
         UndoService undoService,
         LibraryRootRepository rootRepo,
-        LibraryScanService scanService)
+        LibraryScanService scanService,
+        ExifToolService exifTool)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
@@ -1103,6 +1438,7 @@ public class LibraryService
         _undoService = undoService;
         _rootRepo = rootRepo;
         _scanService = scanService;
+        _exifTool = exifTool;
 
         _scanService.ScanCompleted += () => LibraryChanged?.Invoke();
     }
@@ -1156,10 +1492,15 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 [fileId],
                 wasAdding: true));
+
+            _ = SyncMetadataToFileAsync(fileId);
         }
 
         LibraryChanged?.Invoke();
@@ -1191,10 +1532,18 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
                 wasAdding: true));
+
+            foreach (Guid fileId in modifiedFiles)
+            {
+                _ = SyncMetadataToFileAsync(fileId);
+            }
         }
 
         LibraryChanged?.Invoke();
@@ -1211,10 +1560,15 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 [fileId],
                 wasAdding: false));
+
+            _ = SyncMetadataToFileAsync(fileId);
         }
 
         LibraryChanged?.Invoke();
@@ -1245,10 +1599,18 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
+                _exifTool,
+                _fileRepo,
+                _tagRepo,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
                 wasAdding: false));
+
+            foreach (Guid fileId in modifiedFiles)
+            {
+                _ = SyncMetadataToFileAsync(fileId);
+            }
         }
 
         LibraryChanged?.Invoke();
@@ -1339,6 +1701,25 @@ public class LibraryService
     {
         await _scanService.ScanAllAsync();
     }
+
+    private async Task SyncMetadataToFileAsync(Guid fileId)
+    {
+        FileEntry? file = _fileRepo.GetById(fileId);
+        if (file is null)
+        {
+            return;
+        }
+
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Tag> tags = _tagRepo.GetTagsByIds(tagIds);
+
+        MediaMetadata metadata = new()
+        {
+            Tags = tags.Select(t => t.Name).ToList()
+        };
+
+        _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
+    }
 }
 ```
 
@@ -1366,12 +1747,33 @@ public enum RelocateResultStatus { Success, Duplicate, Error, NotFound }
 
 ---
 
+### `Tagium.Core\Services\ScanContext.cs`
+
+```csharp
+using Tagium.Core.Models;
+
+namespace Tagium.Core.Services;
+
+public class ScanContext
+{
+    public List<string> CandidateFiles { get; } = [];
+    public Dictionary<string, FileEntry> DbFilesMap { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<string> UntrackedFiles { get; } = [];
+    public HashSet<string> VerifiedPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool HasChanges { get; set; }
+}
+```
+
+---
+
 ### `Tagium.Core\Services\Scanning.cs`
 
 ```csharp
+using System.Diagnostics;
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services;
 
@@ -1380,6 +1782,9 @@ public class LibraryScanService
     private readonly LibraryRootRepository _rootRepo;
     private readonly FileRepository _fileRepo;
     private readonly ThumbnailService _thumbnailService;
+    private readonly TagRepository _tagRepo;
+    private readonly FileTagRepository _fileTagRepo;
+    private readonly ExifToolService _exifTool;
 
     public bool IsScanning { get; private set; }
     public int ProgressCurrent { get; private set; }
@@ -1387,6 +1792,7 @@ public class LibraryScanService
 
     public event Action<int, int>? ScanProgress;
     public event Action? ScanCompleted;
+    public event Action? FilesImported;
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1397,11 +1803,17 @@ public class LibraryScanService
     public LibraryScanService(
         LibraryRootRepository rootRepo,
         FileRepository fileRepo,
-        ThumbnailService thumbnailService)
+        ThumbnailService thumbnailService,
+        TagRepository tagRepo,
+        FileTagRepository fileTagRepo,
+        ExifToolService exifTool)
     {
         _rootRepo = rootRepo;
         _fileRepo = fileRepo;
         _thumbnailService = thumbnailService;
+        _tagRepo = tagRepo;
+        _fileTagRepo = fileTagRepo;
+        _exifTool = exifTool;
     }
 
     public async Task ScanAllAsync(CancellationToken cancellationToken = default)
@@ -1415,6 +1827,14 @@ public class LibraryScanService
         ProgressCurrent = 0;
         ProgressTotal = 0;
 
+        await Task.Run(async () => await ExecuteScanPipelineAsync(cancellationToken), cancellationToken);
+    }
+
+    private async Task ExecuteScanPipelineAsync(CancellationToken cancellationToken)
+    {
+        Stopwatch uiTimer = Stopwatch.StartNew();
+        ScanContext context = new();
+
         try
         {
             List<LibraryRoot> roots = _rootRepo.GetAll().Where(r => r.IsEnabled).ToList();
@@ -1423,108 +1843,335 @@ public class LibraryScanService
                 return;
             }
 
-            List<string> allCandidateFiles = [];
-            foreach (var root in roots)
+            DiscoverCandidateFiles(roots, context);
+            LoadDatabaseCache(roots, context);
+
+            ProgressTotal = context.CandidateFiles.Count;
+            ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
+
+            await ProcessCandidateFilesAsync(context, uiTimer, cancellationToken);
+            await ResolveMissingAndImportNewAsync(context, uiTimer, cancellationToken);
+
+            FinalizeMissingFiles(context);
+            UpdateRootsLastScanTime(roots);
+
+            if (context.HasChanges)
             {
-                if (!Directory.Exists(root.Path))
+                FilesImported?.Invoke();
+            }
+        }
+        finally
+        {
+            IsScanning = false;
+            ScanProgress?.Invoke(ProgressTotal, ProgressTotal);
+            ScanCompleted?.Invoke();
+        }
+    }
+
+    private static void DiscoverCandidateFiles(List<LibraryRoot> roots, ScanContext context)
+    {
+        foreach (LibraryRoot root in roots)
+        {
+            if (!Directory.Exists(root.Path))
+            {
+                continue;
+            }
+
+            try
+            {
+                IEnumerable<string> files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
+                    .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
+
+                context.CandidateFiles.AddRange(files);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Scan] Error enumerating directory {root.Path}: {ex.Message}");
+            }
+        }
+    }
+
+    private void LoadDatabaseCache(List<LibraryRoot> roots, ScanContext context)
+    {
+        foreach (LibraryRoot root in roots)
+        {
+            List<FileEntry> dbFiles = _fileRepo.GetFilesUnderPath(root.Path);
+            foreach (FileEntry dbFile in dbFiles)
+            {
+                context.DbFilesMap[dbFile.Path] = dbFile;
+            }
+        }
+    }
+
+    private async Task ProcessCandidateFilesAsync(ScanContext context, Stopwatch uiTimer, CancellationToken cancellationToken)
+    {
+        foreach (string filePath in context.CandidateFiles)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            await EvaluateSingleFileAsync(filePath, context, cancellationToken);
+
+            ProgressCurrent++;
+            await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
+        }
+    }
+
+    private async Task EvaluateSingleFileAsync(string filePath, ScanContext context, CancellationToken cancellationToken)
+    {
+        try
+        {
+            FileInfo fileInfo = new(filePath);
+            long size = fileInfo.Length;
+            long modifiedTime = new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeSeconds();
+
+            if (context.DbFilesMap.TryGetValue(filePath, out FileEntry? existing))
+            {
+                if (existing.Size == size && existing.ModifiedTime == modifiedTime)
+                {
+                    if (existing.IsMissing)
+                    {
+                        existing.IsMissing = false;
+                        _fileRepo.Update(existing);
+                        context.HasChanges = true;
+                    }
+                    _ = context.VerifiedPaths.Add(filePath);
+                }
+                else
+                {
+                    await UpdateChangedFileAsync(existing, filePath, size, modifiedTime, context, cancellationToken);
+                }
+            }
+            else
+            {
+                context.UntrackedFiles.Add(filePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Scan] Error examining path {filePath}: {ex.Message}");
+        }
+    }
+
+    private async Task UpdateChangedFileAsync(FileEntry existing, string filePath, long size, long modifiedTime, ScanContext context, CancellationToken cancellationToken)
+    {
+        string? hash = await FileHasher.ComputeSha256Async(filePath);
+        if (hash is not null)
+        {
+            existing.Hash = hash;
+            existing.Size = size;
+            existing.ModifiedTime = modifiedTime;
+            existing.IsMissing = false;
+
+            _fileRepo.Update(existing);
+            context.HasChanges = true;
+            _ = context.VerifiedPaths.Add(filePath);
+
+            await _thumbnailService.GenerateThumbnailAsync(existing, cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task ResolveMissingAndImportNewAsync(ScanContext context, Stopwatch uiTimer, CancellationToken cancellationToken)
+    {
+        List<FileEntry> missingDbFiles = context.DbFilesMap.Values
+            .Where(e => !context.VerifiedPaths.Contains(e.Path))
+            .ToList();
+
+        HashSet<string> processedUntracked = [];
+
+        await DetectRenamesAndMovesAsync(missingDbFiles, context, processedUntracked, uiTimer, cancellationToken);
+        await ImportRemainingUntrackedAsync(context, processedUntracked, uiTimer, cancellationToken);
+    }
+
+    private async Task DetectRenamesAndMovesAsync(List<FileEntry> missingDbFiles, ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
+    {
+        Dictionary<long, List<string>> untrackedBySize = GroupUntrackedBySize(context.UntrackedFiles);
+
+        foreach (FileEntry missing in missingDbFiles)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            if (string.IsNullOrEmpty(missing.Hash) || !untrackedBySize.TryGetValue(missing.Size, out List<string>? candidates))
+            {
+                continue;
+            }
+
+            foreach (string candidatePath in candidates)
+            {
+                if (processedUntracked.Contains(candidatePath))
                 {
                     continue;
                 }
 
                 try
                 {
-                    var files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
-                        .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
-                    allCandidateFiles.AddRange(files);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Scan] Error enumerating directory {root.Path}: {ex.Message}");
-                }
-            }
+                    FileInfo info = new(candidatePath);
+                    long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
 
-            ProgressTotal = allCandidateFiles.Count;
-            ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
-
-            HashSet<string> foundPaths = new(StringComparer.OrdinalIgnoreCase);
-
-            foreach (string filePath in allCandidateFiles)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                try
-                {
-                    string? hash = await FileHasher.ComputeSha256Async(filePath);
-                    if (hash is not null)
+                    if (missing.ModifiedTime == modifiedTime)
                     {
-                        FileEntry? existing = _fileRepo.GetByHash(hash);
-
-                        if (existing is not null)
+                        string? candidateHash = await FileHasher.ComputeSha256Async(candidatePath);
+                        if (candidateHash == missing.Hash)
                         {
-                            if (!string.Equals(existing.Path, filePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                existing.Path = filePath;
-                                existing.Name = Path.GetFileName(filePath);
-                                existing.IsMissing = false;
-                                _fileRepo.Update(existing);
-                            }
-                            else if (existing.IsMissing)
-                            {
-                                existing.IsMissing = false;
-                                _fileRepo.Update(existing);
-                            }
-                        }
-                        else
-                        {
-                            _ = _fileRepo.Add(filePath, hash);
-                            FileEntry? newEntry = _fileRepo.GetByHash(hash);
-                            if (newEntry is not null)
-                            {
-                                await _thumbnailService.GenerateThumbnailAsync(newEntry, cancellationToken: cancellationToken);
-                            }
-                        }
+                            missing.Path = candidatePath;
+                            missing.Name = Path.GetFileName(candidatePath);
+                            missing.IsMissing = false;
 
-                        _ = foundPaths.Add(filePath);
+                            _fileRepo.Update(missing);
+                            context.HasChanges = true;
+
+                            _ = processedUntracked.Add(candidatePath);
+                            _ = context.VerifiedPaths.Add(candidatePath);
+                            break;
+                        }
                     }
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Scan] Error processing file {filePath}: {ex.Message}");
-                }
-
-                ProgressCurrent++;
-                ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
+                catch { }
             }
 
-            foreach (var root in roots)
-            {
-                var dbFiles = _fileRepo.GetFilesUnderPath(root.Path);
-                List<Guid> missingIds = [];
+            await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
+        }
+    }
 
-                foreach (var dbFile in dbFiles)
+    private static Dictionary<long, List<string>> GroupUntrackedBySize(List<string> untrackedFiles)
+    {
+        Dictionary<long, List<string>> map = [];
+        foreach (string path in untrackedFiles)
+        {
+            try
+            {
+                long size = new FileInfo(path).Length;
+                if (!map.TryGetValue(size, out List<string>? list))
                 {
-                    if (!foundPaths.Contains(dbFile.Path) && !dbFile.IsMissing)
+                    list = [];
+                    map[size] = list;
+                }
+                list.Add(path);
+            }
+            catch { }
+        }
+        return map;
+    }
+
+    private async Task ImportRemainingUntrackedAsync(ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
+    {
+        foreach (string path in context.UntrackedFiles)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            if (processedUntracked.Contains(path))
+            {
+                continue;
+            }
+
+            try
+            {
+                FileInfo info = new(path);
+                long size = info.Length;
+                long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
+
+                string? hash = await FileHasher.ComputeSha256Async(path);
+                if (hash is not null)
+                {
+                    _ = _fileRepo.Add(path, hash, size, modifiedTime);
+                    context.HasChanges = true;
+
+                    FileEntry? newEntry = _fileRepo.GetByHash(hash);
+                    if (newEntry is not null)
                     {
-                        missingIds.Add(dbFile.Id);
+                        await _thumbnailService.GenerateThumbnailAsync(newEntry, cancellationToken: cancellationToken);
+                        await ImportMetadataTagsAsync(path, newEntry);
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Scan] Error importing untracked file {path}: {ex.Message}");
+            }
 
-                if (missingIds.Count > 0)
+            await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
+        }
+    }
+
+    private async Task ImportMetadataTagsAsync(string path, FileEntry newEntry)
+    {
+        MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(path);
+        if (metadata is null || metadata.Tags.Count == 0)
+        {
+            return;
+        }
+
+        var existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (string rawTag in metadata.Tags)
+        {
+            string norm = TagFormatter.Normalize(rawTag);
+            if (string.IsNullOrWhiteSpace(norm))
+            {
+                continue;
+            }
+
+            if (!existingTags.TryGetValue(norm, out Tag? dbTag))
+            {
+                _tagRepo.Add(norm, "#757575", null);
+                Tag? refreshed = _tagRepo.GetAll().FirstOrDefault(t => string.Equals(t.Name, norm, StringComparison.OrdinalIgnoreCase));
+                if (refreshed is not null)
                 {
-                    _fileRepo.SetMissingStatus(missingIds, true);
+                    _fileTagRepo.AddTagToFile(newEntry.Id, refreshed.Id);
                 }
-
-                root.LastScanTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                _rootRepo.Update(root);
+            }
+            else
+            {
+                _fileTagRepo.AddTagToFile(newEntry.Id, dbTag.Id);
             }
         }
-        finally
+    }
+
+    private void FinalizeMissingFiles(ScanContext context)
+    {
+        List<Guid> finalMissingIds = context.DbFilesMap.Values
+            .Where(e => !context.VerifiedPaths.Contains(e.Path) && !e.IsMissing)
+            .Select(e => e.Id)
+            .ToList();
+
+        if (finalMissingIds.Count > 0)
         {
-            IsScanning = false;
-            ScanCompleted?.Invoke();
+            _fileRepo.SetMissingStatus(finalMissingIds, true);
+            context.HasChanges = true;
+        }
+    }
+
+    private void UpdateRootsLastScanTime(List<LibraryRoot> roots)
+    {
+        foreach (LibraryRoot root in roots)
+        {
+            root.LastScanTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            _rootRepo.Update(root);
+        }
+    }
+
+    private async Task YieldAndNotifyAsync(ScanContext context, Stopwatch uiTimer, CancellationToken cancellationToken)
+    {
+        if (uiTimer.ElapsedMilliseconds > 250)
+        {
+            if (context.HasChanges)
+            {
+                FilesImported?.Invoke();
+                context.HasChanges = false;
+            }
+
+            ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
+            uiTimer.Restart();
+
+            // Critical fix: Ensure Blazor UI thread gets enough time to fetch SQLite updates and render the grid.
+            await Task.Delay(50, cancellationToken);
         }
     }
 }
@@ -2071,12 +2718,12 @@ public class DataExportService
         Dictionary<Guid, string> tagLookup = data.Tags.ToDictionary(t => t.Id, t => t.Name);
         StringBuilder sb = new();
 
-        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,Tags");
+        _ = sb.AppendLine("Id,Path,Name,Hash,DateAdded,IsMissing,Size,ModifiedTime,Tags");
 
-        foreach (var file in data.Files)
+        foreach (FileExportData file in data.Files)
         {
             string tags = string.Join(";", file.TagIds.Select(id => tagLookup.GetValueOrDefault(id, "unknown")));
-            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},\"{Escape(tags)}\"";
+            string line = $"{file.Id},\"{Escape(file.Path)}\",\"{Escape(file.Name)}\",{file.Hash},{file.DateAdded},{file.IsMissing},{file.Size},{file.ModifiedTime},\"{Escape(tags)}\"";
             _ = sb.AppendLine(line);
         }
 
@@ -2102,6 +2749,8 @@ public class DataExportService
                 Hash = f.Hash,
                 DateAdded = f.DateAdded,
                 IsMissing = f.IsMissing,
+                Size = f.Size,
+                ModifiedTime = f.ModifiedTime,
                 TagIds = tagIds
             });
         }
@@ -2130,6 +2779,8 @@ public class FileExportData
     public string? Hash { get; set; }
     public long DateAdded { get; set; }
     public bool IsMissing { get; set; }
+    public long Size { get; set; }
+    public long ModifiedTime { get; set; }
     public List<Guid> TagIds { get; set; } = [];
 }
 ```
@@ -2180,7 +2831,6 @@ public class DatabaseMergeService
             .Where(f => f.Hash is not null)
             .ToDictionary(f => f.Hash!);
 
-        // Merge Tags - UUIDs allow direct insertion, no ID remapping needed
         foreach (Tag sTag in sourceTags)
         {
             if (!targetTags.ContainsKey(sTag.Name))
@@ -2190,10 +2840,8 @@ public class DatabaseMergeService
             }
         }
 
-        // Refresh target tags to get new ones with their UUIDs
         targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
 
-        // Merge Files
         foreach (FileEntry sFile in sourceFiles)
         {
             if (sFile.Hash is null || targetFiles.ContainsKey(sFile.Hash))
@@ -2201,17 +2849,15 @@ public class DatabaseMergeService
                 continue;
             }
 
-            _ = _targetFileRepo.Add(sFile.Path, sFile.Hash);
+            _ = _targetFileRepo.Add(sFile.Path, sFile.Hash, sFile.Size, sFile.ModifiedTime);
             result.NewFiles++;
 
-            // Get the newly added file to establish associations
             FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
             if (added is null)
             {
                 continue;
             }
 
-            // Merge Associations
             if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<Guid>? sTagIds))
             {
                 continue;
@@ -2219,14 +2865,13 @@ public class DatabaseMergeService
 
             foreach (Guid sTagId in sTagIds)
             {
-                // Find corresponding tag in source by ID, then match by name to target
-                var sourceTag = sourceTags.FirstOrDefault(t => t.Id == sTagId);
+                Tag? sourceTag = sourceTags.FirstOrDefault(t => t.Id == sTagId);
                 if (sourceTag is null)
                 {
                     continue;
                 }
 
-                var targetTag = targetTags.GetValueOrDefault(sourceTag.Name);
+                Tag? targetTag = targetTags.GetValueOrDefault(sourceTag.Name);
                 if (targetTag is null)
                 {
                     continue;
@@ -2267,7 +2912,7 @@ public class DatabaseMergeService
         List<FileEntry> list = [];
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing FROM Files";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime FROM Files";
 
         using SqliteDataReader r = cmd.ExecuteReader();
 
@@ -2280,7 +2925,9 @@ public class DatabaseMergeService
                 Name = r.GetString(2),
                 Hash = r.IsDBNull(3) ? null : r.GetString(3),
                 DateAdded = r.GetInt64(4),
-                IsMissing = r.GetBoolean(5)
+                IsMissing = r.GetBoolean(5),
+                Size = r.GetInt64(6),
+                ModifiedTime = r.GetInt64(7)
             });
         }
 
@@ -2497,12 +3144,17 @@ public interface IUndoCommand
 
 ```csharp
 using Tagium.Core.Data;
+using Tagium.Core.Models;
+using Tagium.Photino.Blazor.Components.Modals;
 
 namespace Tagium.Core.Services.Undo;
 
 public class TagAssignmentUndoCommand : IUndoCommand
 {
     private readonly FileTagRepository _fileTagRepo;
+    private readonly ExifToolService _exifTool;
+    private readonly FileRepository _fileRepo;
+    private readonly TagRepository _tagRepo;
     private readonly Action _onChanged;
     private readonly Guid _tagId;
     private readonly List<Guid> _fileIds;
@@ -2510,12 +3162,18 @@ public class TagAssignmentUndoCommand : IUndoCommand
 
     public TagAssignmentUndoCommand(
         FileTagRepository fileTagRepo,
+        ExifToolService exifTool,
+        FileRepository fileRepo,
+        TagRepository tagRepo,
         Action onChanged,
         Guid tagId,
         IEnumerable<Guid> fileIds,
         bool wasAdding)
     {
         _fileTagRepo = fileTagRepo;
+        _exifTool = exifTool;
+        _fileRepo = fileRepo;
+        _tagRepo = tagRepo;
         _onChanged = onChanged;
         _tagId = tagId;
         _fileIds = fileIds.ToList();
@@ -2534,9 +3192,30 @@ public class TagAssignmentUndoCommand : IUndoCommand
             {
                 _fileTagRepo.AddTagToFile(fileId, _tagId);
             }
+
+            _ = SyncMetadataToFileAsync(fileId);
         }
 
         _onChanged();
+    }
+
+    private async Task SyncMetadataToFileAsync(Guid fileId)
+    {
+        FileEntry? file = _fileRepo.GetById(fileId);
+        if (file is null)
+        {
+            return;
+        }
+
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Tag> tags = _tagRepo.GetTagsByIds(tagIds);
+
+        MediaMetadata metadata = new()
+        {
+            Tags = tags.Select(t => t.Name).ToList()
+        };
+
+        _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
     }
 }
 ```
@@ -2758,8 +3437,11 @@ public partial class FileGrid : IDisposable
 
     private void ReloadData()
     {
-        LoadFiles();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            LoadFiles();
+            StateHasChanged();
+        });
     }
 
     private void RefreshSelection()
@@ -2883,8 +3565,11 @@ public partial class FileListView : IDisposable
 
     private void ReloadData()
     {
-        LoadFiles();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            LoadFiles();
+            StateHasChanged();
+        });
     }
 
     private void RefreshSelection()
@@ -2954,7 +3639,6 @@ public partial class MainLayout : IDisposable
     private double _scanProgress = 0;
     private DotNetObjectReference<MainLayout>? _objRef;
 
-    // Changed to an auto-property so IDEs do not auto-mark it as readonly
     private FilesViewToolbar? FilesViewToolbarRef { get; set; }
 
     protected override void OnInitialized()
@@ -2963,6 +3647,7 @@ public partial class MainLayout : IDisposable
         ScanService.ScanProgress += UpdateScanProgress;
         ScanService.ScanCompleted += ShowScanStatus;
         AppState.OnChange += StateHasChanged;
+        Library.LibraryChanged += OnLibraryChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -3016,22 +3701,30 @@ public partial class MainLayout : IDisposable
 
     private void UpdateScanProgress(int current, int total)
     {
-        _scanInProgress = true;
-        _scanProcessed = current;
-        _scanTotal = total;
-        _scanProgress = total > 0 ? (double)current / total * 100 : 0;
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            _scanInProgress = true;
+            _scanProcessed = current;
+            _scanTotal = total;
+            _scanProgress = total > 0 ? (double)current / total * 100 : 0;
+            StateHasChanged();
+        });
     }
 
     private void ShowScanStatus()
     {
-        _scanInProgress = false;
         _ = InvokeAsync(() =>
         {
+            _scanInProgress = false;
             Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
             StateHasChanged();
         });
+    }
+
+    private void OnLibraryChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void ReloadCurrentView()
@@ -3047,6 +3740,7 @@ public partial class MainLayout : IDisposable
         ScanService.ScanProgress -= UpdateScanProgress;
         ScanService.ScanCompleted -= ShowScanStatus;
         AppState.OnChange -= StateHasChanged;
+        Library.LibraryChanged -= OnLibraryChanged;
 
         _objRef?.Dispose();
     }
@@ -3121,8 +3815,11 @@ public partial class TagSidebar
 
     private void RefreshData()
     {
-        Tags = Library.GetTags();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            Tags = Library.GetTags();
+            StateHasChanged();
+        });
     }
 
     private void SetSearch(string text)
@@ -3700,6 +4397,7 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<UndoService>();
 
         // Core - Services
+        _ = services.AddSingleton<ExifToolService>();
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryScanService>();
         _ = services.AddSingleton<LibraryService>();
@@ -4457,8 +5155,11 @@ public partial class TagManagerView
 
     private void RefreshData()
     {
-        RefreshTags();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            RefreshTags();
+            StateHasChanged();
+        });
     }
 
     private void RefreshTags()
@@ -4523,7 +5224,7 @@ public partial class TagManagerView
 
     private void OnSortByChange(ChangeEventArgs e)
     {
-        if (Enum.TryParse<TagSortBy>(e.Value?.ToString(), out var result))
+        if (Enum.TryParse<TagSortBy>(e.Value?.ToString(), out TagSortBy result))
         {
             Settings.Update(s => s.TagSortBy = result);
             RefreshTags();
@@ -4532,7 +5233,7 @@ public partial class TagManagerView
 
     private void OnSortDirChange(ChangeEventArgs e)
     {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out var result))
+        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out SortDirection result))
         {
             Settings.Update(s => s.TagSortDirection = result);
             RefreshTags();
