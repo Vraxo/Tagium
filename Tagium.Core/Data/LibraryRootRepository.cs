@@ -15,8 +15,7 @@ public class LibraryRootRepository
     public List<LibraryRoot> GetAll()
     {
         List<LibraryRoot> roots = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Path, IsEnabled, LastScanTime FROM LibraryRoots ORDER BY Path ASC";
@@ -31,8 +30,7 @@ public class LibraryRootRepository
 
     public void Add(string path)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT OR IGNORE INTO LibraryRoots (Id, Path, IsEnabled, LastScanTime) VALUES (@Id, @Path, 1, NULL)";
@@ -43,8 +41,7 @@ public class LibraryRootRepository
 
     public void Update(LibraryRoot root)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = "UPDATE LibraryRoots SET IsEnabled = @IsEnabled, LastScanTime = @LastScanTime WHERE Id = @Id";
@@ -56,8 +53,7 @@ public class LibraryRootRepository
 
     public void Delete(Guid id, string path)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
 
         try
@@ -73,7 +69,7 @@ public class LibraryRootRepository
             using (SqliteCommand cmd = conn.CreateCommand())
             {
                 cmd.Transaction = trans;
-                cmd.CommandText = $"DELETE FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+                cmd.CommandText = $"DELETE FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
                 _ = cmd.Parameters.AddWithValue("@Path", path);
                 _ = cmd.ExecuteNonQuery();
             }

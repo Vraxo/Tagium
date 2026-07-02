@@ -40,10 +40,10 @@ public partial class DataManagementModal
 
     private void BackupDb()
     {
-        string source = DbManager.ConnectionString.Replace("Data Source=", "");
+        string source = DbManager.LibraryDbPath;
         string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
         File.Copy(source, dest, true);
-        Toast.Show($"Backup saved to {dest}", ToastType.Success);
+        Toast.Show($"Library configuration backup saved to {dest}", ToastType.Success);
     }
 
     private void MergeDb()
@@ -70,12 +70,12 @@ public partial class DataManagementModal
         }
 
         string source = files[0];
-        string dest = DbManager.ConnectionString.Replace("Data Source=", "");
+        string dest = DbManager.LibraryDbPath;
 
         try
         {
             File.Copy(source, dest, true);
-            Toast.Show("Database restored. Please restart Tagium.", ToastType.Success);
+            Toast.Show("Library database restored. Please restart Tagium.", ToastType.Success);
         }
         catch (Exception ex)
         {

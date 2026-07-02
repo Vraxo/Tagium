@@ -13,11 +13,10 @@ public class FileTagRepository
 
     public void AddTagToFile(Guid fileId, Guid tagId)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
+        cmd.CommandText = "INSERT OR IGNORE INTO cache.FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
         cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
         cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
@@ -25,11 +24,10 @@ public class FileTagRepository
 
     public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
+        cmd.CommandText = "DELETE FROM cache.FileTags WHERE FileId = @FileId AND TagId = @TagId";
         cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
         cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
         _ = cmd.ExecuteNonQuery();
@@ -39,11 +37,10 @@ public class FileTagRepository
     {
         List<Guid> ids = [];
 
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT TagId FROM FileTags WHERE FileId = @FileId";
+        cmd.CommandText = "SELECT TagId FROM cache.FileTags WHERE FileId = @FileId";
         cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();

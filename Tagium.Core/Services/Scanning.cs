@@ -104,6 +104,7 @@ public class LibraryScanService
 
             try
             {
+                using CancellationTokenSource searchCts = new(TimeSpan.FromSeconds(30));
                 IEnumerable<string> files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
                     .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
 
@@ -352,7 +353,6 @@ public class LibraryScanService
             return;
         }
 
-        Dictionary<string, Tag> existingTags = _tagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         foreach (string rawTag in metadata.Tags)
         {
             string norm = TagFormatter.Normalize(rawTag);
@@ -361,18 +361,19 @@ public class LibraryScanService
                 continue;
             }
 
-            if (!existingTags.TryGetValue(norm, out Tag? dbTag))
+            Guid? resolvedId = _tagRepo.ResolveTagId(norm);
+            if (resolvedId.HasValue)
             {
-                _tagRepo.Add(norm, "#757575", null);
-                Tag? refreshed = _tagRepo.GetAll().FirstOrDefault(t => string.Equals(t.Name, norm, StringComparison.OrdinalIgnoreCase));
-                if (refreshed is not null)
-                {
-                    _fileTagRepo.AddTagToFile(newEntry.Id, refreshed.Id);
-                }
+                _fileTagRepo.AddTagToFile(newEntry.Id, resolvedId.Value);
             }
             else
             {
-                _fileTagRepo.AddTagToFile(newEntry.Id, dbTag.Id);
+                _tagRepo.Add(norm, "#757575", null);
+                Guid? refreshedId = _tagRepo.ResolveTagId(norm);
+                if (refreshedId.HasValue)
+                {
+                    _fileTagRepo.AddTagToFile(newEntry.Id, refreshedId.Value);
+                }
             }
         }
     }

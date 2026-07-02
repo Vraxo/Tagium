@@ -7,6 +7,7 @@ public class Tag
     public string ColorHex { get; set; } = "#757575";
     public string? Emoji { get; set; }
     public int FileCount { get; set; }
+    public string? Category { get; set; }
 
     public override string ToString()
     {

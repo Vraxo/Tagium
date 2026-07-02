@@ -16,13 +16,12 @@ public class FileRepository
     public List<FileEntry> GetAll(SortBy sortBy, SortDirection direction)
     {
         List<FileEntry> files = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         string orderBy = GetOrderByClause(sortBy, direction);
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = $@"
-            SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files F
+            SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files F
             WHERE EXISTS (
                 SELECT 1 FROM LibraryRoots LR 
                 WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}')
@@ -40,8 +39,7 @@ public class FileRepository
     public List<FileEntry> GetFilesWithTags(SortBy sortBy, SortDirection direction, bool includeMissing = false)
     {
         List<FileEntry> files = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         string orderBy = GetOrderByClause(sortBy, direction);
         string rootFilter = $"EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))";
@@ -53,8 +51,8 @@ public class FileRepository
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
-            FROM Files F
-            LEFT JOIN FileTags FT ON F.Id = FT.FileId
+            FROM cache.Files F
+            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
             LEFT JOIN Tags T ON FT.TagId = T.Id
             {missingFilter}
             GROUP BY F.Id
@@ -78,8 +76,7 @@ public class FileRepository
 
     public FileEntry? GetFileWithTagsById(Guid id)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -87,8 +84,8 @@ public class FileRepository
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
-            FROM Files F
-            LEFT JOIN FileTags FT ON F.Id = FT.FileId
+            FROM cache.Files F
+            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
             LEFT JOIN Tags T ON FT.TagId = T.Id
             WHERE F.Id = @Id
             GROUP BY F.Id";
@@ -111,10 +108,9 @@ public class FileRepository
 
     public FileEntry? GetById(Guid id)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files WHERE Id = @Id";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -123,10 +119,9 @@ public class FileRepository
 
     public FileEntry? GetByHash(string hash)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files WHERE Hash = @Hash";
+        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Hash = @Hash";
         _ = cmd.Parameters.AddWithValue("@Hash", hash);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -136,11 +131,10 @@ public class FileRepository
     public List<FileEntry> GetFilesUnderPath(string rootPath)
     {
         List<FileEntry> files = [];
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
         _ = cmd.Parameters.AddWithValue("@Path", rootPath);
 
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -153,12 +147,11 @@ public class FileRepository
 
     public bool Add(string path, string hash, long size, long modifiedTime)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime, Rating, Title, Description) 
+            INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime, Rating, Title, Description) 
             VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime, NULL, NULL, NULL)";
 
         Guid newId = Guid.NewGuid();
@@ -182,12 +175,11 @@ public class FileRepository
 
     public void Restore(FileEntry entry)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
 
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description) 
+            INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description) 
             VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime, @Rating, @Title, @Description)";
 
         _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
@@ -207,11 +199,10 @@ public class FileRepository
 
     public void Update(FileEntry file)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            UPDATE Files 
+            UPDATE cache.Files 
             SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime, 
                 Rating = @Rating, Title = @Title, Description = @Description 
             WHERE Id = @Id";
@@ -232,25 +223,23 @@ public class FileRepository
 
     public void Remove(Guid id)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM Files WHERE Id = @Id";
+        cmd.CommandText = "DELETE FROM cache.Files WHERE Id = @Id";
         _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
         _ = cmd.ExecuteNonQuery();
     }
 
     public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
 
         foreach (Guid id in fileIds)
         {
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.Transaction = trans;
-            cmd.CommandText = "UPDATE Files SET IsMissing = @IsMissing WHERE Id = @Id";
+            cmd.CommandText = "UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id";
             _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
             _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
             _ = cmd.ExecuteNonQuery();
@@ -260,10 +249,9 @@ public class FileRepository
 
     public void RemoveMissingFiles()
     {
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM Files WHERE IsMissing = 1";
+        cmd.CommandText = "DELETE FROM cache.Files WHERE IsMissing = 1";
         _ = cmd.ExecuteNonQuery();
     }
 

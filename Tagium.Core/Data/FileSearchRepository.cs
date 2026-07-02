@@ -42,13 +42,12 @@ public class FileSearchRepository
             return [];
         }
 
-        using SqliteConnection conn = new(_db.ConnectionString);
-        conn.Open();
+        using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
 
         StringBuilder query = new();
         _ = query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime, F.Rating, F.Title, F.Description");
-        _ = query.AppendLine("FROM Files F");
+        _ = query.AppendLine("FROM cache.Files F");
         _ = query.AppendLine($"WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))");
 
         BuildIncludeClauses(includeTerms, cmd, query);
@@ -92,7 +91,7 @@ public class FileSearchRepository
 
             string tagSubQuery = $@"
                 EXISTS (
-                    SELECT 1 FROM FileTags FT 
+                    SELECT 1 FROM cache.FileTags FT 
                     JOIN Tags T ON FT.TagId = T.Id 
                     WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
                 )";
@@ -111,7 +110,7 @@ public class FileSearchRepository
 
             string tagSubQuery = $@"
                 EXISTS (
-                    SELECT 1 FROM FileTags FT 
+                    SELECT 1 FROM cache.FileTags FT 
                     JOIN Tags T ON FT.TagId = T.Id 
                     WHERE FT.FileId = F.Id AND T.Name LIKE {paramName}
                 )";
