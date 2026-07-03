@@ -35,6 +35,7 @@
         height: calc(var(--thumb-size) + 30px) !important; /* Explicitly lock row height to prevent virtualizer math skewing */
         box-sizing: border-box !important;
         margin-bottom: 16px !important;
+        contain: layout style paint !important; /* CSS containment for massive reflow savings */
     }
 
     .file-card {
@@ -43,6 +44,7 @@
         flex-shrink: 0 !important;
         flex-grow: 0 !important;
         box-sizing: border-box !important;
+        contain: strict !important; /* Card has completely locked height and width! */
     }
 </style>
 
@@ -51,14 +53,15 @@
      style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
 
     <Virtualize Items="FileRows" ItemSize="@(Settings.Current.ThumbnailSize + 46)" Context="row">
-        <div class="file-grid-row">
+        <div @key="row" class="file-grid-row">
             @foreach (var file in row)
             {
                 bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
                 bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
                 TriggerThumbnailIfMissing(file, hasThumb);
 
-                <div class="file-card @(isSelected ? "selected" : "")"
+                <div @key="file.Id"
+                     class="file-card @(isSelected ? "selected" : "")"
                      data-id="@file.Id"
                      @onclick="e => OnCardClick(e, file.Id)"
                      @ondblclick="e => OnCardDoubleClick(e, file)"

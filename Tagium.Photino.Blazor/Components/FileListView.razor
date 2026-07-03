@@ -28,7 +28,8 @@
                     bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
                     TriggerThumbnailIfMissing(file, hasThumb);
                 }
-                <tr class="file-row @(isSelected ? "selected" : "")"
+                <tr @key="file.Id"
+                    class="file-row @(isSelected ? "selected" : "")"
                     data-id="@file.Id"
                     @onclick="e => OnRowClick(e, file.Id)"
                     @ondblclick="e => OnRowDoubleClick(e, file)">
