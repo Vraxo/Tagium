@@ -131,7 +131,7 @@ public sealed class ThumbnailService
                 }
                 finally
                 {
-                    VideoFrameExtractor.CleanupTempFile(tempFramePath);
+                    _extractor.CleanupTempFile(tempFramePath);
                 }
             }
             else
