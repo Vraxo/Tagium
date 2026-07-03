@@ -17,6 +17,8 @@ public partial class FileGrid : IDisposable
     private int _columnsCount = 5;
     private bool _isInitialized = false;
     private DotNetObjectReference<FileGrid>? _objRef;
+    private bool _isRenderPending = false;
+    private readonly object _renderLock = new();
 
     protected override void OnInitialized()
     {
@@ -26,6 +28,7 @@ public partial class FileGrid : IDisposable
         AppState.OnSelectionChange += RefreshSelection;
         Library.LibraryChanged += ReloadData;
         Settings.SettingsChanged += ReloadData;
+        ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -79,6 +82,28 @@ public partial class FileGrid : IDisposable
     private void RefreshSelection()
     {
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnThumbnailGenerated(Guid fileId)
+    {
+        lock (_renderLock)
+        {
+            if (_isRenderPending)
+            {
+                return;
+            }
+            _isRenderPending = true;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(200);
+            lock (_renderLock)
+            {
+                _isRenderPending = false;
+            }
+            await InvokeAsync(StateHasChanged);
+        });
     }
 
     private void LoadFiles()
@@ -196,6 +221,7 @@ public partial class FileGrid : IDisposable
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
         Settings.SettingsChanged -= ReloadData;
+        ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 
         _objRef?.Dispose();
         _ = JS.InvokeVoidAsync("eval", "if (window.gridObserverInstance) { window.gridObserverInstance.disconnect(); delete window.gridObserverInstance; }");

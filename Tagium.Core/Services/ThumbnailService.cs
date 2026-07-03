@@ -24,6 +24,7 @@ public sealed class ThumbnailService
 
     private const int DefaultThumbnailSize = 300;
 
+    public event Action<Guid>? ThumbnailGenerated;
     public event Action<int, int>? QueueProgressChanged;
     public event Action? QueueCompleted;
 
@@ -89,6 +90,7 @@ public sealed class ThumbnailService
                 await TryGenerateThumbnailInternalAsync(file.Path, destPath, size, cancellationToken);
             }
             _cache.AddToCache(key);
+            ThumbnailGenerated?.Invoke(file.Id);
         }
         catch (Exception ex)
         {

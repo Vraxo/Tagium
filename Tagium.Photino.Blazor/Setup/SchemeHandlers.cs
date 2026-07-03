@@ -48,20 +48,16 @@ public static class SchemeHandlers
 
             string path = thumbnailService.GetThumbnailPath(hash, fileId);
 
-            // If the thumbnail is not generated yet, generate it on-the-fly synchronously on this background thread
+            // If the thumbnail is not generated yet, generate it on-the-fly asynchronously on a non-blocking background thread
             if (!File.Exists(path))
             {
                 FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
                 FileEntry? file = fileRepo.GetById(fileId);
                 if (file is not null)
                 {
-                    // Block synchronously since we are running on a background ThreadPool thread anyway
-                    thumbnailService.GenerateThumbnailAsync(file).GetAwaiter().GetResult();
+                    // Completely non-blocking fire-and-forget background task
+                    _ = Task.Run(() => thumbnailService.GenerateThumbnailAsync(file));
                 }
-            }
-
-            if (!File.Exists(path))
-            {
                 return Stream.Null;
             }
 
