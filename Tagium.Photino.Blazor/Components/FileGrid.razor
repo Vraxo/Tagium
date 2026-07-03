@@ -17,6 +17,13 @@
         overflow-y: auto !important;
         box-sizing: border-box !important;
         padding: 16px !important;
+        opacity: 1 !important;
+        transition: opacity 0.15s ease-in-out !important;
+    }
+
+    #file-grid-container.initializing {
+        opacity: 0 !important;
+        pointer-events: none !important;
     }
 
     .file-grid-row {
@@ -25,12 +32,14 @@
         flex-wrap: nowrap !important;
         gap: 16px !important;
         width: 100% !important;
+        height: calc(var(--thumb-size) + 30px) !important; /* Explicitly lock row height to prevent virtualizer math skewing */
         box-sizing: border-box !important;
         margin-bottom: 16px !important;
     }
 
     .file-card {
         width: var(--thumb-size) !important;
+        height: 100% !important; /* Let cards stretch to fill locked row height exactly */
         flex-shrink: 0 !important;
         flex-grow: 0 !important;
         box-sizing: border-box !important;
@@ -38,7 +47,7 @@
 </style>
 
 <div id="file-grid-container"
-     class="grid-container"
+     class="grid-container @(_isInitialized ? "" : "initializing")"
      style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
 
     <Virtualize Items="FileRows" ItemSize="@(Settings.Current.ThumbnailSize + 46)" Context="row">

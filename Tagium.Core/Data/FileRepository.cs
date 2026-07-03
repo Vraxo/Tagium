@@ -303,9 +303,9 @@ public class FileRepository
     {
         string col = sortBy switch
         {
-            SortBy.Name => "Name",
-            SortBy.DateAdded => "DateAdded",
-            _ => "Path"
+            SortBy.Name => "F.Name",
+            SortBy.DateAdded => "F.DateAdded",
+            _ => "F.Path"
         };
 
         string dir = direction == SortDirection.Desc ? "DESC" : "ASC";

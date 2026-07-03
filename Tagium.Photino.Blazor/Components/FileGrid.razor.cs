@@ -14,6 +14,7 @@ public partial class FileGrid : IDisposable
     private List<FileEntry> Files = [];
     private List<List<FileEntry>> FileRows = [];
     private int _columnsCount = 5;
+    private bool _isInitialized = false;
     private DotNetObjectReference<FileGrid>? _objRef;
     private bool _isRenderPending = false;
     private readonly object _renderLock = new();
@@ -56,7 +57,7 @@ public partial class FileGrid : IDisposable
                             timeoutId = setTimeout(() => {
                                 lastCols = cols;
                                 helper.invokeMethodAsync('UpdateColumnsCount', cols);
-                            }, 100);
+                            }, 150);
                         }
                     }
                 });
@@ -128,10 +129,15 @@ public partial class FileGrid : IDisposable
     [JSInvokable]
     public void UpdateColumnsCount(int count)
     {
+        _isInitialized = true;
         if (_columnsCount != count)
         {
             _columnsCount = count;
             RebuildRows();
+            StateHasChanged();
+        }
+        else
+        {
             StateHasChanged();
         }
     }
