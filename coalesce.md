@@ -498,9 +498,9 @@ public class FileRepository
     {
         string col = sortBy switch
         {
-            SortBy.Name => "Name",
-            SortBy.DateAdded => "DateAdded",
-            _ => "Path"
+            SortBy.Name => "F.Name",
+            SortBy.DateAdded => "F.DateAdded",
+            _ => "F.Path"
         };
 
         string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
@@ -2585,36 +2585,244 @@ public class LibraryScanService
 
 ---
 
+### `Tagium.Core\Services\ThumbnailCache.cs`
+
+```csharp
+using System.Collections.Concurrent;
+using Tagium.Core.Helpers;
+
+namespace Tagium.Core.Services;
+
+public class ThumbnailCache
+{
+    private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public string CacheDir { get; }
+
+    public ThumbnailCache()
+    {
+        CacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+
+        // Automatically purge old, bloated PNG thumbnails to migrate to high-performance JPEGs
+        if (Directory.Exists(CacheDir))
+        {
+            try
+            {
+                foreach (string pngFile in Directory.EnumerateFiles(CacheDir, "*.png"))
+                {
+                    File.Delete(pngFile);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ThumbnailService] Error purging old PNGs: {ex.Message}");
+            }
+        }
+
+        // Populate the cache with high-performance JPEG thumbnail files from disk
+        if (Directory.Exists(CacheDir))
+        {
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(CacheDir, "*.jpg"))
+                {
+                    string name = Path.GetFileNameWithoutExtension(file);
+                    _thumbnailCache.TryAdd(name, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ThumbnailCache] Error scanning cache: {ex.Message}");
+            }
+        }
+    }
+
+    public string GetThumbnailPath(string? hash, Guid fileId)
+    {
+        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
+        return Path.Combine(CacheDir, $"{key}.jpg");
+    }
+
+    public bool HasThumbnail(Guid fileId, string? hash)
+    {
+        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
+        return _thumbnailCache.ContainsKey(key);
+    }
+
+    public void AddToCache(string key)
+    {
+        _thumbnailCache.TryAdd(key, true);
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\ThumbnailGenerator.cs`
+
+```csharp
+using SkiaSharp;
+
+namespace Tagium.Core.Services;
+
+public class ThumbnailGenerator
+{
+    private const int JpegQuality = 75;
+
+    private static readonly SKColor PlaceholderBackgroundColor = new(30, 30, 30);
+    public static readonly SKColor ErrorColor = SKColors.DarkRed;
+    public static readonly SKColor VideoColor = SKColors.DarkSlateBlue;
+    public static readonly SKColor GenericColor = SKColors.Gray;
+
+    public async Task<bool> GenerateImageThumbnailAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            try
+            {
+                using SKCodec? codec = SKCodec.Create(sourcePath);
+                if (codec is null)
+                {
+                    using SKBitmap? fallbackBitmap = SKBitmap.Decode(sourcePath);
+                    if (fallbackBitmap is null)
+                    {
+                        return false;
+                    }
+                    SaveResized(fallbackBitmap, destPath, size);
+                    return true;
+                }
+
+                float scale = (float)size / Math.Max(codec.Info.Width, codec.Info.Height);
+                if (scale < 1.0f)
+                {
+                    var scaledSize = codec.GetScaledDimensions(scale);
+                    SKImageInfo nearestInfo = new(
+                        scaledSize.Width,
+                        scaledSize.Height,
+                        codec.Info.ColorType,
+                        codec.Info.AlphaType);
+
+                    using SKBitmap? original = SKBitmap.Decode(codec, nearestInfo);
+                    if (original is null)
+                    {
+                        return false;
+                    }
+
+                    SaveResized(original, destPath, size);
+                    return true;
+                }
+                else
+                {
+                    using SKBitmap? original = SKBitmap.Decode(sourcePath);
+                    if (original is null)
+                    {
+                        return false;
+                    }
+
+                    SaveResized(original, destPath, size);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ThumbnailGenerator] Sub-sampled decode failed for {sourcePath}: {ex.Message}");
+                return false;
+            }
+        }, cancellationToken);
+    }
+
+    public void GeneratePlaceholder(string destPath, int size, string text, SKColor backgroundColor)
+    {
+        using SKBitmap bitmap = new(size, size);
+        using SKCanvas canvas = new(bitmap);
+
+        canvas.Clear(backgroundColor);
+
+        using SKPaint textPaint = new()
+        {
+            Color = SKColors.White,
+            IsAntialias = true
+        };
+
+        float fontSize = size / 4.0f;
+        using SKFont font = new()
+        {
+            Size = fontSize
+        };
+
+        float x = size / 2.0f;
+        float y = (size / 2.0f) + (fontSize / 2.0f) - 5;
+
+        canvas.DrawText(text, x, y, SKTextAlign.Center, font, textPaint);
+        EncodeAndSave(bitmap, destPath);
+    }
+
+    private static void SaveResized(SKBitmap original, string destPath, int size)
+    {
+        using SKBitmap square = new(size, size);
+        using SKCanvas canvas = new(square);
+
+        canvas.Clear(PlaceholderBackgroundColor);
+
+        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
+        int drawWidth = (int)(original.Width * ratio);
+        int drawHeight = (int)(original.Height * ratio);
+        int x = (size - drawWidth) / 2;
+        int y = (size - drawHeight) / 2;
+
+        SKImageInfo info = new(drawWidth, drawHeight);
+        using SKBitmap? resized = original.Resize(info, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Nearest));
+
+        if (resized is null)
+        {
+            return;
+        }
+
+        canvas.DrawBitmap(resized, x, y);
+        EncodeAndSave(square, destPath);
+    }
+
+    private static void EncodeAndSave(SKBitmap bitmap, string destPath)
+    {
+        using SKImage image = SKImage.FromBitmap(bitmap);
+        using SKData data = image.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
+        using FileStream stream = File.OpenWrite(destPath);
+        data.SaveTo(stream);
+    }
+}
+```
+
+---
+
 ### `Tagium.Core\Services\ThumbnailService.cs`
 
 ```csharp
-using FFMpegCore;
-using SkiaSharp;
 using System.Collections.Concurrent;
-using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
 
 public sealed class ThumbnailService
 {
-    private readonly string _cacheDir;
-    private readonly bool _hasFFmpeg;
-    private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ThumbnailCache _cache;
+    private readonly ThumbnailGenerator _generator;
+    private readonly VideoFrameExtractor _extractor;
+
     private readonly ConcurrentDictionary<string, bool> _activeGenerations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _generationSemaphore;
 
-    private const int DefaultThumbnailSize = 800;
-    private const int PngQuality = 85;
-    private const int VideoEarlyCaptureSeconds = 5;
-    private const int VideoDurationThresholdSeconds = 10;
-    private const double VideoLateCaptureRatio = 0.1;
+    private int _queueTotal = 0;
+    private int _queueProcessed = 0;
+    private readonly object _queueLock = new();
 
-    private static readonly SKColor PlaceholderBackgroundColor = new(30, 30, 30);
-    private static readonly SKColor ErrorColor = SKColors.DarkRed;
-    private static readonly SKColor VideoColor = SKColors.DarkSlateBlue;
-    private static readonly SKColor GenericColor = SKColors.Gray;
+    private CancellationTokenSource? _bgQueueCts;
+    private bool _isBgQueueRunning = false;
+
+    private const int DefaultThumbnailSize = 300;
 
     public event Action<Guid>? ThumbnailGenerated;
+    public event Action<int, int>? QueueProgressChanged;
+    public event Action? QueueCompleted;
 
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -2628,48 +2836,22 @@ public sealed class ThumbnailService
 
     public ThumbnailService()
     {
-        _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+        _cache = new ThumbnailCache();
+        _generator = new ThumbnailGenerator();
+        _extractor = new VideoFrameExtractor();
 
-        // Populate the cache with existing thumbnail files from disk
-        if (Directory.Exists(_cacheDir))
-        {
-            try
-            {
-                foreach (string file in Directory.EnumerateFiles(_cacheDir, "*.png"))
-                {
-                    string name = Path.GetFileNameWithoutExtension(file);
-                    _thumbnailCache.TryAdd(name, true);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ThumbnailService] Error scanning cache: {ex.Message}");
-            }
-        }
-
-        string? ffmpegPath = FFmpegLocator.Find();
-        _hasFFmpeg = ffmpegPath is not null;
-
-        if (!_hasFFmpeg)
-        {
-            Console.WriteLine("[ThumbnailService] WARNING: ffmpeg.exe or ffprobe.exe not found. Video thumbnails disabled.");
-            return;
-        }
-
-        string binaryFolder = Path.GetDirectoryName(ffmpegPath)!;
-        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
+        int concurrencyLimit = Math.Max(2, Environment.ProcessorCount / 2);
+        _generationSemaphore = new SemaphoreSlim(concurrencyLimit, concurrencyLimit);
     }
 
     public string GetThumbnailPath(string? hash, Guid fileId)
     {
-        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
-        return Path.Combine(_cacheDir, $"{key}.png");
+        return _cache.GetThumbnailPath(hash, fileId);
     }
 
     public bool HasThumbnail(Guid fileId, string? hash)
     {
-        string key = !string.IsNullOrEmpty(hash) ? hash : fileId.ToString("N");
-        return _thumbnailCache.ContainsKey(key);
+        return _cache.HasThumbnail(fileId, hash);
     }
 
     public async Task GenerateThumbnailAsync(FileEntry file, int size = DefaultThumbnailSize, CancellationToken cancellationToken = default)
@@ -2677,98 +2859,214 @@ public sealed class ThumbnailService
         string key = !string.IsNullOrEmpty(file.Hash) ? file.Hash : file.Id.ToString("N");
         string destPath = GetThumbnailPath(file.Hash, file.Id);
 
-        // Skip immediately if we already know it exists or the original file was removed from disk
-        if (_thumbnailCache.ContainsKey(key) || !File.Exists(file.Path))
+        if (_cache.HasThumbnail(file.Id, file.Hash) || !File.Exists(file.Path))
         {
             return;
         }
 
-        // Avoid triggering multiple duplicate task threads for the exact same file
         if (!_activeGenerations.TryAdd(key, true))
         {
             return;
         }
 
+        await _generationSemaphore.WaitAsync(cancellationToken);
+
         try
         {
             if (!File.Exists(destPath))
             {
-                await TryGenerateThumbnailAsync(file.Path, destPath, size, cancellationToken);
+                await TryGenerateThumbnailInternalAsync(file.Path, destPath, size, cancellationToken);
             }
-            _thumbnailCache.TryAdd(key, true);
+            _cache.AddToCache(key);
             ThumbnailGenerated?.Invoke(file.Id);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Thumbnail] Error generating for {file.Path}: {ex.Message}");
-            GeneratePlaceholder(destPath, size, "ERR", ErrorColor);
-            _thumbnailCache.TryAdd(key, true);
+            Console.WriteLine($"[ThumbnailService] Error generating for {file.Path}: {ex.Message}");
+            _generator.GeneratePlaceholder(destPath, size, "ERR", ThumbnailGenerator.ErrorColor);
+            _cache.AddToCache(key);
             ThumbnailGenerated?.Invoke(file.Id);
         }
         finally
         {
+            _generationSemaphore.Release();
             _activeGenerations.TryRemove(key, out _);
         }
     }
 
-    private async Task TryGenerateThumbnailAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
+    private async Task TryGenerateThumbnailInternalAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
     {
         string extension = Path.GetExtension(sourcePath).ToLowerInvariant();
 
-        bool success = extension switch
+        if (ImageExtensions.Contains(extension))
         {
-            var e when ImageExtensions.Contains(e) => await TryGenerateImageAsync(sourcePath, destPath, size, cancellationToken),
-            var e when VideoExtensions.Contains(e) => await TryGenerateVideoAsync(sourcePath, destPath, size, cancellationToken),
-            _ => false
-        };
+            _ = await _generator.GenerateImageThumbnailAsync(sourcePath, destPath, size, cancellationToken);
+        }
+        else if (VideoExtensions.Contains(extension))
+        {
+            if (!_extractor.HasFFmpeg)
+            {
+                _generator.GeneratePlaceholder(destPath, size, "VIDEO", ThumbnailGenerator.VideoColor);
+                return;
+            }
 
-        if (!success)
+            string? tempFramePath = await _extractor.ExtractFrameAsync(sourcePath);
+            if (tempFramePath is not null)
+            {
+                try
+                {
+                    _ = await _generator.GenerateImageThumbnailAsync(tempFramePath, destPath, size, cancellationToken);
+                }
+                finally
+                {
+                    VideoFrameExtractor.CleanupTempFile(tempFramePath);
+                }
+            }
+            else
+            {
+                _generator.GeneratePlaceholder(destPath, size, "VIDEO", ThumbnailGenerator.VideoColor);
+            }
+        }
+        else
         {
             string label = extension.TrimStart('.').ToUpperInvariant();
-            GeneratePlaceholder(destPath, size, label, GenericColor);
+            _generator.GeneratePlaceholder(destPath, size, label, ThumbnailGenerator.GenericColor);
         }
     }
 
-    private static async Task<bool> TryGenerateImageAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
+    public void QueueBackgroundGeneration(IEnumerable<FileEntry> files)
     {
-        using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath), cancellationToken);
+        _bgQueueCts?.Cancel();
+        _bgQueueCts = new CancellationTokenSource();
+        CancellationToken token = _bgQueueCts.Token;
 
-        if (original is null)
+        List<FileEntry> fileList = files.ToList();
+        if (fileList.Count == 0)
         {
-            return false;
+            return;
         }
 
-        SaveResized(original, destPath, size);
-        return true;
+        _ = Task.Run(async () =>
+        {
+            _isBgQueueRunning = true;
+            try
+            {
+                List<FileEntry> missingFiles = fileList.Where(f => !HasThumbnail(f.Id, f.Hash)).ToList();
+                int totalMissing = missingFiles.Count;
+
+                if (totalMissing == 0)
+                {
+                    lock (_queueLock)
+                    {
+                        _queueProcessed = 0;
+                        _queueTotal = 0;
+                    }
+                    QueueCompleted?.Invoke();
+                    return;
+                }
+
+                lock (_queueLock)
+                {
+                    _queueProcessed = 0;
+                    _queueTotal = totalMissing;
+                    QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
+                }
+
+                foreach (FileEntry file in missingFiles)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    while (_activeGenerations.Count > 0)
+                    {
+                        await Task.Delay(100, token);
+                    }
+
+                    await GenerateThumbnailAsync(file, DefaultThumbnailSize, token);
+
+                    lock (_queueLock)
+                    {
+                        _queueProcessed++;
+                        QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
+                    }
+                }
+
+                lock (_queueLock)
+                {
+                    _queueProcessed = 0;
+                    _queueTotal = 0;
+                }
+                QueueCompleted?.Invoke();
+            }
+            catch (TaskCanceledException)
+            {
+            }
+            finally
+            {
+                _isBgQueueRunning = false;
+            }
+        }, token);
     }
 
-    private async Task<bool> TryGenerateVideoAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
+    public void CancelBackgroundGeneration()
     {
-        if (!_hasFFmpeg)
-        {
-            GeneratePlaceholder(destPath, size, "VIDEO", VideoColor);
-            return true;
-        }
+        _bgQueueCts?.Cancel();
+    }
+}
+```
 
+---
+
+### `Tagium.Core\Services\VideoFrameExtractor.cs`
+
+```csharp
+using FFMpegCore;
+
+namespace Tagium.Core.Services;
+
+public class VideoFrameExtractor
+{
+    private const int VideoEarlyCaptureSeconds = 5;
+    private const int VideoDurationThresholdSeconds = 10;
+    private const double VideoLateCaptureRatio = 0.1;
+
+    public bool HasFFmpeg { get; }
+
+    public VideoFrameExtractor()
+    {
+        string? ffmpegPath = FFmpegLocator.Find();
+        HasFFmpeg = ffmpegPath is not null;
+
+        if (HasFFmpeg)
+        {
+            string binaryFolder = Path.GetDirectoryName(ffmpegPath!)!;
+            GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
+        }
+        else
+        {
+            Console.WriteLine("[VideoFrameExtractor] WARNING: ffmpeg.exe or ffprobe.exe not found. Video extraction disabled.");
+        }
+    }
+
+    public async Task<string?> ExtractFrameAsync(string sourcePath)
+    {
         try
         {
             TimeSpan? duration = await AnalyzeDurationAsync(sourcePath);
             if (duration is null)
             {
-                return false;
+                return null;
             }
 
             TimeSpan captureTime = CalculateCaptureTime(duration.Value);
-            string? tempFramePath = await ExtractSnapshotAsync(sourcePath, captureTime);
-
-            return tempFramePath is not null
-                && await ProcessSnapshotAsync(tempFramePath, destPath, size, cancellationToken);
+            return await ExtractSnapshotAsync(sourcePath, captureTime);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Thumbnail] Video processing error: {ex.Message}");
-            GeneratePlaceholder(destPath, size, "VIDEO", VideoColor);
-            return true;
+            Console.WriteLine($"[VideoFrameExtractor] Video processing error: {ex.Message}");
+            return null;
         }
     }
 
@@ -2798,7 +3096,7 @@ public sealed class ThumbnailService
 
     private static async Task<string?> ExtractSnapshotAsync(string sourcePath, TimeSpan captureTime)
     {
-        string tempPath = Path.GetTempFileName() + ".png";
+        string tempPath = Path.GetTempFileName() + ".jpg";
 
         try
         {
@@ -2812,86 +3110,7 @@ public sealed class ThumbnailService
         }
     }
 
-    private static async Task<bool> ProcessSnapshotAsync(string tempPath, string destPath, int size, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(tempPath), cancellationToken);
-
-            if (original is null)
-            {
-                return false;
-            }
-
-            SaveResized(original, destPath, size);
-            return true;
-        }
-        finally
-        {
-            CleanupTempFile(tempPath);
-        }
-    }
-
-    private static void SaveResized(SKBitmap original, string destPath, int size)
-    {
-        using SKBitmap square = new(size, size);
-        using SKCanvas canvas = new(square);
-
-        canvas.Clear(PlaceholderBackgroundColor);
-
-        double ratio = Math.Min((double)size / original.Width, (double)size / original.Height);
-        int drawWidth = (int)(original.Width * ratio);
-        int drawHeight = (int)(original.Height * ratio);
-        int x = (size - drawWidth) / 2;
-        int y = (size - drawHeight) / 2;
-
-        SKImageInfo info = new(drawWidth, drawHeight);
-        using SKBitmap? resized = original.Resize(info, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Nearest));
-
-        if (resized is null)
-        {
-            return;
-        }
-
-        canvas.DrawBitmap(resized, x, y);
-        EncodeAndSave(square, destPath);
-    }
-
-    private static void GeneratePlaceholder(string destPath, int size, string text, SKColor backgroundColor)
-    {
-        using SKBitmap bitmap = new(size, size);
-        using SKCanvas canvas = new(bitmap);
-
-        canvas.Clear(backgroundColor);
-
-        using SKPaint textPaint = new()
-        {
-            Color = SKColors.White,
-            IsAntialias = true
-        };
-
-        float fontSize = size / 4.0f;
-        using SKFont font = new()
-        {
-            Size = fontSize
-        };
-
-        float x = size / 2.0f;
-        float y = (size / 2.0f) + (fontSize / 2.0f) - 5;
-
-        canvas.DrawText(text, x, y, SKTextAlign.Center, font, textPaint);
-        EncodeAndSave(bitmap, destPath);
-    }
-
-    private static void EncodeAndSave(SKBitmap bitmap, string destPath)
-    {
-        using SKImage image = SKImage.FromBitmap(bitmap);
-        using SKData data = image.Encode(SKEncodedImageFormat.Png, PngQuality);
-        using FileStream stream = File.OpenWrite(destPath);
-        data.SaveTo(stream);
-    }
-
-    private static void CleanupTempFile(string path)
+    public static void CleanupTempFile(string path)
     {
         try
         {
@@ -2902,7 +3121,7 @@ public sealed class ThumbnailService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Thumbnail] Failed to cleanup temp file {path}: {ex.Message}");
+            Console.WriteLine($"[VideoFrameExtractor] Failed to cleanup temp file {path}: {ex.Message}");
         }
     }
 }
@@ -3992,6 +4211,13 @@ public partial class AppToolbar
         overflow-y: auto !important;
         box-sizing: border-box !important;
         padding: 16px !important;
+        opacity: 1 !important;
+        transition: opacity 0.15s ease-in-out !important;
+    }
+
+    #file-grid-container.initializing {
+        opacity: 0 !important;
+        pointer-events: none !important;
     }
 
     .file-grid-row {
@@ -4000,31 +4226,36 @@ public partial class AppToolbar
         flex-wrap: nowrap !important;
         gap: 16px !important;
         width: 100% !important;
+        height: calc(var(--thumb-size) + 30px) !important; /* Explicitly lock row height to prevent virtualizer math skewing */
         box-sizing: border-box !important;
         margin-bottom: 16px !important;
+        contain: layout style paint !important; /* CSS containment for massive reflow savings */
     }
 
     .file-card {
         width: var(--thumb-size) !important;
+        height: 100% !important; /* Let cards stretch to fill locked row height exactly */
         flex-shrink: 0 !important;
         flex-grow: 0 !important;
         box-sizing: border-box !important;
+        contain: strict !important; /* Card has completely locked height and width! */
     }
 </style>
 
 <div id="file-grid-container"
-     class="grid-container"
+     class="grid-container @(_isInitialized ? "" : "initializing")"
      style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
 
-    <Virtualize Items="FileRows" Context="row">
-        <div class="file-grid-row">
+    <Virtualize Items="FileRows" ItemSize="@(Settings.Current.ThumbnailSize + 46)" Context="row">
+        <div @key="row" class="file-grid-row">
             @foreach (var file in row)
             {
                 bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
                 bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
                 TriggerThumbnailIfMissing(file, hasThumb);
 
-                <div class="file-card @(isSelected ? "selected" : "")"
+                <div @key="file.Id"
+                     class="file-card @(isSelected ? "selected" : "")"
                      data-id="@file.Id"
                      @onclick="e => OnCardClick(e, file.Id)"
                      @ondblclick="e => OnCardDoubleClick(e, file)"
@@ -4033,7 +4264,7 @@ public partial class AppToolbar
                     <div class="thumbnail @(hasThumb ? "" : "broken")">
                         @if (hasThumb)
                         {
-                            <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
+                            <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
                         }
                         else
                         {
@@ -4071,8 +4302,10 @@ public partial class FileGrid : IDisposable
     private List<FileEntry> Files = [];
     private List<List<FileEntry>> FileRows = [];
     private int _columnsCount = 5;
+    private bool _isInitialized = false;
     private DotNetObjectReference<FileGrid>? _objRef;
-    private CancellationTokenSource? _thumbnailThrottleCts;
+    private bool _isRenderPending = false;
+    private readonly object _renderLock = new();
 
     protected override void OnInitialized()
     {
@@ -4100,6 +4333,7 @@ public partial class FileGrid : IDisposable
                 const el = document.getElementById(containerId);
                 if (!el) return;
                 let lastCols = -1;
+                let timeoutId = null;
                 const observer = new ResizeObserver(entries => {
                     for (let entry of entries) {
                         const width = entry.contentRect.width;
@@ -4107,8 +4341,11 @@ public partial class FileGrid : IDisposable
                         const gap = 16;
                         const cols = Math.floor((width + gap) / (thumbSize + gap)) || 1;
                         if (cols !== lastCols) {
-                            lastCols = cols;
-                            helper.invokeMethodAsync('UpdateColumnsCount', cols);
+                            clearTimeout(timeoutId);
+                            timeoutId = setTimeout(() => {
+                                lastCols = cols;
+                                helper.invokeMethodAsync('UpdateColumnsCount', cols);
+                            }, 150);
                         }
                     }
                 });
@@ -4136,20 +4373,23 @@ public partial class FileGrid : IDisposable
 
     private void OnThumbnailGenerated(Guid fileId)
     {
-        _thumbnailThrottleCts?.Cancel();
-        _thumbnailThrottleCts = new CancellationTokenSource();
-        CancellationToken token = _thumbnailThrottleCts.Token;
+        lock (_renderLock)
+        {
+            if (_isRenderPending)
+            {
+                return;
+            }
+            _isRenderPending = true;
+        }
 
         _ = Task.Run(async () =>
         {
-            try
+            await Task.Delay(150);
+            lock (_renderLock)
             {
-                await Task.Delay(150, token);
-                await InvokeAsync(StateHasChanged);
+                _isRenderPending = false;
             }
-            catch (TaskCanceledException)
-            {
-            }
+            await InvokeAsync(StateHasChanged);
         });
     }
 
@@ -4177,10 +4417,15 @@ public partial class FileGrid : IDisposable
     [JSInvokable]
     public void UpdateColumnsCount(int count)
     {
+        _isInitialized = true;
         if (_columnsCount != count)
         {
             _columnsCount = count;
             RebuildRows();
+            StateHasChanged();
+        }
+        else
+        {
             StateHasChanged();
         }
     }
@@ -4272,9 +4517,6 @@ public partial class FileGrid : IDisposable
         Library.LibraryChanged -= ReloadData;
         Settings.SettingsChanged -= ReloadData;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
-
-        _thumbnailThrottleCts?.Cancel();
-        _thumbnailThrottleCts?.Dispose();
 
         _objRef?.Dispose();
         _ = JS.InvokeVoidAsync("eval", "if (window.gridObserverInstance) { window.gridObserverInstance.disconnect(); delete window.gridObserverInstance; }");
@@ -4395,13 +4637,14 @@ public partial class FileGrid : IDisposable
             </tr>
         </thead>
         <tbody>
-            <Virtualize Items="Files" Context="file" SpacerElement="tr">
+            <Virtualize Items="Files" ItemSize="53" Context="file" SpacerElement="tr">
                 @{
                     bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
                     bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
                     TriggerThumbnailIfMissing(file, hasThumb);
                 }
-                <tr class="file-row @(isSelected ? "selected" : "")"
+                <tr @key="file.Id"
+                    class="file-row @(isSelected ? "selected" : "")"
                     data-id="@file.Id"
                     @onclick="e => OnRowClick(e, file.Id)"
                     @ondblclick="e => OnRowDoubleClick(e, file)">
@@ -4410,7 +4653,7 @@ public partial class FileGrid : IDisposable
                         <div class="thumbnail @(hasThumb ? "" : "broken")">
                             @if (hasThumb)
                             {
-                                <img src="tagium://thumbnail/@file.Id" alt="@file.Name" />
+                                <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
                             }
                             else
                             {
@@ -4452,6 +4695,8 @@ public partial class FileListView : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
 
     private List<FileEntry> Files = [];
+    private bool _isRenderPending = false;
+    private readonly object _renderLock = new();
 
     protected override void OnInitialized()
     {
@@ -4480,7 +4725,24 @@ public partial class FileListView : IDisposable
 
     private void OnThumbnailGenerated(Guid fileId)
     {
-        _ = InvokeAsync(StateHasChanged);
+        lock (_renderLock)
+        {
+            if (_isRenderPending)
+            {
+                return;
+            }
+            _isRenderPending = true;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            lock (_renderLock)
+            {
+                _isRenderPending = false;
+            }
+            await InvokeAsync(StateHasChanged);
+        });
     }
 
     private void LoadFiles()
@@ -4685,10 +4947,6 @@ public partial class FileListView : IDisposable
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Components.Views
-@inject AppState AppState
-@inject LibraryService Library
-@inject SettingsManager Settings
-@inject ToastService ToastService
 
 <style>
     /* 1. Force the main container to be a rigid, full-screen horizontal row that never wraps */
@@ -4740,8 +4998,8 @@ public partial class FileListView : IDisposable
     }
 
     /* 6. Lock the inspector panel width.
-              Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
-              and allows the splitter's JavaScript inline style modification to override it perfectly. */
+                  Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
+                  and allows the splitter's JavaScript inline style modification to override it perfectly. */
     .inspector-panel {
         width: 320px;
         height: 100% !important;
@@ -4779,6 +5037,44 @@ public partial class FileListView : IDisposable
         align-self: stretch !important;
         flex-shrink: 0 !important;
     }
+
+    /* Stackable and highly synchronized status indicators */
+    .scan-progress-bar {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 24px !important;
+        background-color: #1a1a1a !important;
+        z-index: 9999 !important;
+        box-sizing: border-box !important;
+    }
+
+    .progress-fill {
+        height: 100% !important;
+        background-color: var(--primary-color) !important;
+        transition: width 0.15s ease-in-out !important;
+    }
+
+    .progress-label {
+        position: absolute !important;
+        top: 0 !important;
+        left: 16px !important;
+        height: 24px !important;
+        line-height: 24px !important;
+        font-size: var(--font-size-xs) !important;
+        color: white !important;
+        font-weight: 500 !important;
+    }
+
+    .scan-progress-bar.thumbnail-progress {
+        bottom: @(_scanInProgress ? "24px" : "0") !important;
+        background-color: #222 !important;
+    }
+
+        .scan-progress-bar.thumbnail-progress .progress-fill {
+            background-color: #4caf50 !important; /* Process-complimentary green for background rendering tasks */
+        }
 </style>
 
 <div class="main-layout">
@@ -4797,7 +5093,7 @@ public partial class FileListView : IDisposable
                 <div style="display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;">
                     <FilesViewToolbar @ref="FilesViewToolbarRef" />
 
-                    @if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                    @if (SettingsManager.Current.FileViewMode == FileViewMode.Grid)
                     {
                         <FileGrid />
                     }
@@ -4820,6 +5116,14 @@ public partial class FileListView : IDisposable
                 <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
             </div>
         }
+
+        @if (_thumbnailQueueActive)
+        {
+            <div class="scan-progress-bar thumbnail-progress">
+                <div class="progress-fill" style="width: @(_thumbnailProgress)%"></div>
+                <div class="progress-label">Generating thumbnails... @(_thumbnailProcessed) / @(_thumbnailTotal)</div>
+            </div>
+        }
     </div>
 
     <div class="splitter" id="splitter-right"></div>
@@ -4840,7 +5144,9 @@ public partial class FileListView : IDisposable
 ```csharp
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using Tagium.Core.Models;
 using Tagium.Core.Services;
+using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Components.Views;
 using Tagium.Photino.Blazor.Services;
 using Tagium.Photino.Blazor.Services.Toasting;
@@ -4849,25 +5155,41 @@ namespace Tagium.Photino.Blazor.Components;
 
 public partial class MainLayout : IDisposable
 {
+    [Inject] public AppState AppState { get; set; } = default!;
+    [Inject] public LibraryService Library { get; set; } = default!;
+    [Inject] public SettingsManager SettingsManager { get; set; } = default!;
+    [Inject] public ToastService Toast { get; set; } = default!;
     [Inject] private LibraryScanService ScanService { get; set; } = default!;
+    [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
-    [Inject] private ToastService Toast { get; set; } = default!;
 
     private bool _scanInProgress = false;
     private int _scanProcessed = 0;
     private int _scanTotal = 0;
     private double _scanProgress = 0;
+
+    private bool _thumbnailQueueActive = false;
+    private int _thumbnailProcessed = 0;
+    private int _thumbnailTotal = 0;
+    private double _thumbnailProgress = 0;
+
     private DotNetObjectReference<MainLayout>? _objRef;
 
     private FilesViewToolbar? FilesViewToolbarRef { get; set; }
 
     protected override void OnInitialized()
     {
-        Settings.SettingsChanged += StateHasChanged;
+        SettingsManager.SettingsChanged += StateHasChanged;
         ScanService.ScanProgress += UpdateScanProgress;
         ScanService.ScanCompleted += ShowScanStatus;
+        ThumbnailService.QueueProgressChanged += UpdateThumbnailProgress;
+        ThumbnailService.QueueCompleted += HideThumbnailProgress;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
+
+        // Queue automatic background pre-generation of all missing thumbnails on startup
+        List<FileEntry> allFiles = Library.GetFiles(null, false);
+        ThumbnailService.QueueBackgroundGeneration(allFiles);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -4909,7 +5231,7 @@ public partial class MainLayout : IDisposable
                 }
                 break;
             case "t":
-                AppState.SwitchView(AppState.CurrentView == AppView.Tags
+                AppState.SwitchView(AppState.CurrentView == AppView.Files
                     ? AppView.Files
                     : AppView.Tags);
                 break;
@@ -4939,6 +5261,34 @@ public partial class MainLayout : IDisposable
             Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
             StateHasChanged();
+
+            // Automatically queue background pre-generation of newly cataloged files
+            List<FileEntry> allFiles = Library.GetFiles(null, false);
+            ThumbnailService.QueueBackgroundGeneration(allFiles);
+        });
+    }
+
+    private void UpdateThumbnailProgress(int processed, int total)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _thumbnailQueueActive = true;
+            _thumbnailProcessed = processed;
+            _thumbnailTotal = total;
+            _thumbnailProgress = total > 0 ? (double)processed / total * 100 : 0;
+            StateHasChanged();
+        });
+    }
+
+    private void HideThumbnailProgress()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _thumbnailQueueActive = false;
+            _thumbnailProcessed = 0;
+            _thumbnailTotal = 0;
+            _thumbnailProgress = 0;
+            StateHasChanged();
         });
     }
 
@@ -4956,11 +5306,16 @@ public partial class MainLayout : IDisposable
 
     public void Dispose()
     {
-        Settings.SettingsChanged -= StateHasChanged;
+        SettingsManager.SettingsChanged -= StateHasChanged;
         ScanService.ScanProgress -= UpdateScanProgress;
         ScanService.ScanCompleted -= ShowScanStatus;
+        ThumbnailService.QueueProgressChanged -= UpdateThumbnailProgress;
+        ThumbnailService.QueueCompleted -= HideThumbnailProgress;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
+
+        // Cancel background task on dispose to prevent thread leaks during shutdown
+        ThumbnailService.CancelBackgroundGeneration();
 
         _objRef?.Dispose();
     }
@@ -5981,16 +6336,12 @@ public static class SchemeHandlers
 
         try
         {
-            FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
             ThumbnailService thumbnailService = ServiceProvider.GetRequiredService<ThumbnailService>();
 
-            FileEntry? file = fileRepo.GetById(fileId);
-            if (file is null)
-            {
-                return Stream.Null;
-            }
+            // Extract the hash parameter directly from the second URL segment
+            string hash = segments.Length > 1 && segments[1] != "none" ? segments[1] : "";
 
-            string path = thumbnailService.GetThumbnailPath(file.Hash, file.Id);
+            string path = thumbnailService.GetThumbnailPath(hash, fileId);
 
             if (!File.Exists(path))
             {
