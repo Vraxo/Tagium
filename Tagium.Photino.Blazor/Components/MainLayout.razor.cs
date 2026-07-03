@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using Tagium.Core.Models;
 using Tagium.Core.Services;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Components.Views;
@@ -41,6 +42,10 @@ public partial class MainLayout : IDisposable
         ThumbnailService.QueueCompleted += HideThumbnailProgress;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
+
+        // Queue automatic background pre-generation of all missing thumbnails on startup
+        List<FileEntry> allFiles = Library.GetFiles(null, false);
+        ThumbnailService.QueueBackgroundGeneration(allFiles);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -82,7 +87,7 @@ public partial class MainLayout : IDisposable
                 }
                 break;
             case "t":
-                AppState.SwitchView(AppState.CurrentView == AppView.Tags
+                AppState.SwitchView(AppState.CurrentView == AppView.Files
                     ? AppView.Files
                     : AppView.Tags);
                 break;
@@ -112,6 +117,10 @@ public partial class MainLayout : IDisposable
             Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
             StateHasChanged();
+
+            // Automatically queue background pre-generation of newly cataloged files
+            List<FileEntry> allFiles = Library.GetFiles(null, false);
+            ThumbnailService.QueueBackgroundGeneration(allFiles);
         });
     }
 
@@ -160,6 +169,9 @@ public partial class MainLayout : IDisposable
         ThumbnailService.QueueCompleted -= HideThumbnailProgress;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
+
+        // Cancel background task on dispose to prevent thread leaks during shutdown
+        ThumbnailService.CancelBackgroundGeneration();
 
         _objRef?.Dispose();
     }

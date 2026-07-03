@@ -20,6 +20,9 @@ public sealed class ThumbnailService
     private int _queueProcessed = 0;
     private readonly object _queueLock = new();
 
+    private CancellationTokenSource? _bgQueueCts;
+    private bool _isBgQueueRunning = false;
+
     private const int DefaultThumbnailSize = 300;
     private const int JpegQuality = 75;
     private const int VideoEarlyCaptureSeconds = 5;
@@ -128,12 +131,6 @@ public sealed class ThumbnailService
             return;
         }
 
-        lock (_queueLock)
-        {
-            _queueTotal++;
-            QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
-        }
-
         // Limit concurrent generations globally to preserve system resources
         await _generationSemaphore.WaitAsync(cancellationToken);
 
@@ -157,20 +154,91 @@ public sealed class ThumbnailService
         {
             _generationSemaphore.Release();
             _activeGenerations.TryRemove(key, out _);
+        }
+    }
 
-            lock (_queueLock)
+    public void QueueBackgroundGeneration(IEnumerable<FileEntry> files)
+    {
+        _bgQueueCts?.Cancel();
+        _bgQueueCts = new CancellationTokenSource();
+        CancellationToken token = _bgQueueCts.Token;
+
+        List<FileEntry> fileList = files.ToList();
+        if (fileList.Count == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            _isBgQueueRunning = true;
+            try
             {
-                _queueProcessed++;
-                QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
+                // Filter out files that already possess thumbnails before queueing
+                List<FileEntry> missingFiles = fileList.Where(f => !HasThumbnail(f.Id, f.Hash)).ToList();
+                int totalMissing = missingFiles.Count;
 
-                if (_queueProcessed >= _queueTotal)
+                if (totalMissing == 0)
+                {
+                    lock (_queueLock)
+                    {
+                        _queueProcessed = 0;
+                        _queueTotal = 0;
+                    }
+                    QueueCompleted?.Invoke();
+                    return;
+                }
+
+                lock (_queueLock)
+                {
+                    _queueProcessed = 0;
+                    _queueTotal = totalMissing;
+                    QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
+                }
+
+                foreach (FileEntry file in missingFiles)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    // Self-Regulation: Yield background generation slices instantly if
+                    // active viewport scrolling requests occur, ensuring perfect UX fluidity.
+                    while (_activeGenerations.Count > 0)
+                    {
+                        await Task.Delay(100, token);
+                    }
+
+                    await GenerateThumbnailAsync(file, DefaultThumbnailSize, token);
+
+                    lock (_queueLock)
+                    {
+                        _queueProcessed++;
+                        QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
+                    }
+                }
+
+                lock (_queueLock)
                 {
                     _queueProcessed = 0;
                     _queueTotal = 0;
-                    QueueCompleted?.Invoke();
                 }
+                QueueCompleted?.Invoke();
             }
-        }
+            catch (TaskCanceledException)
+            {
+            }
+            finally
+            {
+                _isBgQueueRunning = false;
+            }
+        }, token);
+    }
+
+    public void CancelBackgroundGeneration()
+    {
+        _bgQueueCts?.Cancel();
     }
 
     private async Task TryGenerateThumbnailAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
@@ -214,7 +282,7 @@ public sealed class ThumbnailService
                 if (scale < 1.0f)
                 {
                     // Compute hardware-accelerated scaled intermediate dimensions (e.g. 1/8 scale)
-                    SKSizeI scaledSize = codec.GetScaledDimensions(scale);
+                    var scaledSize = codec.GetScaledDimensions(scale);
                     SKImageInfo nearestInfo = new(
                         scaledSize.Width,
                         scaledSize.Height,
@@ -341,7 +409,7 @@ public sealed class ThumbnailService
             float scale = (float)size / Math.Max(codec.Info.Width, codec.Info.Height);
             if (scale < 1.0f)
             {
-                SKSizeI scaledSize = codec.GetScaledDimensions(scale);
+                var scaledSize = codec.GetScaledDimensions(scale);
                 SKImageInfo nearestInfo = new(
                     scaledSize.Width,
                     scaledSize.Height,
