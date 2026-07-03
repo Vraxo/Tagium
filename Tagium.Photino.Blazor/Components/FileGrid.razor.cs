@@ -10,6 +10,7 @@ namespace Tagium.Photino.Blazor.Components;
 public partial class FileGrid : IDisposable
 {
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+    [Inject] private SystemLauncherService Launcher { get; set; } = default!;
 
     private List<FileEntry> Files = [];
     private List<List<FileEntry>> FileRows = [];
@@ -155,14 +156,14 @@ public partial class FileGrid : IDisposable
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
 
-    private static void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
+    private void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
     {
         if (file.IsMissing)
         {
             return;
         }
 
-        SystemLauncherService.OpenFile(file.Path);
+        Launcher.OpenFile(file.Path);
     }
 
     [JSInvokable]
@@ -214,7 +215,7 @@ public partial class FileGrid : IDisposable
             return;
         }
 
-        SystemLauncherService.OpenFile(file.Path);
+        Launcher.OpenFile(file.Path);
     }
 
     [JSInvokable]

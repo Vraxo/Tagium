@@ -9,6 +9,7 @@ namespace Tagium.Photino.Blazor.Components;
 public partial class FileListView : IDisposable
 {
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+    [Inject] private SystemLauncherService Launcher { get; set; } = default!;
 
     private List<FileEntry> Files = [];
     private bool _isRenderPending = false;
@@ -86,7 +87,7 @@ public partial class FileListView : IDisposable
             return;
         }
 
-        SystemLauncherService.OpenFile(file.Path);
+        Launcher.OpenFile(file.Path);
     }
 
     private static string FormatDate(long unixTimestamp)

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Tagium.Core.Helpers;
 
 namespace Tagium.Core.Data;
@@ -7,9 +8,11 @@ public class DatabaseManager
 {
     public string LibraryDbPath { get; }
     public string CacheDbPath { get; }
+    private readonly ILogger<DatabaseManager> _logger;
 
-    public DatabaseManager()
+    public DatabaseManager(ILogger<DatabaseManager> logger)
     {
+        _logger = logger;
         string baseDir = AppDataHelper.GetBaseDirectory();
         LibraryDbPath = Path.Combine(baseDir, "library.db");
         CacheDbPath = Path.Combine(baseDir, "cache.db");
@@ -55,8 +58,11 @@ public class DatabaseManager
 
     private void InitializeDatabases()
     {
-        using (SqliteConnection conn = new($"Data Source={LibraryDbPath}"))
+        _logger.LogInformation("Initializing databases. Library DB: {LibraryPath}, Cache DB: {CachePath}", LibraryDbPath, CacheDbPath);
+
+        try
         {
+            using SqliteConnection conn = new($"Data Source={LibraryDbPath}");
             conn.Open();
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.CommandText = @"
@@ -93,9 +99,15 @@ public class DatabaseManager
             ";
             _ = cmd.ExecuteNonQuery();
         }
-
-        using (SqliteConnection conn = new($"Data Source={CacheDbPath}"))
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to initialize library database");
+            throw;
+        }
+
+        try
+        {
+            using SqliteConnection conn = new($"Data Source={CacheDbPath}");
             conn.Open();
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.CommandText = @"
@@ -123,12 +135,18 @@ public class DatabaseManager
             ";
             _ = cmd.ExecuteNonQuery();
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize cache database");
+            throw;
+        }
 
         MigrateSchema();
     }
 
     private void MigrateSchema()
     {
+        _logger.LogInformation("Checking schema migrations...");
         using SqliteConnection conn = GetConnection();
         string[] columns = ["Size", "ModifiedTime", "Rating", "Title", "Description"];
         foreach (string col in columns)
@@ -144,9 +162,15 @@ public class DatabaseManager
                 };
                 cmd.CommandText = $"ALTER TABLE cache.Files ADD COLUMN {col} {colType};";
                 _ = cmd.ExecuteNonQuery();
+                _logger.LogInformation("Successfully migrated column {Column} in cache.Files", col);
             }
-            catch
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
             {
+                _logger.LogDebug("Column {Column} already exists in cache.Files, skipping.", col);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Ignored error during column migration for {Column}", col);
             }
         }
 
@@ -155,9 +179,15 @@ public class DatabaseManager
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.CommandText = "ALTER TABLE Tags ADD COLUMN Category TEXT NULL;";
             _ = cmd.ExecuteNonQuery();
+            _logger.LogInformation("Successfully migrated column Category in Tags");
         }
-        catch
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
         {
+            _logger.LogDebug("Column Category already exists in Tags, skipping.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ignored error during Tags category column migration");
         }
     }
 }

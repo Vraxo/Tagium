@@ -1,5 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
 using Tagium.Core.Data;
+using Tagium.Core.Helpers;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
 using Tagium.Core.Services.DataMerge;
@@ -16,6 +19,9 @@ public static class ServiceRegistrar
 {
     public static void ConfigureServices(IServiceCollection services)
     {
+        // Logging
+        _ = services.AddLogging(loggingBuilder => loggingBuilder.AddSerilog(dispose: true));
+
         // Core - Settings
         _ = services.AddSingleton<SettingsManager>();
 
@@ -30,8 +36,14 @@ public static class ServiceRegistrar
         // Core - Undo
         _ = services.AddSingleton<UndoService>();
 
+        // Core - Helpers
+        _ = services.AddSingleton<FileHasher>();
+
         // Core - Services
         _ = services.AddSingleton<ExifToolService>();
+        _ = services.AddSingleton<ThumbnailCache>();
+        _ = services.AddSingleton<ThumbnailGenerator>();
+        _ = services.AddSingleton<VideoFrameExtractor>();
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryScanService>();
         _ = services.AddSingleton<LibraryService>();

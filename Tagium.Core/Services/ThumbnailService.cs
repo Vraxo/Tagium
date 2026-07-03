@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
@@ -8,6 +10,7 @@ public sealed class ThumbnailService
     private readonly ThumbnailCache _cache;
     private readonly ThumbnailGenerator _generator;
     private readonly VideoFrameExtractor _extractor;
+    private readonly ILogger<ThumbnailService> _logger;
 
     private readonly ConcurrentDictionary<string, bool> _activeGenerations = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _generationSemaphore;
@@ -35,14 +38,20 @@ public sealed class ThumbnailService
         ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm"
     };
 
-    public ThumbnailService()
+    public ThumbnailService(
+        ThumbnailCache cache,
+        ThumbnailGenerator generator,
+        VideoFrameExtractor extractor,
+        ILogger<ThumbnailService> logger)
     {
-        _cache = new ThumbnailCache();
-        _generator = new ThumbnailGenerator();
-        _extractor = new VideoFrameExtractor();
+        _cache = cache;
+        _generator = generator;
+        _extractor = extractor;
+        _logger = logger;
 
         int concurrencyLimit = Math.Max(2, Environment.ProcessorCount / 2);
         _generationSemaphore = new SemaphoreSlim(concurrencyLimit, concurrencyLimit);
+        _logger.LogInformation("Thumbnail service initialized with concurrency limit: {Limit}", concurrencyLimit);
     }
 
     public string GetThumbnailPath(string? hash, Guid fileId)
@@ -74,6 +83,8 @@ public sealed class ThumbnailService
 
         try
         {
+            using LogTiming timer = LogTiming.StartDebug(_logger, "Thumbnail generation for {Path}", file.Path);
+
             if (!File.Exists(destPath))
             {
                 await TryGenerateThumbnailInternalAsync(file.Path, destPath, size, cancellationToken);
@@ -83,7 +94,7 @@ public sealed class ThumbnailService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ThumbnailService] Error generating for {file.Path}: {ex.Message}");
+            _logger.LogError(ex, "Failed to generate thumbnail for path: {Path}", file.Path);
             _generator.GeneratePlaceholder(destPath, size, "ERR", ThumbnailGenerator.ErrorColor);
             _cache.AddToCache(key);
             ThumbnailGenerated?.Invoke(file.Id);
@@ -150,6 +161,7 @@ public sealed class ThumbnailService
         _ = Task.Run(async () =>
         {
             _isBgQueueRunning = true;
+            _logger.LogInformation("Starting background thumbnail pre-generation queue");
             try
             {
                 List<FileEntry> missingFiles = fileList.Where(f => !HasThumbnail(f.Id, f.Hash)).ToList();
@@ -162,6 +174,7 @@ public sealed class ThumbnailService
                         _queueProcessed = 0;
                         _queueTotal = 0;
                     }
+                    _logger.LogInformation("All files already have cached thumbnails. Skipping queue background job");
                     QueueCompleted?.Invoke();
                     return;
                 }
@@ -173,10 +186,13 @@ public sealed class ThumbnailService
                     QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
                 }
 
+                using LogTiming queueTimer = LogTiming.Start(_logger, "Background thumbnail pre-generation queue run of {Count} items", totalMissing);
+
                 foreach (FileEntry file in missingFiles)
                 {
                     if (token.IsCancellationRequested)
                     {
+                        _logger.LogInformation("Thumbnail background queue generation was canceled");
                         break;
                     }
 
@@ -199,10 +215,16 @@ public sealed class ThumbnailService
                     _queueProcessed = 0;
                     _queueTotal = 0;
                 }
+                _logger.LogInformation("Thumbnail background queue processing completed");
                 QueueCompleted?.Invoke();
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Thumbnail queue pre-generation task cancelled");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in background thumbnail generation queue");
             }
             finally
             {
@@ -213,6 +235,7 @@ public sealed class ThumbnailService
 
     public void CancelBackgroundGeneration()
     {
+        _logger.LogInformation("Cancelling background thumbnail pre-generation task");
         _bgQueueCts?.Cancel();
     }
 }

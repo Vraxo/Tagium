@@ -6,6 +6,8 @@ namespace Tagium.Photino.Blazor.Components.Inspectors;
 
 public partial class SingleFileInspector
 {
+    [Inject] private SystemLauncherService Launcher { get; set; } = default!;
+
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
     [Parameter] public List<Tag> AssignedTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
@@ -31,11 +33,11 @@ public partial class SingleFileInspector
 
     private void OpenFile()
     {
-        SystemLauncherService.OpenFile(File.Path);
+        Launcher.OpenFile(File.Path);
     }
 
     private void ShowInExplorer()
     {
-        SystemLauncherService.ShowInExplorer(File.Path);
+        Launcher.ShowInExplorer(File.Path);
     }
 }

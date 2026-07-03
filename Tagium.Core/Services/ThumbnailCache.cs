@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using Tagium.Core.Helpers;
 
 namespace Tagium.Core.Services;
@@ -6,11 +7,13 @@ namespace Tagium.Core.Services;
 public class ThumbnailCache
 {
     private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<ThumbnailCache> _logger;
 
     public string CacheDir { get; }
 
-    public ThumbnailCache()
+    public ThumbnailCache(ILogger<ThumbnailCache> logger)
     {
+        _logger = logger;
         CacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
         // Automatically purge old, bloated PNG thumbnails to migrate to high-performance JPEGs
@@ -22,10 +25,11 @@ public class ThumbnailCache
                 {
                     File.Delete(pngFile);
                 }
+                _logger.LogInformation("Purged legacy PNG thumbnails from cache directory");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ThumbnailService] Error purging old PNGs: {ex.Message}");
+                _logger.LogError(ex, "Error purging old PNG thumbnails from cache");
             }
         }
 
@@ -34,15 +38,18 @@ public class ThumbnailCache
         {
             try
             {
+                int count = 0;
                 foreach (string file in Directory.EnumerateFiles(CacheDir, "*.jpg"))
                 {
                     string name = Path.GetFileNameWithoutExtension(file);
                     _thumbnailCache.TryAdd(name, true);
+                    count++;
                 }
+                _logger.LogInformation("Successfully indexed {Count} JPEG thumbnails in cache", count);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ThumbnailCache] Error scanning cache: {ex.Message}");
+                _logger.LogError(ex, "Error scanning and populating thumbnail cache from disk");
             }
         }
     }

@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
@@ -12,6 +13,8 @@ public class LibraryScanService
     private readonly TagRepository _tagRepo;
     private readonly FileTagRepository _fileTagRepo;
     private readonly ExifToolService _exifTool;
+    private readonly FileHasher _fileHasher;
+    private readonly ILogger<LibraryScanService> _logger;
 
     public bool IsScanning { get; private set; }
     public int ProgressCurrent { get; private set; }
@@ -32,19 +35,24 @@ public class LibraryScanService
         FileRepository fileRepo,
         TagRepository tagRepo,
         FileTagRepository fileTagRepo,
-        ExifToolService exifTool)
+        ExifToolService exifTool,
+        FileHasher fileHasher,
+        ILogger<LibraryScanService> logger)
     {
         _rootRepo = rootRepo;
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
         _fileTagRepo = fileTagRepo;
         _exifTool = exifTool;
+        _fileHasher = fileHasher;
+        _logger = logger;
     }
 
     public async Task ScanAllAsync(CancellationToken cancellationToken = default)
     {
         if (IsScanning)
         {
+            _logger.LogWarning("ScanAllAsync requested while scanning is already in progress");
             return;
         }
 
@@ -52,11 +60,14 @@ public class LibraryScanService
         ProgressCurrent = 0;
         ProgressTotal = 0;
 
+        _logger.LogInformation("Starting library scan...");
         await Task.Run(async () => await ExecuteScanPipelineAsync(cancellationToken), cancellationToken);
     }
 
     private async Task ExecuteScanPipelineAsync(CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Library scan execution pipeline");
+
         Stopwatch uiTimer = Stopwatch.StartNew();
         ScanContext context = new();
 
@@ -65,6 +76,7 @@ public class LibraryScanService
             List<LibraryRoot> roots = _rootRepo.GetAll().Where(r => r.IsEnabled).ToList();
             if (roots.Count == 0)
             {
+                _logger.LogInformation("No active library roots configured. Scan aborted");
                 return;
             }
 
@@ -74,6 +86,7 @@ public class LibraryScanService
             ProgressTotal = context.CandidateFiles.Count;
             ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
 
+            _logger.LogInformation("Processing {Count} candidate files...", ProgressTotal);
             await ProcessCandidateFilesAsync(context, uiTimer, cancellationToken);
             await ResolveMissingAndImportNewAsync(context, uiTimer, cancellationToken);
 
@@ -82,29 +95,39 @@ public class LibraryScanService
 
             if (context.HasChanges)
             {
+                _logger.LogInformation("Library content changes detected. Triggering files imported event");
                 FilesImported?.Invoke();
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error in execute scan pipeline");
         }
         finally
         {
             IsScanning = false;
             ScanProgress?.Invoke(ProgressTotal, ProgressTotal);
+            _logger.LogInformation("Library scan completed. Resetting state");
             ScanCompleted?.Invoke();
         }
     }
 
-    private static void DiscoverCandidateFiles(List<LibraryRoot> roots, ScanContext context)
+    private void DiscoverCandidateFiles(List<LibraryRoot> roots, ScanContext context)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Candidate file discovery in active roots");
+
         foreach (LibraryRoot root in roots)
         {
             if (!Directory.Exists(root.Path))
             {
+                _logger.LogWarning("Library root directory does not exist: {Path}", root.Path);
                 continue;
             }
 
             try
             {
                 using CancellationTokenSource searchCts = new(TimeSpan.FromSeconds(30));
+                _logger.LogInformation("Enumerate files in library root: {Path}", root.Path);
                 IEnumerable<string> files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
                     .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
 
@@ -112,13 +135,14 @@ public class LibraryScanService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Scan] Error enumerating directory {root.Path}: {ex.Message}");
+                _logger.LogError(ex, "Error enumerating directory: {Path}", root.Path);
             }
         }
     }
 
     private void LoadDatabaseCache(List<LibraryRoot> roots, ScanContext context)
     {
+        _logger.LogInformation("Loading current file definitions from database");
         foreach (LibraryRoot root in roots)
         {
             List<FileEntry> dbFiles = _fileRepo.GetFilesUnderPath(root.Path);
@@ -131,10 +155,13 @@ public class LibraryScanService
 
     private async Task ProcessCandidateFilesAsync(ScanContext context, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Verification processing of {Count} candidates", context.CandidateFiles.Count);
+
         foreach (string filePath in context.CandidateFiles)
         {
             if (cancellationToken.IsCancellationRequested)
             {
+                _logger.LogWarning("File processing canceled");
                 break;
             }
 
@@ -158,6 +185,7 @@ public class LibraryScanService
                 {
                     if (existing.IsMissing)
                     {
+                        _logger.LogInformation("File returned back to active library state: {Path}", filePath);
                         existing.IsMissing = false;
                         _fileRepo.Update(existing);
                         context.HasChanges = true;
@@ -167,6 +195,7 @@ public class LibraryScanService
                 }
                 else
                 {
+                    _logger.LogInformation("File change detected: {Path}", filePath);
                     await UpdateChangedFileAsync(existing, filePath, size, modifiedTime, context, cancellationToken);
                 }
             }
@@ -177,13 +206,13 @@ public class LibraryScanService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Scan] Error examining path {filePath}: {ex.Message}");
+            _logger.LogError(ex, "Error examining path: {Path}", filePath);
         }
     }
 
     private async Task UpdateChangedFileAsync(FileEntry existing, string filePath, long size, long modifiedTime, ScanContext context, CancellationToken cancellationToken)
     {
-        string? hash = await FileHasher.ComputeSha256Async(filePath);
+        string? hash = await _fileHasher.ComputeSha256Async(filePath);
         if (hash is not null)
         {
             existing.Hash = hash;
@@ -220,6 +249,8 @@ public class LibraryScanService
 
     private async Task DetectRenamesAndMovesAsync(List<FileEntry> missingDbFiles, ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Rename and move detection of {Count} missing items", missingDbFiles.Count);
+
         Dictionary<long, List<string>> untrackedBySize = GroupUntrackedBySize(context.UntrackedFiles);
 
         foreach (FileEntry missing in missingDbFiles)
@@ -248,9 +279,10 @@ public class LibraryScanService
 
                     if (missing.ModifiedTime == modifiedTime)
                     {
-                        string? candidateHash = await FileHasher.ComputeSha256Async(candidatePath);
+                        string? candidateHash = await _fileHasher.ComputeSha256Async(candidatePath);
                         if (candidateHash == missing.Hash)
                         {
+                            _logger.LogInformation("Detected file rename/relocation. Original: {Old}, New: {New}", missing.Path, candidatePath);
                             missing.Path = candidatePath;
                             missing.Name = Path.GetFileName(candidatePath);
                             missing.IsMissing = false;
@@ -272,7 +304,7 @@ public class LibraryScanService
         }
     }
 
-    private static Dictionary<long, List<string>> GroupUntrackedBySize(List<string> untrackedFiles)
+    private Dictionary<long, List<string>> GroupUntrackedBySize(List<string> untrackedFiles)
     {
         Dictionary<long, List<string>> map = [];
         foreach (string path in untrackedFiles)
@@ -287,13 +319,18 @@ public class LibraryScanService
                 }
                 list.Add(path);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to inspect file size for grouping: {Path}", path);
+            }
         }
         return map;
     }
 
     private async Task ImportRemainingUntrackedAsync(ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Importing {Count} remaining untracked items", context.UntrackedFiles.Count - processedUntracked.Count);
+
         foreach (string path in context.UntrackedFiles)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -312,9 +349,10 @@ public class LibraryScanService
                 long size = info.Length;
                 long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
 
-                string? hash = await FileHasher.ComputeSha256Async(path);
+                string? hash = await _fileHasher.ComputeSha256Async(path);
                 if (hash is not null)
                 {
+                    _logger.LogInformation("Importing untracked file: {Path}", path);
                     _ = _fileRepo.Add(path, hash, size, modifiedTime);
                     context.HasChanges = true;
 
@@ -327,7 +365,7 @@ public class LibraryScanService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Scan] Error importing untracked file {path}: {ex.Message}");
+                _logger.LogError(ex, "Error importing untracked file {Path}", path);
             }
 
             ProgressCurrent++;
@@ -337,12 +375,15 @@ public class LibraryScanService
 
     private async Task ImportFileMetadataAsync(string path, FileEntry newEntry)
     {
+        using LogTiming timer = LogTiming.StartDebug(_logger, "Metadata and tag mapping extraction for {Path}", path);
+
         MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(path);
         if (metadata is null)
         {
             return;
         }
 
+        _logger.LogInformation("Extracting and writing embedded ExifTool metadata for imported file: {Path}", path);
         newEntry.Rating = metadata.Rating;
         newEntry.Title = metadata.Title;
         newEntry.Description = metadata.Description;
@@ -387,6 +428,7 @@ public class LibraryScanService
 
         if (finalMissingIds.Count > 0)
         {
+            _logger.LogInformation("Setting missing status for {Count} cataloged files", finalMissingIds.Count);
             _fileRepo.SetMissingStatus(finalMissingIds, true);
             context.HasChanges = true;
         }
@@ -394,6 +436,7 @@ public class LibraryScanService
 
     private void UpdateRootsLastScanTime(List<LibraryRoot> roots)
     {
+        _logger.LogInformation("Updating scan timing markers on active roots");
         foreach (LibraryRoot root in roots)
         {
             root.LastScanTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

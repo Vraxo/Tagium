@@ -6,7 +6,6 @@
 @inject LibraryService Library
 @inject AppState AppState
 @inject SettingsManager Settings
-@inject SystemLauncherService Launcher
 @inject IJSRuntime JS
 
 <style>
@@ -21,10 +20,10 @@
         transition: opacity 0.15s ease-in-out !important;
     }
 
-    #file-grid-container.initializing {
-        opacity: 0 !important;
-        pointer-events: none !important;
-    }
+        #file-grid-container.initializing {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
 
     .file-grid-row {
         display: flex !important;

@@ -1,15 +1,26 @@
-﻿using System.Security.Cryptography;
+﻿using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 
 namespace Tagium.Core.Helpers;
 
-public static class FileHasher
+public class FileHasher
 {
-    public static async Task<string?> ComputeSha256Async(string filePath)
+    private readonly ILogger<FileHasher> _logger;
+
+    public FileHasher(ILogger<FileHasher> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task<string?> ComputeSha256Async(string filePath)
     {
         if (!File.Exists(filePath))
         {
+            _logger.LogWarning("File does not exist for hashing: {FilePath}", filePath);
             return null;
         }
+
+        using LogTiming timer = LogTiming.StartDebug(_logger, "SHA256 computation for {FilePath}", filePath);
 
         try
         {
@@ -37,7 +48,7 @@ public static class FileHasher
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FileHasher] Error: {ex.Message}");
+            _logger.LogError(ex, "Error computing SHA256 for file: {FilePath}", filePath);
             return null;
         }
     }

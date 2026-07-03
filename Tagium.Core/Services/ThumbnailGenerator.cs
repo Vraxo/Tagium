@@ -1,15 +1,22 @@
-﻿using SkiaSharp;
+﻿using Microsoft.Extensions.Logging;
+using SkiaSharp;
 
 namespace Tagium.Core.Services;
 
 public class ThumbnailGenerator
 {
     private const int JpegQuality = 75;
+    private readonly ILogger<ThumbnailGenerator> _logger;
 
     private static readonly SKColor PlaceholderBackgroundColor = new(30, 30, 30);
     public static readonly SKColor ErrorColor = SKColors.DarkRed;
     public static readonly SKColor VideoColor = SKColors.DarkSlateBlue;
     public static readonly SKColor GenericColor = SKColors.Gray;
+
+    public ThumbnailGenerator(ILogger<ThumbnailGenerator> logger)
+    {
+        _logger = logger;
+    }
 
     public async Task<bool> GenerateImageThumbnailAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
     {
@@ -23,6 +30,7 @@ public class ThumbnailGenerator
                     using SKBitmap? fallbackBitmap = SKBitmap.Decode(sourcePath);
                     if (fallbackBitmap is null)
                     {
+                        _logger.LogWarning("Failed to decode image using fallback decoder for path: {Path}", sourcePath);
                         return false;
                     }
                     SaveResized(fallbackBitmap, destPath, size);
@@ -32,7 +40,7 @@ public class ThumbnailGenerator
                 float scale = (float)size / Math.Max(codec.Info.Width, codec.Info.Height);
                 if (scale < 1.0f)
                 {
-                    var scaledSize = codec.GetScaledDimensions(scale);
+                    SKSizeI scaledSize = codec.GetScaledDimensions(scale);
                     SKImageInfo nearestInfo = new(
                         scaledSize.Width,
                         scaledSize.Height,
@@ -42,6 +50,7 @@ public class ThumbnailGenerator
                     using SKBitmap? original = SKBitmap.Decode(codec, nearestInfo);
                     if (original is null)
                     {
+                        _logger.LogWarning("Failed to decode image with sub-sampling for path: {Path}", sourcePath);
                         return false;
                     }
 
@@ -53,6 +62,7 @@ public class ThumbnailGenerator
                     using SKBitmap? original = SKBitmap.Decode(sourcePath);
                     if (original is null)
                     {
+                        _logger.LogWarning("Failed to decode full image for path: {Path}", sourcePath);
                         return false;
                     }
 
@@ -62,7 +72,7 @@ public class ThumbnailGenerator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ThumbnailGenerator] Sub-sampled decode failed for {sourcePath}: {ex.Message}");
+                _logger.LogError(ex, "Sub-sampled decode failed for: {Path}", sourcePath);
                 return false;
             }
         }, cancellationToken);
@@ -70,28 +80,35 @@ public class ThumbnailGenerator
 
     public void GeneratePlaceholder(string destPath, int size, string text, SKColor backgroundColor)
     {
-        using SKBitmap bitmap = new(size, size);
-        using SKCanvas canvas = new(bitmap);
-
-        canvas.Clear(backgroundColor);
-
-        using SKPaint textPaint = new()
+        try
         {
-            Color = SKColors.White,
-            IsAntialias = true
-        };
+            using SKBitmap bitmap = new(size, size);
+            using SKCanvas canvas = new(bitmap);
 
-        float fontSize = size / 4.0f;
-        using SKFont font = new()
+            canvas.Clear(backgroundColor);
+
+            using SKPaint textPaint = new()
+            {
+                Color = SKColors.White,
+                IsAntialias = true
+            };
+
+            float fontSize = size / 4.0f;
+            using SKFont font = new()
+            {
+                Size = fontSize
+            };
+
+            float x = size / 2.0f;
+            float y = (size / 2.0f) + (fontSize / 2.0f) - 5;
+
+            canvas.DrawText(text, x, y, SKTextAlign.Center, font, textPaint);
+            EncodeAndSave(bitmap, destPath);
+        }
+        catch (Exception ex)
         {
-            Size = fontSize
-        };
-
-        float x = size / 2.0f;
-        float y = (size / 2.0f) + (fontSize / 2.0f) - 5;
-
-        canvas.DrawText(text, x, y, SKTextAlign.Center, font, textPaint);
-        EncodeAndSave(bitmap, destPath);
+            _logger.LogError(ex, "Error generating placeholder thumbnail for path: {Path}", destPath);
+        }
     }
 
     private static void SaveResized(SKBitmap original, string destPath, int size)

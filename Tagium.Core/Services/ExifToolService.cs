@@ -1,7 +1,9 @@
-﻿using System.Diagnostics;
+﻿using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
@@ -14,11 +16,13 @@ public class ExifToolService : IDisposable
     private StreamReader? _stdout;
     private readonly object _lock = new();
     private bool _isDisposed;
+    private readonly ILogger<ExifToolService> _logger;
 
     public bool IsEnabled { get; private set; }
 
-    public ExifToolService()
+    public ExifToolService(ILogger<ExifToolService> logger)
     {
+        _logger = logger;
         _commandName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "exiftool.exe" : "exiftool";
         InitializeProcess();
     }
@@ -49,18 +53,22 @@ public class ExifToolService : IDisposable
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        Console.WriteLine($"[ExifTool Warning] {e.Data}");
+                        _logger.LogWarning("ExifTool Process Output: {Warning}", e.Data);
                     }
                 };
                 _exifToolProcess.BeginErrorReadLine();
 
                 IsEnabled = !_exifToolProcess.HasExited;
+                if (IsEnabled)
+                {
+                    _logger.LogInformation("Persistent ExifTool daemon successfully started");
+                }
             }
         }
         catch (Exception ex)
         {
             IsEnabled = false;
-            Console.WriteLine($"[ExifToolService] WARNING: Failed to initialize persistent daemon: {ex.Message}. Metadata writing and reading will be disabled.");
+            _logger.LogWarning(ex, "Failed to initialize persistent ExifTool daemon. Metadata reading and writing will be disabled");
         }
     }
 
@@ -70,6 +78,8 @@ public class ExifToolService : IDisposable
         {
             return null;
         }
+
+        using LogTiming timer = LogTiming.StartDebug(_logger, "ExifTool read metadata for {FilePath}", filePath);
 
         try
         {
@@ -152,7 +162,7 @@ public class ExifToolService : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ExifTool] Exception reading {filePath}: {ex.Message}");
+            _logger.LogError(ex, "Exception reading metadata for file: {FilePath}", filePath);
             return null;
         }
     }
@@ -163,6 +173,8 @@ public class ExifToolService : IDisposable
         {
             return false;
         }
+
+        using LogTiming timer = LogTiming.Start(_logger, "ExifTool write metadata for {FilePath}", filePath);
 
         try
         {
@@ -223,7 +235,7 @@ public class ExifToolService : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ExifTool] Exception writing {filePath}: {ex.Message}");
+            _logger.LogError(ex, "Exception writing metadata for file: {FilePath}", filePath);
             return false;
         }
     }
@@ -277,8 +289,9 @@ public class ExifToolService : IDisposable
                 }
                 _exifToolProcess.WaitForExit(3000);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error shutting down ExifTool process");
             }
             finally
             {
