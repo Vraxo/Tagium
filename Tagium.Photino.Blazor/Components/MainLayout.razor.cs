@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Tagium.Core.Services;
+using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Components.Views;
 using Tagium.Photino.Blazor.Services;
 using Tagium.Photino.Blazor.Services.Toasting;
@@ -9,23 +10,35 @@ namespace Tagium.Photino.Blazor.Components;
 
 public partial class MainLayout : IDisposable
 {
+    [Inject] public AppState AppState { get; set; } = default!;
+    [Inject] public LibraryService Library { get; set; } = default!;
+    [Inject] public SettingsManager SettingsManager { get; set; } = default!;
+    [Inject] public ToastService Toast { get; set; } = default!;
     [Inject] private LibraryScanService ScanService { get; set; } = default!;
+    [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
-    [Inject] private ToastService Toast { get; set; } = default!;
 
     private bool _scanInProgress = false;
     private int _scanProcessed = 0;
     private int _scanTotal = 0;
     private double _scanProgress = 0;
+
+    private bool _thumbnailQueueActive = false;
+    private int _thumbnailProcessed = 0;
+    private int _thumbnailTotal = 0;
+    private double _thumbnailProgress = 0;
+
     private DotNetObjectReference<MainLayout>? _objRef;
 
     private FilesViewToolbar? FilesViewToolbarRef { get; set; }
 
     protected override void OnInitialized()
     {
-        Settings.SettingsChanged += StateHasChanged;
+        SettingsManager.SettingsChanged += StateHasChanged;
         ScanService.ScanProgress += UpdateScanProgress;
         ScanService.ScanCompleted += ShowScanStatus;
+        ThumbnailService.QueueProgressChanged += UpdateThumbnailProgress;
+        ThumbnailService.QueueCompleted += HideThumbnailProgress;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
     }
@@ -102,6 +115,30 @@ public partial class MainLayout : IDisposable
         });
     }
 
+    private void UpdateThumbnailProgress(int processed, int total)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _thumbnailQueueActive = true;
+            _thumbnailProcessed = processed;
+            _thumbnailTotal = total;
+            _thumbnailProgress = total > 0 ? (double)processed / total * 100 : 0;
+            StateHasChanged();
+        });
+    }
+
+    private void HideThumbnailProgress()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _thumbnailQueueActive = false;
+            _thumbnailProcessed = 0;
+            _thumbnailTotal = 0;
+            _thumbnailProgress = 0;
+            StateHasChanged();
+        });
+    }
+
     private void OnLibraryChanged()
     {
         _ = InvokeAsync(StateHasChanged);
@@ -116,9 +153,11 @@ public partial class MainLayout : IDisposable
 
     public void Dispose()
     {
-        Settings.SettingsChanged -= StateHasChanged;
+        SettingsManager.SettingsChanged -= StateHasChanged;
         ScanService.ScanProgress -= UpdateScanProgress;
         ScanService.ScanCompleted -= ShowScanStatus;
+        ThumbnailService.QueueProgressChanged -= UpdateThumbnailProgress;
+        ThumbnailService.QueueCompleted -= HideThumbnailProgress;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
 

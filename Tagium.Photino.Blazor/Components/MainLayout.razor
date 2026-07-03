@@ -5,10 +5,6 @@
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Components.Views
-@inject AppState AppState
-@inject LibraryService Library
-@inject SettingsManager Settings
-@inject ToastService ToastService
 
 <style>
     /* 1. Force the main container to be a rigid, full-screen horizontal row that never wraps */
@@ -99,6 +95,44 @@
         align-self: stretch !important;
         flex-shrink: 0 !important;
     }
+
+    /* Stackable and highly synchronized status indicators */
+    .scan-progress-bar {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 24px !important;
+        background-color: #1a1a1a !important;
+        z-index: 9999 !important;
+        box-sizing: border-box !important;
+    }
+
+    .progress-fill {
+        height: 100% !important;
+        background-color: var(--primary-color) !important;
+        transition: width 0.15s ease-in-out !important;
+    }
+
+    .progress-label {
+        position: absolute !important;
+        top: 0 !important;
+        left: 16px !important;
+        height: 24px !important;
+        line-height: 24px !important;
+        font-size: var(--font-size-xs) !important;
+        color: white !important;
+        font-weight: 500 !important;
+    }
+
+    .scan-progress-bar.thumbnail-progress {
+        bottom: @(_scanInProgress ? "24px" : "0") !important;
+        background-color: #222 !important;
+    }
+
+    .scan-progress-bar.thumbnail-progress .progress-fill {
+        background-color: #4caf50 !important; /* Process-complimentary green for background rendering tasks */
+    }
 </style>
 
 <div class="main-layout">
@@ -117,7 +151,7 @@
                 <div style="display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;">
                     <FilesViewToolbar @ref="FilesViewToolbarRef" />
 
-                    @if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                    @if (SettingsManager.Current.FileViewMode == FileViewMode.Grid)
                     {
                         <FileGrid />
                     }
@@ -138,6 +172,14 @@
             <div class="scan-progress-bar">
                 <div class="progress-fill" style="width: @(_scanProgress)%"></div>
                 <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
+            </div>
+        }
+
+        @if (_thumbnailQueueActive)
+        {
+            <div class="scan-progress-bar thumbnail-progress">
+                <div class="progress-fill" style="width: @(_thumbnailProgress)%"></div>
+                <div class="progress-label">Generating thumbnails... @(_thumbnailProcessed) / @(_thumbnailTotal)</div>
             </div>
         }
     </div>

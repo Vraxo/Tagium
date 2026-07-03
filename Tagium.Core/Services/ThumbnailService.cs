@@ -16,6 +16,10 @@ public sealed class ThumbnailService
     // Dynamic concurrency throttle configured based on physical logical core counts
     private readonly SemaphoreSlim _generationSemaphore;
 
+    private int _queueTotal = 0;
+    private int _queueProcessed = 0;
+    private readonly object _queueLock = new();
+
     private const int DefaultThumbnailSize = 300;
     private const int JpegQuality = 75;
     private const int VideoEarlyCaptureSeconds = 5;
@@ -28,6 +32,8 @@ public sealed class ThumbnailService
     private static readonly SKColor GenericColor = SKColors.Gray;
 
     public event Action<Guid>? ThumbnailGenerated;
+    public event Action<int, int>? QueueProgressChanged;
+    public event Action? QueueCompleted;
 
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -122,6 +128,12 @@ public sealed class ThumbnailService
             return;
         }
 
+        lock (_queueLock)
+        {
+            _queueTotal++;
+            QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
+        }
+
         // Limit concurrent generations globally to preserve system resources
         await _generationSemaphore.WaitAsync(cancellationToken);
 
@@ -145,6 +157,19 @@ public sealed class ThumbnailService
         {
             _generationSemaphore.Release();
             _activeGenerations.TryRemove(key, out _);
+
+            lock (_queueLock)
+            {
+                _queueProcessed++;
+                QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
+
+                if (_queueProcessed >= _queueTotal)
+                {
+                    _queueProcessed = 0;
+                    _queueTotal = 0;
+                    QueueCompleted?.Invoke();
+                }
+            }
         }
     }
 
@@ -189,7 +214,7 @@ public sealed class ThumbnailService
                 if (scale < 1.0f)
                 {
                     // Compute hardware-accelerated scaled intermediate dimensions (e.g. 1/8 scale)
-                    var scaledSize = codec.GetScaledDimensions(scale);
+                    SKSizeI scaledSize = codec.GetScaledDimensions(scale);
                     SKImageInfo nearestInfo = new(
                         scaledSize.Width,
                         scaledSize.Height,
@@ -316,7 +341,7 @@ public sealed class ThumbnailService
             float scale = (float)size / Math.Max(codec.Info.Width, codec.Info.Height);
             if (scale < 1.0f)
             {
-                var scaledSize = codec.GetScaledDimensions(scale);
+                SKSizeI scaledSize = codec.GetScaledDimensions(scale);
                 SKImageInfo nearestInfo = new(
                     scaledSize.Width,
                     scaledSize.Height,
