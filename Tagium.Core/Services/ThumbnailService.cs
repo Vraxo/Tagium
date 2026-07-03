@@ -13,8 +13,8 @@ public sealed class ThumbnailService
     private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, bool> _activeGenerations = new(StringComparer.OrdinalIgnoreCase);
 
-    // Strict concurrency limit to prevent thread thrashing and CPU spikes
-    private readonly SemaphoreSlim _generationSemaphore = new(2, 2);
+    // Dynamic concurrency throttle configured based on physical logical core counts
+    private readonly SemaphoreSlim _generationSemaphore;
 
     private const int DefaultThumbnailSize = 300;
     private const int JpegQuality = 75;
@@ -42,6 +42,10 @@ public sealed class ThumbnailService
     public ThumbnailService()
     {
         _cacheDir = AppDataHelper.GetThumbnailCacheDirectory();
+
+        // Calculate maximum concurrency scale based on logical processors
+        int concurrencyLimit = Math.Max(2, Environment.ProcessorCount / 2);
+        _generationSemaphore = new SemaphoreSlim(concurrencyLimit, concurrencyLimit);
 
         // Automatically purge old, bloated PNG thumbnails to migrate to high-performance JPEGs
         if (Directory.Exists(_cacheDir))
@@ -164,15 +168,63 @@ public sealed class ThumbnailService
 
     private static async Task<bool> TryGenerateImageAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
     {
-        using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(sourcePath), cancellationToken);
-
-        if (original is null)
+        return await Task.Run(() =>
         {
-            return false;
-        }
+            try
+            {
+                using SKCodec? codec = SKCodec.Create(sourcePath);
+                if (codec is null)
+                {
+                    // Graceful fallback to standard bitmap decoder if SKCodec cannot instantiate
+                    using SKBitmap? fallbackBitmap = SKBitmap.Decode(sourcePath);
+                    if (fallbackBitmap is null)
+                    {
+                        return false;
+                    }
+                    SaveResized(fallbackBitmap, destPath, size);
+                    return true;
+                }
 
-        SaveResized(original, destPath, size);
-        return true;
+                float scale = (float)size / Math.Max(codec.Info.Width, codec.Info.Height);
+                if (scale < 1.0f)
+                {
+                    // Compute hardware-accelerated scaled intermediate dimensions (e.g. 1/8 scale)
+                    var scaledSize = codec.GetScaledDimensions(scale);
+                    SKImageInfo nearestInfo = new(
+                        scaledSize.Width,
+                        scaledSize.Height,
+                        codec.Info.ColorType,
+                        codec.Info.AlphaType);
+
+                    // Decode only the sub-sampled coefficients into memory to save massive RAM and CPU allocations
+                    using SKBitmap? original = SKBitmap.Decode(codec, nearestInfo);
+                    if (original is null)
+                    {
+                        return false;
+                    }
+
+                    SaveResized(original, destPath, size);
+                    return true;
+                }
+                else
+                {
+                    // Fallback to standard bitmap decoder if original dimensions are already within target bounds
+                    using SKBitmap? original = SKBitmap.Decode(sourcePath);
+                    if (original is null)
+                    {
+                        return false;
+                    }
+
+                    SaveResized(original, destPath, size);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Thumbnail] Sub-sampled decode failed for {sourcePath}: {ex.Message}");
+                return false;
+            }
+        }, cancellationToken);
     }
 
     private async Task<bool> TryGenerateVideoAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
@@ -249,15 +301,48 @@ public sealed class ThumbnailService
     {
         try
         {
-            using SKBitmap? original = await Task.Run(() => SKBitmap.Decode(tempPath), cancellationToken);
-
-            if (original is null)
+            using SKCodec? codec = SKCodec.Create(tempPath);
+            if (codec is null)
             {
-                return false;
+                using SKBitmap? fallback = SKBitmap.Decode(tempPath);
+                if (fallback is null)
+                {
+                    return false;
+                }
+                SaveResized(fallback, destPath, size);
+                return true;
             }
 
-            SaveResized(original, destPath, size);
-            return true;
+            float scale = (float)size / Math.Max(codec.Info.Width, codec.Info.Height);
+            if (scale < 1.0f)
+            {
+                var scaledSize = codec.GetScaledDimensions(scale);
+                SKImageInfo nearestInfo = new(
+                    scaledSize.Width,
+                    scaledSize.Height,
+                    codec.Info.ColorType,
+                    codec.Info.AlphaType);
+
+                using SKBitmap? original = SKBitmap.Decode(codec, nearestInfo);
+                if (original is null)
+                {
+                    return false;
+                }
+
+                SaveResized(original, destPath, size);
+                return true;
+            }
+            else
+            {
+                using SKBitmap? original = SKBitmap.Decode(tempPath);
+                if (original is null)
+                {
+                    return false;
+                }
+
+                SaveResized(original, destPath, size);
+                return true;
+            }
         }
         finally
         {
