@@ -115,7 +115,7 @@ public class VideoFrameExtractor
             }
             catch (IOException ex) when (i < maxRetries)
             {
-                _logger.LogDebug(ex, "Antivirus/OS file lock detected on {Path}. Retrying cleanup (Attempt {Current}/{Max})...", path, i, maxRetries);
+                _logger.LogDebug("Antivirus/OS file lock detected on {Path}. Retrying cleanup (Attempt {Current}/{Max})... Reason: {Reason}", path, i, maxRetries, ex.Message);
                 Thread.Sleep(delayMs);
             }
             catch (Exception ex)

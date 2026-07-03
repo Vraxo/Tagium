@@ -53,7 +53,7 @@ public class ExifToolService : IDisposable
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        _logger.LogWarning("ExifTool Process Output: {Warning}", e.Data);
+                        _logger.LogDebug("ExifTool Process Output: {Warning}", e.Data);
                     }
                 };
                 _exifToolProcess.BeginErrorReadLine();
@@ -86,6 +86,7 @@ public class ExifToolService : IDisposable
             string output;
             lock (_lock)
             {
+                _stdin!.WriteLine("-m");
                 _stdin!.WriteLine("-json");
                 _stdin!.WriteLine("-Subject");
                 _stdin!.WriteLine("-Keywords");
@@ -180,6 +181,7 @@ public class ExifToolService : IDisposable
         {
             lock (_lock)
             {
+                _stdin!.WriteLine("-m");
                 _stdin!.WriteLine("-overwrite_original");
                 _stdin!.WriteLine("-Subject=");
                 _stdin!.WriteLine("-Keywords=");

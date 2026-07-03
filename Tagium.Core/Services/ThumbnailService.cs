@@ -196,11 +196,6 @@ public sealed class ThumbnailService
                         break;
                     }
 
-                    while (_activeGenerations.Count > 0)
-                    {
-                        await Task.Delay(100, token);
-                    }
-
                     await GenerateThumbnailAsync(file, DefaultThumbnailSize, token);
 
                     lock (_queueLock)

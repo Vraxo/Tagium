@@ -12,16 +12,7 @@ public class Program
     [Obsolete]
     private static void Main(string[] args)
     {
-        string baseDir = AppDataHelper.GetBaseDirectory();
-        string logPath = Path.Combine(baseDir, "app.log");
-
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
-            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-            .MinimumLevel.Override("System", LogEventLevel.Warning)
-            .WriteTo.Console()
-            .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
-            .CreateLogger();
+        InitializeLogger();
 
         try
         {
@@ -60,5 +51,19 @@ public class Program
         {
             Log.CloseAndFlush();
         }
+    }
+
+    private static void InitializeLogger()
+    {
+        string baseDir = AppDataHelper.GetBaseDirectory();
+        string logPath = Path.Combine(baseDir, "app.log");
+
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
+            .WriteTo.Console()
+            .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+            .CreateLogger();
     }
 }
