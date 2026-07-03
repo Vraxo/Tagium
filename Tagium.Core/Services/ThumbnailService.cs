@@ -24,7 +24,6 @@ public sealed class ThumbnailService
 
     private const int DefaultThumbnailSize = 300;
 
-    public event Action<Guid>? ThumbnailGenerated;
     public event Action<int, int>? QueueProgressChanged;
     public event Action? QueueCompleted;
 
@@ -90,14 +89,12 @@ public sealed class ThumbnailService
                 await TryGenerateThumbnailInternalAsync(file.Path, destPath, size, cancellationToken);
             }
             _cache.AddToCache(key);
-            ThumbnailGenerated?.Invoke(file.Id);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate thumbnail for path: {Path}", file.Path);
             _generator.GeneratePlaceholder(destPath, size, "ERR", ThumbnailGenerator.ErrorColor);
             _cache.AddToCache(key);
-            ThumbnailGenerated?.Invoke(file.Id);
         }
         finally
         {

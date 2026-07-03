@@ -26,7 +26,7 @@ public static class SchemeHandlers
     [Obsolete]
     private static Stream HandleThumbnail(Uri uri, out string contentType)
     {
-        contentType = "image/png";
+        contentType = "image/jpeg";
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
         if (segments.Length == 0 || !Guid.TryParse(segments[0], out Guid fileId))
@@ -48,6 +48,18 @@ public static class SchemeHandlers
 
             string path = thumbnailService.GetThumbnailPath(hash, fileId);
 
+            // If the thumbnail is not generated yet, generate it on-the-fly synchronously on this background thread
+            if (!File.Exists(path))
+            {
+                FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
+                FileEntry? file = fileRepo.GetById(fileId);
+                if (file is not null)
+                {
+                    // Block synchronously since we are running on a background ThreadPool thread anyway
+                    thumbnailService.GenerateThumbnailAsync(file).GetAwaiter().GetResult();
+                }
+            }
+
             if (!File.Exists(path))
             {
                 return Stream.Null;
@@ -57,7 +69,7 @@ public static class SchemeHandlers
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SchemeHandler] Failed to resolve thumbnail for {fileId}: {ex.Message}");
+            Console.WriteLine($"[SchemeHandler] Failed to resolve or generate thumbnail for {fileId}: {ex.Message}");
         }
 
         return Stream.Null;

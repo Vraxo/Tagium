@@ -24,8 +24,6 @@
             <Virtualize Items="Files" ItemSize="53" Context="file" SpacerElement="tr">
                 @{
                     bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
-                    bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
-                    TriggerThumbnailIfMissing(file, hasThumb);
                 }
                 <tr @key="file.Id"
                     class="file-row @(isSelected ? "selected" : "")"
@@ -34,15 +32,9 @@
                     @ondblclick="e => OnRowDoubleClick(e, file)">
 
                     <td class="thumbnail-cell">
-                        <div class="thumbnail @(hasThumb ? "" : "broken")">
-                            @if (hasThumb)
-                            {
-                                <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
-                            }
-                            else
-                            {
-                                <div class="placeholder-icon">📷</div>
-                            }
+                        <div class="thumbnail">
+                            <div class="placeholder-icon">📷</div>
+                            <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" loading="lazy" />
                         </div>
                     </td>
                     <td class="name-cell" title="@file.Name">@file.Name</td>
