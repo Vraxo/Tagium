@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Serilog;
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
@@ -30,6 +29,7 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<TagRepository>();
         _ = services.AddSingleton<FileRepository>();
         _ = services.AddSingleton<FileTagRepository>();
+        _ = services.AddSingleton<SearchQueryCompiler>();
         _ = services.AddSingleton<FileSearchRepository>();
         _ = services.AddSingleton<LibraryRootRepository>();
 
