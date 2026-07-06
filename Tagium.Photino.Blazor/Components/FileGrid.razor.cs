@@ -143,6 +143,14 @@ public partial class FileGrid : IDisposable
         }
     }
 
+    private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
+    {
+        if (!hasThumb)
+        {
+            _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
+        }
+    }
+
     private void OnCardClick(MouseEventArgs e, Guid id)
     {
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);

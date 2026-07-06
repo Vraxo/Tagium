@@ -48,16 +48,8 @@ public static class SchemeHandlers
 
             string path = thumbnailService.GetThumbnailPath(hash, fileId);
 
-            // If the thumbnail is not generated yet, generate it on-the-fly asynchronously on a non-blocking background thread
             if (!File.Exists(path))
             {
-                FileRepository fileRepo = ServiceProvider.GetRequiredService<FileRepository>();
-                FileEntry? file = fileRepo.GetById(fileId);
-                if (file is not null)
-                {
-                    // Completely non-blocking fire-and-forget background task
-                    _ = Task.Run(() => thumbnailService.GenerateThumbnailAsync(file));
-                }
                 return Stream.Null;
             }
 
@@ -65,7 +57,7 @@ public static class SchemeHandlers
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SchemeHandler] Failed to resolve or generate thumbnail for {fileId}: {ex.Message}");
+            Console.WriteLine($"[SchemeHandler] Failed to resolve thumbnail for {fileId}: {ex.Message}");
         }
 
         return Stream.Null;

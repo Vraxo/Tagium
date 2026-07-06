@@ -1,5 +1,7 @@
 ﻿using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using System.Text;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
@@ -8,19 +10,23 @@ namespace Tagium.Core.Data;
 public class FileSearchRepository
 {
     private readonly DatabaseManager _db;
+    private readonly ILogger<FileSearchRepository> _logger;
 
     private static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
     {
         "artist", "character", "series", "location", "person", "franchise", "species", "year", "meta"
     };
 
-    public FileSearchRepository(DatabaseManager db)
+    public FileSearchRepository(DatabaseManager db, ILogger<FileSearchRepository> logger)
     {
         _db = db;
+        _logger = logger;
     }
 
     public List<FileEntry> Search(string searchText, SortBy sortBy, SortDirection sortDirection)
     {
+        using LogTiming timer = LogTiming.StartDebug(_logger, "Search compilation and execution for query: {Query}", searchText);
+
         if (string.IsNullOrWhiteSpace(searchText))
         {
             return [];
@@ -61,81 +67,19 @@ public class FileSearchRepository
 
                 if (string.Equals(key, "rating", StringComparison.OrdinalIgnoreCase))
                 {
-                    (string? op, string? rStr) = SplitOperator(val);
-                    if (int.TryParse(rStr, out int rVal))
-                    {
-                        string paramName = $"@p{paramCounter++}";
-                        _ = cmd.Parameters.AddWithValue(paramName, rVal);
-
-                        if (isNegated)
-                        {
-                            query.AppendLine($"AND (F.Rating IS NULL OR NOT (F.Rating {op} {paramName}))");
-                        }
-                        else
-                        {
-                            query.AppendLine($"AND (F.Rating IS NOT NULL AND F.Rating {op} {paramName})");
-                        }
-                    }
+                    BuildRatingClause(val, isNegated, cmd, query, ref paramCounter);
                 }
                 else if (string.Equals(key, "size", StringComparison.OrdinalIgnoreCase))
                 {
-                    (string? op, string? sStr) = SplitOperator(val);
-                    long? bytes = ParseSizeToBytes(sStr);
-                    if (bytes.HasValue)
-                    {
-                        string paramName = $"@p{paramCounter++}";
-                        _ = cmd.Parameters.AddWithValue(paramName, bytes.Value);
-
-                        if (isNegated)
-                        {
-                            query.AppendLine($"AND NOT (F.Size {op} {paramName})");
-                        }
-                        else
-                        {
-                            query.AppendLine($"AND F.Size {op} {paramName}");
-                        }
-                    }
+                    BuildSizeClause(val, isNegated, cmd, query, ref paramCounter);
                 }
                 else if (string.Equals(key, "ext", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "extension", StringComparison.OrdinalIgnoreCase))
                 {
-                    string extPattern = "%." + val.TrimStart('.').ToLowerInvariant();
-                    string paramName = $"@p{paramCounter++}";
-                    _ = cmd.Parameters.AddWithValue(paramName, extPattern);
-
-                    if (isNegated)
-                    {
-                        query.AppendLine($"AND F.Path NOT LIKE {paramName}");
-                    }
-                    else
-                    {
-                        query.AppendLine($"AND F.Path LIKE {paramName}");
-                    }
+                    BuildExtensionClause(val, isNegated, cmd, query, ref paramCounter);
                 }
                 else if (ValidCategories.Contains(key))
                 {
-                    string searchPattern = "%" + val + "%";
-                    string catParam = $"@p{paramCounter++}";
-                    string valParam = $"@p{paramCounter++}";
-
-                    _ = cmd.Parameters.AddWithValue(catParam, key);
-                    _ = cmd.Parameters.AddWithValue(valParam, searchPattern);
-
-                    string subQuery = $@"
-                        EXISTS (
-                            SELECT 1 FROM cache.FileTags FT
-                            JOIN Tags T ON FT.TagId = T.Id
-                            LEFT JOIN TagAliases TA ON T.Id = TA.TagId
-                            WHERE FT.FileId = F.Id AND T.Category = {catParam} AND (T.Name LIKE {valParam} OR TA.Alias LIKE {valParam})
-                        )";
-
-                    if (isNegated)
-                    {
-                        query.AppendLine($"AND NOT ({subQuery})");
-                    }
-                    else
-                    {
-                        query.AppendLine($"AND ({subQuery})");
-                    }
+                    BuildCategoryClause(key, val, isNegated, cmd, query, ref paramCounter);
                 }
                 else
                 {
@@ -149,8 +93,9 @@ public class FileSearchRepository
         }
 
         query.AppendLine(GetOrderByClause(sortBy, sortDirection));
-
         cmd.CommandText = query.ToString();
+
+        _logger.LogDebug("Compiled SQLite Search Query: {Sql}", cmd.CommandText);
 
         List<FileEntry> files = [];
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -173,14 +118,105 @@ public class FileSearchRepository
             });
         }
 
+        _logger.LogInformation("Search query returned {Count} matching files", files.Count);
         return files;
     }
 
-    private static void BuildTagSearchClause(string token, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
+    private void BuildRatingClause(string val, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
+    {
+        (string op, string rStr) = SplitOperator(val);
+        if (int.TryParse(rStr, out int rVal))
+        {
+            string paramName = $"@p{paramCounter++}";
+            cmd.Parameters.AddWithValue(paramName, rVal);
+
+            if (isNegated)
+            {
+                query.AppendLine($"AND (F.Rating IS NULL OR NOT (F.Rating {op} {paramName}))");
+            }
+            else
+            {
+                query.AppendLine($"AND (F.Rating IS NOT NULL AND F.Rating {op} {paramName})");
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Skipped invalid rating search filter value: {Value}", val);
+        }
+    }
+
+    private void BuildSizeClause(string val, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
+    {
+        (string op, string sStr) = SplitOperator(val);
+        long? bytes = ParseSizeToBytes(sStr);
+        if (bytes.HasValue)
+        {
+            string paramName = $"@p{paramCounter++}";
+            cmd.Parameters.AddWithValue(paramName, bytes.Value);
+
+            if (isNegated)
+            {
+                query.AppendLine($"AND NOT (F.Size {op} {paramName})");
+            }
+            else
+            {
+                query.AppendLine($"AND F.Size {op} {paramName}");
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Skipped invalid size search filter value: {Value}", val);
+        }
+    }
+
+    private void BuildExtensionClause(string val, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
+    {
+        string extPattern = "%." + val.TrimStart('.').ToLowerInvariant();
+        string paramName = $"@p{paramCounter++}";
+        cmd.Parameters.AddWithValue(paramName, extPattern);
+
+        if (isNegated)
+        {
+            query.AppendLine($"AND F.Path NOT LIKE {paramName}");
+        }
+        else
+        {
+            query.AppendLine($"AND F.Path LIKE {paramName}");
+        }
+    }
+
+    private void BuildCategoryClause(string key, string val, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
+    {
+        string searchPattern = "%" + val + "%";
+        string catParam = $"@p{paramCounter++}";
+        string valParam = $"@p{paramCounter++}";
+
+        cmd.Parameters.AddWithValue(catParam, key);
+        cmd.Parameters.AddWithValue(valParam, searchPattern);
+
+        string subQuery = $@"
+            EXISTS (
+                SELECT 1 FROM cache.FileTags FT
+                JOIN Tags T ON FT.TagId = T.Id
+                LEFT JOIN TagAliases TA ON T.Id = TA.TagId
+                WHERE FT.FileId = F.Id AND T.Category = {catParam} AND (T.Name LIKE {valParam} OR TA.Alias LIKE {valParam})
+            )";
+
+        if (isNegated)
+        {
+            query.AppendLine($"AND NOT ({subQuery})");
+        }
+        else
+        {
+            query.AppendLine($"AND ({subQuery})");
+        }
+    }
+
+    private void BuildTagSearchClause(string token, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
     {
         string paramName = $"@p{paramCounter++}";
         string termPattern = $"%{token}%";
-        _ = cmd.Parameters.AddWithValue(paramName, termPattern);
+        cmd.Parameters.AddWithValue(paramName, termPattern);
 
         string subQuery = $@"
             EXISTS (
@@ -233,26 +269,19 @@ public class FileSearchRepository
     private static long? ParseSizeToBytes(string val)
     {
         val = val.Trim().ToLowerInvariant();
-        int lastDigitIdx = -1;
-        for (int i = 0; i < val.Length; i++)
+        int idx = 0;
+        while (idx < val.Length && (char.IsDigit(val[idx]) || val[idx] == '.'))
         {
-            if (char.IsDigit(val[i]) || val[i] == '.')
-            {
-                lastDigitIdx = i;
-            }
-            else
-            {
-                break;
-            }
+            idx++;
         }
 
-        if (lastDigitIdx == -1)
+        if (idx == 0)
         {
             return null;
         }
 
-        string numPart = val[..(lastDigitIdx + 1)];
-        string unitPart = val[(lastDigitIdx + 1)..].Trim();
+        string numPart = val[..idx];
+        string unitPart = val[idx..].Trim();
 
         if (!double.TryParse(numPart, out double num))
         {

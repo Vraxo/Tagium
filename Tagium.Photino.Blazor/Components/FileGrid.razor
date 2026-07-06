@@ -56,6 +56,8 @@
             @foreach (var file in row)
             {
                 bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+                TriggerThumbnailIfMissing(file, hasThumb);
 
                 <div @key="file.Id"
                      class="file-card @(isSelected ? "selected" : "")"
@@ -64,9 +66,15 @@
                      @ondblclick="e => OnCardDoubleClick(e, file)"
                      @onclick:stopPropagation="true">
 
-                    <div class="thumbnail">
-                        <div class="placeholder-icon">📷</div>
-                        <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" loading="lazy" />
+                    <div class="thumbnail @(hasThumb ? "" : "broken")">
+                        @if (hasThumb)
+                        {
+                            <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
+                        }
+                        else
+                        {
+                            <div class="placeholder-icon">📷</div>
+                        }
                     </div>
                     <div class="filename" title="@file.Name">
                         @file.Name

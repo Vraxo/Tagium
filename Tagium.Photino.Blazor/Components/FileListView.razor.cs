@@ -67,6 +67,14 @@ public partial class FileListView : IDisposable
         Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
     }
 
+    private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
+    {
+        if (!hasThumb)
+        {
+            _ = Task.Run(() => ThumbnailService.GenerateThumbnailAsync(file));
+        }
+    }
+
     private void OnRowClick(MouseEventArgs e, Guid id)
     {
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
