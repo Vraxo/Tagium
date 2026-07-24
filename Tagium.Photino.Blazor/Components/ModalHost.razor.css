@@ -1,54 +1,56 @@
 .modal-backdrop {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-container {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    width: 500px;
+    max-width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+    padding: var(--space-sm);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+    .modal-header h3 {
+        margin: 0;
+        font-size: 1.1em;
+        color: var(--text-color);
     }
 
-    .modal-container {
-        background: #313131;
-        border-radius: 8px;
-        width: 500px;
-        max-width: 90%;
-        max-height: 80vh;
-        display: flex;
-        flex-direction: column;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+.close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5em;
+    cursor: pointer;
+    line-height: 1;
+}
+
+    .close-btn:hover {
+        color: var(--text-color);
     }
 
-    .modal-header {
-        padding: 15px;
-        border-bottom: 1px solid #444;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-        .modal-header h3 {
-            margin: 0;
-            font-size: 1.2em;
-            color: #eee;
-        }
-
-    .close-btn {
-        background: none;
-        border: none;
-        color: #aaa;
-        font-size: 1.5em;
-        cursor: pointer;
-    }
-
-        .close-btn:hover {
-            color: #fff;
-        }
-
-    .modal-body {
-        padding: 15px;
-        overflow-y: auto;
-    }
+.modal-body {
+    padding: var(--space-sm);
+    overflow-y: auto;
+}

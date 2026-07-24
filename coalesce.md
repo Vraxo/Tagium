@@ -3,17 +3,21 @@
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="FFMpegCore" Version="5.4.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
-    <PackageReference Include="SkiaSharp" Version="4.148.0" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="FFMpegCore" Version="5.4.0" />
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+		<PackageReference Include="SkiaSharp" Version="4.148.0" />
+		<PackageReference Include="Serilog" Version="4.3.1" />
+		<PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+		<PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+		<PackageReference Include="Serilog.Extensions.Logging" Version="9.0.0" />
+	</ItemGroup>
 
 </Project>
 ```
@@ -24,6 +28,7 @@
 
 ```csharp
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Tagium.Core.Helpers;
 
 namespace Tagium.Core.Data;
@@ -32,9 +37,11 @@ public class DatabaseManager
 {
     public string LibraryDbPath { get; }
     public string CacheDbPath { get; }
+    private readonly ILogger<DatabaseManager> _logger;
 
-    public DatabaseManager()
+    public DatabaseManager(ILogger<DatabaseManager> logger)
     {
+        _logger = logger;
         string baseDir = AppDataHelper.GetBaseDirectory();
         LibraryDbPath = Path.Combine(baseDir, "library.db");
         CacheDbPath = Path.Combine(baseDir, "cache.db");
@@ -80,8 +87,11 @@ public class DatabaseManager
 
     private void InitializeDatabases()
     {
-        using (SqliteConnection conn = new($"Data Source={LibraryDbPath}"))
+        _logger.LogInformation("Initializing databases. Library DB: {LibraryPath}, Cache DB: {CachePath}", LibraryDbPath, CacheDbPath);
+
+        try
         {
+            using SqliteConnection conn = new($"Data Source={LibraryDbPath}");
             conn.Open();
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.CommandText = @"
@@ -118,9 +128,15 @@ public class DatabaseManager
             ";
             _ = cmd.ExecuteNonQuery();
         }
-
-        using (SqliteConnection conn = new($"Data Source={CacheDbPath}"))
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to initialize library database");
+            throw;
+        }
+
+        try
+        {
+            using SqliteConnection conn = new($"Data Source={CacheDbPath}");
             conn.Open();
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.CommandText = @"
@@ -148,12 +164,18 @@ public class DatabaseManager
             ";
             _ = cmd.ExecuteNonQuery();
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize cache database");
+            throw;
+        }
 
         MigrateSchema();
     }
 
     private void MigrateSchema()
     {
+        _logger.LogInformation("Checking schema migrations...");
         using SqliteConnection conn = GetConnection();
         string[] columns = ["Size", "ModifiedTime", "Rating", "Title", "Description"];
         foreach (string col in columns)
@@ -169,9 +191,15 @@ public class DatabaseManager
                 };
                 cmd.CommandText = $"ALTER TABLE cache.Files ADD COLUMN {col} {colType};";
                 _ = cmd.ExecuteNonQuery();
+                _logger.LogInformation("Successfully migrated column {Column} in cache.Files", col);
             }
-            catch
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
             {
+                _logger.LogDebug("Column {Column} already exists in cache.Files, skipping.", col);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Ignored error during column migration for {Column}", col);
             }
         }
 
@@ -180,9 +208,15 @@ public class DatabaseManager
             using SqliteCommand cmd = conn.CreateCommand();
             cmd.CommandText = "ALTER TABLE Tags ADD COLUMN Category TEXT NULL;";
             _ = cmd.ExecuteNonQuery();
+            _logger.LogInformation("Successfully migrated column Category in Tags");
         }
-        catch
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
         {
+            _logger.LogDebug("Column Category already exists in Tags, skipping.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ignored error during Tags category column migration");
         }
     }
 }
@@ -515,7 +549,8 @@ public class FileRepository
 
 ```csharp
 using Microsoft.Data.Sqlite;
-using System.Text;
+using Microsoft.Extensions.Logging;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
 
@@ -524,149 +559,37 @@ namespace Tagium.Core.Data;
 public class FileSearchRepository
 {
     private readonly DatabaseManager _db;
+    private readonly SearchQueryCompiler _compiler;
+    private readonly ILogger<FileSearchRepository> _logger;
 
-    private static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "artist", "character", "series", "location", "person", "franchise", "species", "year", "meta"
-    };
-
-    public FileSearchRepository(DatabaseManager db)
+    public FileSearchRepository(DatabaseManager db, SearchQueryCompiler compiler, ILogger<FileSearchRepository> logger)
     {
         _db = db;
+        _compiler = compiler;
+        _logger = logger;
     }
 
     public List<FileEntry> Search(string searchText, SortBy sortBy, SortDirection sortDirection)
     {
+        using LogTiming timer = LogTiming.StartDebug(_logger, "Search database execution for compiled query: {Query}", searchText);
+
         if (string.IsNullOrWhiteSpace(searchText))
         {
             return [];
         }
 
-        string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (tokens.Length == 0)
-        {
-            return [];
-        }
+        CompiledQuery compiled = _compiler.Compile(searchText, sortBy, sortDirection);
 
         using SqliteConnection conn = _db.GetConnection();
         using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = compiled.Sql;
 
-        StringBuilder query = new();
-        query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime, F.Rating, F.Title, F.Description");
-        query.AppendLine("FROM cache.Files F");
-        query.AppendLine("WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '" + Path.DirectorySeparatorChar + "'))");
-
-        int paramCounter = 0;
-
-        foreach (string token in tokens)
+        foreach (var (name, value) in compiled.Parameters)
         {
-            bool isNegated = false;
-            string rawToken = token;
-
-            if (rawToken.StartsWith('-') && rawToken.Length > 1)
-            {
-                isNegated = true;
-                rawToken = rawToken[1..];
-            }
-
-            int colonIdx = rawToken.IndexOf(':');
-            if (colonIdx > 0 && colonIdx < rawToken.Length - 1)
-            {
-                string key = rawToken[..colonIdx];
-                string val = rawToken[(colonIdx + 1)..];
-
-                if (string.Equals(key, "rating", StringComparison.OrdinalIgnoreCase))
-                {
-                    (string? op, string? rStr) = SplitOperator(val);
-                    if (int.TryParse(rStr, out int rVal))
-                    {
-                        string paramName = $"@p{paramCounter++}";
-                        _ = cmd.Parameters.AddWithValue(paramName, rVal);
-
-                        if (isNegated)
-                        {
-                            query.AppendLine($"AND (F.Rating IS NULL OR NOT (F.Rating {op} {paramName}))");
-                        }
-                        else
-                        {
-                            query.AppendLine($"AND (F.Rating IS NOT NULL AND F.Rating {op} {paramName})");
-                        }
-                    }
-                }
-                else if (string.Equals(key, "size", StringComparison.OrdinalIgnoreCase))
-                {
-                    (string? op, string? sStr) = SplitOperator(val);
-                    long? bytes = ParseSizeToBytes(sStr);
-                    if (bytes.HasValue)
-                    {
-                        string paramName = $"@p{paramCounter++}";
-                        _ = cmd.Parameters.AddWithValue(paramName, bytes.Value);
-
-                        if (isNegated)
-                        {
-                            query.AppendLine($"AND NOT (F.Size {op} {paramName})");
-                        }
-                        else
-                        {
-                            query.AppendLine($"AND F.Size {op} {paramName}");
-                        }
-                    }
-                }
-                else if (string.Equals(key, "ext", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "extension", StringComparison.OrdinalIgnoreCase))
-                {
-                    string extPattern = "%." + val.TrimStart('.').ToLowerInvariant();
-                    string paramName = $"@p{paramCounter++}";
-                    _ = cmd.Parameters.AddWithValue(paramName, extPattern);
-
-                    if (isNegated)
-                    {
-                        query.AppendLine($"AND F.Path NOT LIKE {paramName}");
-                    }
-                    else
-                    {
-                        query.AppendLine($"AND F.Path LIKE {paramName}");
-                    }
-                }
-                else if (ValidCategories.Contains(key))
-                {
-                    string searchPattern = "%" + val + "%";
-                    string catParam = $"@p{paramCounter++}";
-                    string valParam = $"@p{paramCounter++}";
-
-                    _ = cmd.Parameters.AddWithValue(catParam, key);
-                    _ = cmd.Parameters.AddWithValue(valParam, searchPattern);
-
-                    string subQuery = $@"
-                        EXISTS (
-                            SELECT 1 FROM cache.FileTags FT
-                            JOIN Tags T ON FT.TagId = T.Id
-                            LEFT JOIN TagAliases TA ON T.Id = TA.TagId
-                            WHERE FT.FileId = F.Id AND T.Category = {catParam} AND (T.Name LIKE {valParam} OR TA.Alias LIKE {valParam})
-                        )";
-
-                    if (isNegated)
-                    {
-                        query.AppendLine($"AND NOT ({subQuery})");
-                    }
-                    else
-                    {
-                        query.AppendLine($"AND ({subQuery})");
-                    }
-                }
-                else
-                {
-                    BuildTagSearchClause(rawToken, isNegated, cmd, query, ref paramCounter);
-                }
-            }
-            else
-            {
-                BuildTagSearchClause(rawToken, isNegated, cmd, query, ref paramCounter);
-            }
+            _ = cmd.Parameters.AddWithValue(name, value);
         }
 
-        query.AppendLine(GetOrderByClause(sortBy, sortDirection));
-
-        cmd.CommandText = query.ToString();
+        _logger.LogDebug("Executing SQL Query: {Sql}", cmd.CommandText);
 
         List<FileEntry> files = [];
         using SqliteDataReader reader = cmd.ExecuteReader();
@@ -689,114 +612,8 @@ public class FileSearchRepository
             });
         }
 
+        _logger.LogInformation("Database query execution completed, returned {Count} items", files.Count);
         return files;
-    }
-
-    private static void BuildTagSearchClause(string token, bool isNegated, SqliteCommand cmd, StringBuilder query, ref int paramCounter)
-    {
-        string paramName = $"@p{paramCounter++}";
-        string termPattern = $"%{token}%";
-        _ = cmd.Parameters.AddWithValue(paramName, termPattern);
-
-        string subQuery = $@"
-            EXISTS (
-                SELECT 1 FROM cache.FileTags FT
-                JOIN Tags T ON FT.TagId = T.Id
-                LEFT JOIN TagAliases TA ON T.Id = TA.TagId
-                WHERE FT.FileId = F.Id AND (T.Name LIKE {paramName} OR TA.Alias LIKE {paramName})
-            )";
-
-        if (isNegated)
-        {
-            query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {subQuery})");
-        }
-        else
-        {
-            query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {subQuery})");
-        }
-    }
-
-    private static (string op, string rest) SplitOperator(string val)
-    {
-        if (val.StartsWith(">="))
-        {
-            return (">=", val[2..]);
-        }
-
-        if (val.StartsWith("<="))
-        {
-            return ("<=", val[2..]);
-        }
-
-        if (val.StartsWith(">"))
-        {
-            return (">", val[1..]);
-        }
-
-        if (val.StartsWith("<"))
-        {
-            return ("<", val[1..]);
-        }
-
-        if (val.StartsWith("="))
-        {
-            return ("=", val[1..]);
-        }
-
-        return ("=", val);
-    }
-
-    private static long? ParseSizeToBytes(string val)
-    {
-        val = val.Trim().ToLowerInvariant();
-        int lastDigitIdx = -1;
-        for (int i = 0; i < val.Length; i++)
-        {
-            if (char.IsDigit(val[i]) || val[i] == '.')
-            {
-                lastDigitIdx = i;
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        if (lastDigitIdx == -1)
-        {
-            return null;
-        }
-
-        string numPart = val[..(lastDigitIdx + 1)];
-        string unitPart = val[(lastDigitIdx + 1)..].Trim();
-
-        if (!double.TryParse(numPart, out double num))
-        {
-            return null;
-        }
-
-        double multiplier = unitPart switch
-        {
-            "kb" or "k" => 1024.0,
-            "mb" or "m" => 1024.0 * 1024.0,
-            "gb" or "g" => 1024.0 * 1024.0 * 1024.0,
-            _ => 1.0
-        };
-
-        return (long)(num * multiplier);
-    }
-
-    private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
-    {
-        string col = sortBy switch
-        {
-            SortBy.Name => "F.Name",
-            SortBy.DateAdded => "F.DateAdded",
-            _ => "F.Path"
-        };
-
-        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
-        return $"ORDER BY {col} {dir}, F.Path ASC";
     }
 }
 ```
@@ -962,6 +779,281 @@ public class LibraryRootRepository
             IsEnabled = reader.GetBoolean(2),
             LastScanTime = reader.IsDBNull(3) ? null : reader.GetInt64(3)
         };
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Data\SearchQueryCompiler.cs`
+
+```csharp
+using Microsoft.Extensions.Logging;
+using System.Text;
+using Tagium.Core.Settings;
+
+namespace Tagium.Core.Data;
+
+public record CompiledQuery(string Sql, List<(string Name, object Value)> Parameters);
+
+public class SearchQueryCompiler
+{
+    private readonly ILogger<SearchQueryCompiler> _logger;
+
+    private static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "artist", "character", "series", "location", "person", "franchise", "species", "year", "meta"
+    };
+
+    public SearchQueryCompiler(ILogger<SearchQueryCompiler> logger)
+    {
+        _logger = logger;
+    }
+
+    public CompiledQuery Compile(string searchText, SortBy sortBy, SortDirection sortDirection)
+    {
+        string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        StringBuilder query = new();
+        query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime, F.Rating, F.Title, F.Description");
+        query.AppendLine("FROM cache.Files F");
+        query.AppendLine("WHERE EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '" + Path.DirectorySeparatorChar + "'))");
+
+        List<(string Name, object Value)> parameters = [];
+        int paramCounter = 0;
+
+        foreach (string token in tokens)
+        {
+            bool isNegated = false;
+            string rawToken = token;
+
+            if (rawToken.StartsWith('-') && rawToken.Length > 1)
+            {
+                isNegated = true;
+                rawToken = rawToken[1..];
+            }
+
+            int colonIdx = rawToken.IndexOf(':');
+            if (colonIdx > 0 && colonIdx < rawToken.Length - 1)
+            {
+                string key = rawToken[..colonIdx];
+                string val = rawToken[(colonIdx + 1)..];
+
+                if (string.Equals(key, "rating", StringComparison.OrdinalIgnoreCase))
+                {
+                    BuildRatingClause(val, isNegated, query, parameters, ref paramCounter);
+                }
+                else if (string.Equals(key, "size", StringComparison.OrdinalIgnoreCase))
+                {
+                    BuildSizeClause(val, isNegated, query, parameters, ref paramCounter);
+                }
+                else if (string.Equals(key, "ext", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "extension", StringComparison.OrdinalIgnoreCase))
+                {
+                    string extPattern = "%." + val.TrimStart('.').ToLowerInvariant();
+                    string paramName = $"@p{paramCounter++}";
+                    parameters.Add((paramName, extPattern));
+
+                    if (isNegated)
+                    {
+                        query.AppendLine($"AND F.Path NOT LIKE {paramName}");
+                    }
+                    else
+                    {
+                        query.AppendLine($"AND F.Path LIKE {paramName}");
+                    }
+                }
+                else if (ValidCategories.Contains(key))
+                {
+                    BuildCategoryClause(key, val, isNegated, query, parameters, ref paramCounter);
+                }
+                else
+                {
+                    BuildTagSearchClause(rawToken, isNegated, query, parameters, ref paramCounter);
+                }
+            }
+            else
+            {
+                BuildTagSearchClause(rawToken, isNegated, query, parameters, ref paramCounter);
+            }
+        }
+
+        query.AppendLine(GetOrderByClause(sortBy, sortDirection));
+
+        return new CompiledQuery(query.ToString(), parameters);
+    }
+
+    private void BuildRatingClause(string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        (string op, string rStr) = SplitOperator(val);
+        if (int.TryParse(rStr, out int rVal))
+        {
+            string paramName = $"@p{paramCounter++}";
+            parameters.Add((paramName, rVal));
+
+            if (isNegated)
+            {
+                query.AppendLine($"AND (F.Rating IS NULL OR NOT (F.Rating {op} {paramName}))");
+            }
+            else
+            {
+                query.AppendLine($"AND (F.Rating IS NOT NULL AND F.Rating {op} {paramName})");
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Skipped invalid rating search filter value: {Value}", val);
+        }
+    }
+
+    private void BuildSizeClause(string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        (string op, string sStr) = SplitOperator(val);
+        long? bytes = ParseSizeToBytes(sStr);
+        if (bytes.HasValue)
+        {
+            string paramName = $"@p{paramCounter++}";
+            parameters.Add((paramName, bytes.Value));
+
+            if (isNegated)
+            {
+                query.AppendLine($"AND NOT (F.Size {op} {paramName})");
+            }
+            else
+            {
+                query.AppendLine($"AND F.Size {op} {paramName}");
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Skipped invalid size search filter value: {Value}", val);
+        }
+    }
+
+    private void BuildCategoryClause(string key, string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        string searchPattern = "%" + val + "%";
+        string catParam = $"@p{paramCounter++}";
+        string valParam = $"@p{paramCounter++}";
+
+        parameters.Add((catParam, key));
+        parameters.Add((valParam, searchPattern));
+
+        string subQuery = $@"
+            EXISTS (
+                SELECT 1 FROM cache.FileTags FT
+                JOIN Tags T ON FT.TagId = T.Id
+                LEFT JOIN TagAliases TA ON T.Id = TA.TagId
+                WHERE FT.FileId = F.Id AND T.Category = {catParam} AND (T.Name LIKE {valParam} OR TA.Alias LIKE {valParam})
+            )";
+
+        if (isNegated)
+        {
+            query.AppendLine($"AND NOT ({subQuery})");
+        }
+        else
+        {
+            query.AppendLine($"AND ({subQuery})");
+        }
+    }
+
+    private void BuildTagSearchClause(string token, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        string paramName = $"@p{paramCounter++}";
+        string termPattern = $"%{token}%";
+        parameters.Add((paramName, termPattern));
+
+        string subQuery = $@"
+            EXISTS (
+                SELECT 1 FROM cache.FileTags FT
+                JOIN Tags T ON FT.TagId = T.Id
+                LEFT JOIN TagAliases TA ON T.Id = TA.TagId
+                WHERE FT.FileId = F.Id AND (T.Name LIKE {paramName} OR TA.Alias LIKE {paramName})
+            )";
+
+        if (isNegated)
+        {
+            query.AppendLine($"AND NOT (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {subQuery})");
+        }
+        else
+        {
+            query.AppendLine($"AND (F.Name LIKE {paramName} OR F.Path LIKE {paramName} OR {subQuery})");
+        }
+    }
+
+    private static (string op, string rest) SplitOperator(string val)
+    {
+        if (val.StartsWith(">="))
+        {
+            return (">=", val[2..]);
+        }
+
+        if (val.StartsWith("<="))
+        {
+            return ("<=", val[2..]);
+        }
+
+        if (val.StartsWith(">"))
+        {
+            return (">", val[1..]);
+        }
+
+        if (val.StartsWith("<"))
+        {
+            return ("<", val[1..]);
+        }
+
+        if (val.StartsWith("="))
+        {
+            return ("=", val[1..]);
+        }
+
+        return ("=", val);
+    }
+
+    private static long? ParseSizeToBytes(string val)
+    {
+        val = val.Trim().ToLowerInvariant();
+        int idx = 0;
+        while (idx < val.Length && (char.IsDigit(val[idx]) || val[idx] == '.'))
+        {
+            idx++;
+        }
+
+        if (idx == 0)
+        {
+            return null;
+        }
+
+        string numPart = val[..idx];
+        string unitPart = val[idx..].Trim();
+
+        if (!double.TryParse(numPart, out double num))
+        {
+            return null;
+        }
+
+        double multiplier = unitPart switch
+        {
+            "kb" or "k" => 1024.0,
+            "mb" or "m" => 1024.0 * 1024.0,
+            "gb" or "g" => 1024.0 * 1024.0 * 1024.0,
+            _ => 1.0
+        };
+
+        return (long)(num * multiplier);
+    }
+
+    private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
+    {
+        string col = sortBy switch
+        {
+            SortBy.Name => "F.Name",
+            SortBy.DateAdded => "F.DateAdded",
+            _ => "F.Path"
+        };
+
+        string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
+        return $"ORDER BY {col} {dir}, F.Path ASC";
     }
 }
 ```
@@ -1266,18 +1358,29 @@ public static class AppDataHelper
 ### `Tagium.Core\Helpers\FileHasher.cs`
 
 ```csharp
+using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 
 namespace Tagium.Core.Helpers;
 
-public static class FileHasher
+public class FileHasher
 {
-    public static async Task<string?> ComputeSha256Async(string filePath)
+    private readonly ILogger<FileHasher> _logger;
+
+    public FileHasher(ILogger<FileHasher> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task<string?> ComputeSha256Async(string filePath)
     {
         if (!File.Exists(filePath))
         {
+            _logger.LogWarning("File does not exist for hashing: {FilePath}", filePath);
             return null;
         }
+
+        using LogTiming timer = LogTiming.StartDebug(_logger, "SHA256 computation for {FilePath}", filePath);
 
         try
         {
@@ -1305,9 +1408,70 @@ public static class FileHasher
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FileHasher] Error: {ex.Message}");
+            _logger.LogError(ex, "Error computing SHA256 for file: {FilePath}", filePath);
             return null;
         }
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Helpers\LogTiming.cs`
+
+```csharp
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+
+namespace Tagium.Core.Helpers;
+
+public readonly struct LogTiming : IDisposable
+{
+    private readonly ILogger _logger;
+    private readonly LogLevel _level;
+    private readonly string _messageTemplate;
+    private readonly object?[]? _args;
+    private readonly long _startTimestamp;
+
+    private LogTiming(ILogger logger, LogLevel level, string messageTemplate, object?[]? args)
+    {
+        _logger = logger;
+        _level = level;
+        _messageTemplate = messageTemplate;
+        _args = args;
+        _startTimestamp = Stopwatch.GetTimestamp();
+    }
+
+    public static LogTiming Start(ILogger logger, string messageTemplate, params object?[]? args)
+    {
+        return new LogTiming(logger, LogLevel.Information, messageTemplate, args);
+    }
+
+    public static LogTiming StartDebug(ILogger logger, string messageTemplate, params object?[]? args)
+    {
+        return new LogTiming(logger, LogLevel.Debug, messageTemplate, args);
+    }
+
+    public void Dispose()
+    {
+        long elapsed = Stopwatch.GetTimestamp() - _startTimestamp;
+        double ms = (double)elapsed * 1000 / Stopwatch.Frequency;
+
+        string format = $"{_messageTemplate} completed in {{ElapsedMs:F2}} ms";
+
+        object?[] finalArgs;
+        if (_args == null || _args.Length == 0)
+        {
+            finalArgs = [ms];
+        }
+        else
+        {
+            finalArgs = new object?[_args.Length + 1];
+            Array.Copy(_args, finalArgs, _args.Length);
+            finalArgs[_args.Length] = ms;
+        }
+
+        _logger.Log(_level, format, finalArgs);
     }
 }
 ```
@@ -1423,10 +1587,12 @@ public class Tag
 ### `Tagium.Core\Services\ExifToolService.cs`
 
 ```csharp
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
@@ -1439,11 +1605,13 @@ public class ExifToolService : IDisposable
     private StreamReader? _stdout;
     private readonly object _lock = new();
     private bool _isDisposed;
+    private readonly ILogger<ExifToolService> _logger;
 
     public bool IsEnabled { get; private set; }
 
-    public ExifToolService()
+    public ExifToolService(ILogger<ExifToolService> logger)
     {
+        _logger = logger;
         _commandName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "exiftool.exe" : "exiftool";
         InitializeProcess();
     }
@@ -1474,18 +1642,22 @@ public class ExifToolService : IDisposable
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        Console.WriteLine($"[ExifTool Warning] {e.Data}");
+                        _logger.LogDebug("ExifTool Process Output: {Warning}", e.Data);
                     }
                 };
                 _exifToolProcess.BeginErrorReadLine();
 
                 IsEnabled = !_exifToolProcess.HasExited;
+                if (IsEnabled)
+                {
+                    _logger.LogInformation("Persistent ExifTool daemon successfully started");
+                }
             }
         }
         catch (Exception ex)
         {
             IsEnabled = false;
-            Console.WriteLine($"[ExifToolService] WARNING: Failed to initialize persistent daemon: {ex.Message}. Metadata writing and reading will be disabled.");
+            _logger.LogWarning(ex, "Failed to initialize persistent ExifTool daemon. Metadata reading and writing will be disabled");
         }
     }
 
@@ -1496,11 +1668,14 @@ public class ExifToolService : IDisposable
             return null;
         }
 
+        using LogTiming timer = LogTiming.StartDebug(_logger, "ExifTool read metadata for {FilePath}", filePath);
+
         try
         {
             string output;
             lock (_lock)
             {
+                _stdin!.WriteLine("-m");
                 _stdin!.WriteLine("-json");
                 _stdin!.WriteLine("-Subject");
                 _stdin!.WriteLine("-Keywords");
@@ -1577,7 +1752,7 @@ public class ExifToolService : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ExifTool] Exception reading {filePath}: {ex.Message}");
+            _logger.LogError(ex, "Exception reading metadata for file: {FilePath}", filePath);
             return null;
         }
     }
@@ -1589,10 +1764,13 @@ public class ExifToolService : IDisposable
             return false;
         }
 
+        using LogTiming timer = LogTiming.Start(_logger, "ExifTool write metadata for {FilePath}", filePath);
+
         try
         {
             lock (_lock)
             {
+                _stdin!.WriteLine("-m");
                 _stdin!.WriteLine("-overwrite_original");
                 _stdin!.WriteLine("-Subject=");
                 _stdin!.WriteLine("-Keywords=");
@@ -1648,7 +1826,7 @@ public class ExifToolService : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ExifTool] Exception writing {filePath}: {ex.Message}");
+            _logger.LogError(ex, "Exception writing metadata for file: {FilePath}", filePath);
             return false;
         }
     }
@@ -1702,8 +1880,9 @@ public class ExifToolService : IDisposable
                 }
                 _exifToolProcess.WaitForExit(3000);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error shutting down ExifTool process");
             }
             finally
             {
@@ -2161,6 +2340,7 @@ public class ScanContext
 ### `Tagium.Core\Services\Scanning.cs`
 
 ```csharp
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using Tagium.Core.Data;
 using Tagium.Core.Helpers;
@@ -2175,6 +2355,8 @@ public class LibraryScanService
     private readonly TagRepository _tagRepo;
     private readonly FileTagRepository _fileTagRepo;
     private readonly ExifToolService _exifTool;
+    private readonly FileHasher _fileHasher;
+    private readonly ILogger<LibraryScanService> _logger;
 
     public bool IsScanning { get; private set; }
     public int ProgressCurrent { get; private set; }
@@ -2195,19 +2377,24 @@ public class LibraryScanService
         FileRepository fileRepo,
         TagRepository tagRepo,
         FileTagRepository fileTagRepo,
-        ExifToolService exifTool)
+        ExifToolService exifTool,
+        FileHasher fileHasher,
+        ILogger<LibraryScanService> logger)
     {
         _rootRepo = rootRepo;
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
         _fileTagRepo = fileTagRepo;
         _exifTool = exifTool;
+        _fileHasher = fileHasher;
+        _logger = logger;
     }
 
     public async Task ScanAllAsync(CancellationToken cancellationToken = default)
     {
         if (IsScanning)
         {
+            _logger.LogWarning("ScanAllAsync requested while scanning is already in progress");
             return;
         }
 
@@ -2215,11 +2402,14 @@ public class LibraryScanService
         ProgressCurrent = 0;
         ProgressTotal = 0;
 
+        _logger.LogInformation("Starting library scan...");
         await Task.Run(async () => await ExecuteScanPipelineAsync(cancellationToken), cancellationToken);
     }
 
     private async Task ExecuteScanPipelineAsync(CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Library scan execution pipeline");
+
         Stopwatch uiTimer = Stopwatch.StartNew();
         ScanContext context = new();
 
@@ -2228,6 +2418,7 @@ public class LibraryScanService
             List<LibraryRoot> roots = _rootRepo.GetAll().Where(r => r.IsEnabled).ToList();
             if (roots.Count == 0)
             {
+                _logger.LogInformation("No active library roots configured. Scan aborted");
                 return;
             }
 
@@ -2237,6 +2428,7 @@ public class LibraryScanService
             ProgressTotal = context.CandidateFiles.Count;
             ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
 
+            _logger.LogInformation("Processing {Count} candidate files...", ProgressTotal);
             await ProcessCandidateFilesAsync(context, uiTimer, cancellationToken);
             await ResolveMissingAndImportNewAsync(context, uiTimer, cancellationToken);
 
@@ -2245,29 +2437,39 @@ public class LibraryScanService
 
             if (context.HasChanges)
             {
+                _logger.LogInformation("Library content changes detected. Triggering files imported event");
                 FilesImported?.Invoke();
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error in execute scan pipeline");
         }
         finally
         {
             IsScanning = false;
             ScanProgress?.Invoke(ProgressTotal, ProgressTotal);
+            _logger.LogInformation("Library scan completed. Resetting state");
             ScanCompleted?.Invoke();
         }
     }
 
-    private static void DiscoverCandidateFiles(List<LibraryRoot> roots, ScanContext context)
+    private void DiscoverCandidateFiles(List<LibraryRoot> roots, ScanContext context)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Candidate file discovery in active roots");
+
         foreach (LibraryRoot root in roots)
         {
             if (!Directory.Exists(root.Path))
             {
+                _logger.LogWarning("Library root directory does not exist: {Path}", root.Path);
                 continue;
             }
 
             try
             {
                 using CancellationTokenSource searchCts = new(TimeSpan.FromSeconds(30));
+                _logger.LogInformation("Enumerate files in library root: {Path}", root.Path);
                 IEnumerable<string> files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
                     .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
 
@@ -2275,13 +2477,14 @@ public class LibraryScanService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Scan] Error enumerating directory {root.Path}: {ex.Message}");
+                _logger.LogError(ex, "Error enumerating directory: {Path}", root.Path);
             }
         }
     }
 
     private void LoadDatabaseCache(List<LibraryRoot> roots, ScanContext context)
     {
+        _logger.LogInformation("Loading current file definitions from database");
         foreach (LibraryRoot root in roots)
         {
             List<FileEntry> dbFiles = _fileRepo.GetFilesUnderPath(root.Path);
@@ -2294,10 +2497,13 @@ public class LibraryScanService
 
     private async Task ProcessCandidateFilesAsync(ScanContext context, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Verification processing of {Count} candidates", context.CandidateFiles.Count);
+
         foreach (string filePath in context.CandidateFiles)
         {
             if (cancellationToken.IsCancellationRequested)
             {
+                _logger.LogWarning("File processing canceled");
                 break;
             }
 
@@ -2321,6 +2527,7 @@ public class LibraryScanService
                 {
                     if (existing.IsMissing)
                     {
+                        _logger.LogInformation("File returned back to active library state: {Path}", filePath);
                         existing.IsMissing = false;
                         _fileRepo.Update(existing);
                         context.HasChanges = true;
@@ -2330,6 +2537,7 @@ public class LibraryScanService
                 }
                 else
                 {
+                    _logger.LogInformation("File change detected: {Path}", filePath);
                     await UpdateChangedFileAsync(existing, filePath, size, modifiedTime, context, cancellationToken);
                 }
             }
@@ -2340,13 +2548,13 @@ public class LibraryScanService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Scan] Error examining path {filePath}: {ex.Message}");
+            _logger.LogError(ex, "Error examining path: {Path}", filePath);
         }
     }
 
     private async Task UpdateChangedFileAsync(FileEntry existing, string filePath, long size, long modifiedTime, ScanContext context, CancellationToken cancellationToken)
     {
-        string? hash = await FileHasher.ComputeSha256Async(filePath);
+        string? hash = await _fileHasher.ComputeSha256Async(filePath);
         if (hash is not null)
         {
             existing.Hash = hash;
@@ -2383,6 +2591,8 @@ public class LibraryScanService
 
     private async Task DetectRenamesAndMovesAsync(List<FileEntry> missingDbFiles, ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Rename and move detection of {Count} missing items", missingDbFiles.Count);
+
         Dictionary<long, List<string>> untrackedBySize = GroupUntrackedBySize(context.UntrackedFiles);
 
         foreach (FileEntry missing in missingDbFiles)
@@ -2411,9 +2621,10 @@ public class LibraryScanService
 
                     if (missing.ModifiedTime == modifiedTime)
                     {
-                        string? candidateHash = await FileHasher.ComputeSha256Async(candidatePath);
+                        string? candidateHash = await _fileHasher.ComputeSha256Async(candidatePath);
                         if (candidateHash == missing.Hash)
                         {
+                            _logger.LogInformation("Detected file rename/relocation. Original: {Old}, New: {New}", missing.Path, candidatePath);
                             missing.Path = candidatePath;
                             missing.Name = Path.GetFileName(candidatePath);
                             missing.IsMissing = false;
@@ -2435,7 +2646,7 @@ public class LibraryScanService
         }
     }
 
-    private static Dictionary<long, List<string>> GroupUntrackedBySize(List<string> untrackedFiles)
+    private Dictionary<long, List<string>> GroupUntrackedBySize(List<string> untrackedFiles)
     {
         Dictionary<long, List<string>> map = [];
         foreach (string path in untrackedFiles)
@@ -2450,13 +2661,18 @@ public class LibraryScanService
                 }
                 list.Add(path);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to inspect file size for grouping: {Path}", path);
+            }
         }
         return map;
     }
 
     private async Task ImportRemainingUntrackedAsync(ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
+        using LogTiming timer = LogTiming.Start(_logger, "Importing {Count} remaining untracked items", context.UntrackedFiles.Count - processedUntracked.Count);
+
         foreach (string path in context.UntrackedFiles)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -2475,9 +2691,10 @@ public class LibraryScanService
                 long size = info.Length;
                 long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
 
-                string? hash = await FileHasher.ComputeSha256Async(path);
+                string? hash = await _fileHasher.ComputeSha256Async(path);
                 if (hash is not null)
                 {
+                    _logger.LogInformation("Importing untracked file: {Path}", path);
                     _ = _fileRepo.Add(path, hash, size, modifiedTime);
                     context.HasChanges = true;
 
@@ -2490,7 +2707,7 @@ public class LibraryScanService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Scan] Error importing untracked file {path}: {ex.Message}");
+                _logger.LogError(ex, "Error importing untracked file {Path}", path);
             }
 
             ProgressCurrent++;
@@ -2500,12 +2717,15 @@ public class LibraryScanService
 
     private async Task ImportFileMetadataAsync(string path, FileEntry newEntry)
     {
+        using LogTiming timer = LogTiming.StartDebug(_logger, "Metadata and tag mapping extraction for {Path}", path);
+
         MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(path);
         if (metadata is null)
         {
             return;
         }
 
+        _logger.LogInformation("Extracting and writing embedded ExifTool metadata for imported file: {Path}", path);
         newEntry.Rating = metadata.Rating;
         newEntry.Title = metadata.Title;
         newEntry.Description = metadata.Description;
@@ -2550,6 +2770,7 @@ public class LibraryScanService
 
         if (finalMissingIds.Count > 0)
         {
+            _logger.LogInformation("Setting missing status for {Count} cataloged files", finalMissingIds.Count);
             _fileRepo.SetMissingStatus(finalMissingIds, true);
             context.HasChanges = true;
         }
@@ -2557,6 +2778,7 @@ public class LibraryScanService
 
     private void UpdateRootsLastScanTime(List<LibraryRoot> roots)
     {
+        _logger.LogInformation("Updating scan timing markers on active roots");
         foreach (LibraryRoot root in roots)
         {
             root.LastScanTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -2588,6 +2810,7 @@ public class LibraryScanService
 ### `Tagium.Core\Services\ThumbnailCache.cs`
 
 ```csharp
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using Tagium.Core.Helpers;
 
@@ -2596,11 +2819,13 @@ namespace Tagium.Core.Services;
 public class ThumbnailCache
 {
     private readonly ConcurrentDictionary<string, bool> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<ThumbnailCache> _logger;
 
     public string CacheDir { get; }
 
-    public ThumbnailCache()
+    public ThumbnailCache(ILogger<ThumbnailCache> logger)
     {
+        _logger = logger;
         CacheDir = AppDataHelper.GetThumbnailCacheDirectory();
 
         // Automatically purge old, bloated PNG thumbnails to migrate to high-performance JPEGs
@@ -2612,10 +2837,11 @@ public class ThumbnailCache
                 {
                     File.Delete(pngFile);
                 }
+                _logger.LogInformation("Purged legacy PNG thumbnails from cache directory");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ThumbnailService] Error purging old PNGs: {ex.Message}");
+                _logger.LogError(ex, "Error purging old PNG thumbnails from cache");
             }
         }
 
@@ -2624,15 +2850,18 @@ public class ThumbnailCache
         {
             try
             {
+                int count = 0;
                 foreach (string file in Directory.EnumerateFiles(CacheDir, "*.jpg"))
                 {
                     string name = Path.GetFileNameWithoutExtension(file);
                     _thumbnailCache.TryAdd(name, true);
+                    count++;
                 }
+                _logger.LogInformation("Successfully indexed {Count} JPEG thumbnails in cache", count);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ThumbnailCache] Error scanning cache: {ex.Message}");
+                _logger.LogError(ex, "Error scanning and populating thumbnail cache from disk");
             }
         }
     }
@@ -2661,6 +2890,7 @@ public class ThumbnailCache
 ### `Tagium.Core\Services\ThumbnailGenerator.cs`
 
 ```csharp
+using Microsoft.Extensions.Logging;
 using SkiaSharp;
 
 namespace Tagium.Core.Services;
@@ -2668,11 +2898,17 @@ namespace Tagium.Core.Services;
 public class ThumbnailGenerator
 {
     private const int JpegQuality = 75;
+    private readonly ILogger<ThumbnailGenerator> _logger;
 
     private static readonly SKColor PlaceholderBackgroundColor = new(30, 30, 30);
     public static readonly SKColor ErrorColor = SKColors.DarkRed;
     public static readonly SKColor VideoColor = SKColors.DarkSlateBlue;
     public static readonly SKColor GenericColor = SKColors.Gray;
+
+    public ThumbnailGenerator(ILogger<ThumbnailGenerator> logger)
+    {
+        _logger = logger;
+    }
 
     public async Task<bool> GenerateImageThumbnailAsync(string sourcePath, string destPath, int size, CancellationToken cancellationToken)
     {
@@ -2686,6 +2922,7 @@ public class ThumbnailGenerator
                     using SKBitmap? fallbackBitmap = SKBitmap.Decode(sourcePath);
                     if (fallbackBitmap is null)
                     {
+                        _logger.LogWarning("Failed to decode image using fallback decoder for path: {Path}", sourcePath);
                         return false;
                     }
                     SaveResized(fallbackBitmap, destPath, size);
@@ -2695,7 +2932,7 @@ public class ThumbnailGenerator
                 float scale = (float)size / Math.Max(codec.Info.Width, codec.Info.Height);
                 if (scale < 1.0f)
                 {
-                    var scaledSize = codec.GetScaledDimensions(scale);
+                    SKSizeI scaledSize = codec.GetScaledDimensions(scale);
                     SKImageInfo nearestInfo = new(
                         scaledSize.Width,
                         scaledSize.Height,
@@ -2705,6 +2942,7 @@ public class ThumbnailGenerator
                     using SKBitmap? original = SKBitmap.Decode(codec, nearestInfo);
                     if (original is null)
                     {
+                        _logger.LogWarning("Failed to decode image with sub-sampling for path: {Path}", sourcePath);
                         return false;
                     }
 
@@ -2716,6 +2954,7 @@ public class ThumbnailGenerator
                     using SKBitmap? original = SKBitmap.Decode(sourcePath);
                     if (original is null)
                     {
+                        _logger.LogWarning("Failed to decode full image for path: {Path}", sourcePath);
                         return false;
                     }
 
@@ -2725,7 +2964,7 @@ public class ThumbnailGenerator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ThumbnailGenerator] Sub-sampled decode failed for {sourcePath}: {ex.Message}");
+                _logger.LogError(ex, "Sub-sampled decode failed for: {Path}", sourcePath);
                 return false;
             }
         }, cancellationToken);
@@ -2733,28 +2972,35 @@ public class ThumbnailGenerator
 
     public void GeneratePlaceholder(string destPath, int size, string text, SKColor backgroundColor)
     {
-        using SKBitmap bitmap = new(size, size);
-        using SKCanvas canvas = new(bitmap);
-
-        canvas.Clear(backgroundColor);
-
-        using SKPaint textPaint = new()
+        try
         {
-            Color = SKColors.White,
-            IsAntialias = true
-        };
+            using SKBitmap bitmap = new(size, size);
+            using SKCanvas canvas = new(bitmap);
 
-        float fontSize = size / 4.0f;
-        using SKFont font = new()
+            canvas.Clear(backgroundColor);
+
+            using SKPaint textPaint = new()
+            {
+                Color = SKColors.White,
+                IsAntialias = true
+            };
+
+            float fontSize = size / 4.0f;
+            using SKFont font = new()
+            {
+                Size = fontSize
+            };
+
+            float x = size / 2.0f;
+            float y = (size / 2.0f) + (fontSize / 2.0f) - 5;
+
+            canvas.DrawText(text, x, y, SKTextAlign.Center, font, textPaint);
+            EncodeAndSave(bitmap, destPath);
+        }
+        catch (Exception ex)
         {
-            Size = fontSize
-        };
-
-        float x = size / 2.0f;
-        float y = (size / 2.0f) + (fontSize / 2.0f) - 5;
-
-        canvas.DrawText(text, x, y, SKTextAlign.Center, font, textPaint);
-        EncodeAndSave(bitmap, destPath);
+            _logger.LogError(ex, "Error generating placeholder thumbnail for path: {Path}", destPath);
+        }
     }
 
     private static void SaveResized(SKBitmap original, string destPath, int size)
@@ -2797,7 +3043,9 @@ public class ThumbnailGenerator
 ### `Tagium.Core\Services\ThumbnailService.cs`
 
 ```csharp
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using Tagium.Core.Helpers;
 using Tagium.Core.Models;
 
 namespace Tagium.Core.Services;
@@ -2807,6 +3055,7 @@ public sealed class ThumbnailService
     private readonly ThumbnailCache _cache;
     private readonly ThumbnailGenerator _generator;
     private readonly VideoFrameExtractor _extractor;
+    private readonly ILogger<ThumbnailService> _logger;
 
     private readonly ConcurrentDictionary<string, bool> _activeGenerations = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _generationSemaphore;
@@ -2834,14 +3083,20 @@ public sealed class ThumbnailService
         ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm"
     };
 
-    public ThumbnailService()
+    public ThumbnailService(
+        ThumbnailCache cache,
+        ThumbnailGenerator generator,
+        VideoFrameExtractor extractor,
+        ILogger<ThumbnailService> logger)
     {
-        _cache = new ThumbnailCache();
-        _generator = new ThumbnailGenerator();
-        _extractor = new VideoFrameExtractor();
+        _cache = cache;
+        _generator = generator;
+        _extractor = extractor;
+        _logger = logger;
 
         int concurrencyLimit = Math.Max(2, Environment.ProcessorCount / 2);
         _generationSemaphore = new SemaphoreSlim(concurrencyLimit, concurrencyLimit);
+        _logger.LogInformation("Thumbnail service initialized with concurrency limit: {Limit}", concurrencyLimit);
     }
 
     public string GetThumbnailPath(string? hash, Guid fileId)
@@ -2873,6 +3128,8 @@ public sealed class ThumbnailService
 
         try
         {
+            using LogTiming timer = LogTiming.StartDebug(_logger, "Thumbnail generation for {Path}", file.Path);
+
             if (!File.Exists(destPath))
             {
                 await TryGenerateThumbnailInternalAsync(file.Path, destPath, size, cancellationToken);
@@ -2882,10 +3139,9 @@ public sealed class ThumbnailService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ThumbnailService] Error generating for {file.Path}: {ex.Message}");
+            _logger.LogError(ex, "Failed to generate thumbnail for path: {Path}", file.Path);
             _generator.GeneratePlaceholder(destPath, size, "ERR", ThumbnailGenerator.ErrorColor);
             _cache.AddToCache(key);
-            ThumbnailGenerated?.Invoke(file.Id);
         }
         finally
         {
@@ -2919,7 +3175,7 @@ public sealed class ThumbnailService
                 }
                 finally
                 {
-                    VideoFrameExtractor.CleanupTempFile(tempFramePath);
+                    _extractor.CleanupTempFile(tempFramePath);
                 }
             }
             else
@@ -2949,6 +3205,7 @@ public sealed class ThumbnailService
         _ = Task.Run(async () =>
         {
             _isBgQueueRunning = true;
+            _logger.LogInformation("Starting background thumbnail pre-generation queue");
             try
             {
                 List<FileEntry> missingFiles = fileList.Where(f => !HasThumbnail(f.Id, f.Hash)).ToList();
@@ -2961,6 +3218,7 @@ public sealed class ThumbnailService
                         _queueProcessed = 0;
                         _queueTotal = 0;
                     }
+                    _logger.LogInformation("All files already have cached thumbnails. Skipping queue background job");
                     QueueCompleted?.Invoke();
                     return;
                 }
@@ -2972,16 +3230,14 @@ public sealed class ThumbnailService
                     QueueProgressChanged?.Invoke(_queueProcessed, _queueTotal);
                 }
 
+                using LogTiming queueTimer = LogTiming.Start(_logger, "Background thumbnail pre-generation queue run of {Count} items", totalMissing);
+
                 foreach (FileEntry file in missingFiles)
                 {
                     if (token.IsCancellationRequested)
                     {
+                        _logger.LogInformation("Thumbnail background queue generation was canceled");
                         break;
-                    }
-
-                    while (_activeGenerations.Count > 0)
-                    {
-                        await Task.Delay(100, token);
                     }
 
                     await GenerateThumbnailAsync(file, DefaultThumbnailSize, token);
@@ -2998,10 +3254,16 @@ public sealed class ThumbnailService
                     _queueProcessed = 0;
                     _queueTotal = 0;
                 }
+                _logger.LogInformation("Thumbnail background queue processing completed");
                 QueueCompleted?.Invoke();
             }
             catch (TaskCanceledException)
             {
+                _logger.LogInformation("Thumbnail queue pre-generation task cancelled");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in background thumbnail generation queue");
             }
             finally
             {
@@ -3012,6 +3274,7 @@ public sealed class ThumbnailService
 
     public void CancelBackgroundGeneration()
     {
+        _logger.LogInformation("Cancelling background thumbnail pre-generation task");
         _bgQueueCts?.Cancel();
     }
 }
@@ -3023,6 +3286,7 @@ public sealed class ThumbnailService
 
 ```csharp
 using FFMpegCore;
+using Microsoft.Extensions.Logging;
 
 namespace Tagium.Core.Services;
 
@@ -3031,22 +3295,25 @@ public class VideoFrameExtractor
     private const int VideoEarlyCaptureSeconds = 5;
     private const int VideoDurationThresholdSeconds = 10;
     private const double VideoLateCaptureRatio = 0.1;
+    private readonly ILogger<VideoFrameExtractor> _logger;
 
     public bool HasFFmpeg { get; }
 
-    public VideoFrameExtractor()
+    public VideoFrameExtractor(ILogger<VideoFrameExtractor> logger)
     {
+        _logger = logger;
         string? ffmpegPath = FFmpegLocator.Find();
         HasFFmpeg = ffmpegPath is not null;
 
         if (HasFFmpeg)
         {
             string binaryFolder = Path.GetDirectoryName(ffmpegPath!)!;
+            _logger.LogInformation("FFmpeg companion binary folder discovered at: {Path}", binaryFolder);
             GlobalFFOptions.Configure(new FFOptions { BinaryFolder = binaryFolder });
         }
         else
         {
-            Console.WriteLine("[VideoFrameExtractor] WARNING: ffmpeg.exe or ffprobe.exe not found. Video extraction disabled.");
+            _logger.LogWarning("ffmpeg.exe or ffprobe.exe not found in app paths. Video snapshot extraction is disabled");
         }
     }
 
@@ -3054,31 +3321,35 @@ public class VideoFrameExtractor
     {
         try
         {
+            _logger.LogDebug("Analyzing duration for video frame extraction: {Path}", sourcePath);
             TimeSpan? duration = await AnalyzeDurationAsync(sourcePath);
             if (duration is null)
             {
+                _logger.LogWarning("Unable to read video length duration for: {Path}", sourcePath);
                 return null;
             }
 
             TimeSpan captureTime = CalculateCaptureTime(duration.Value);
+            _logger.LogInformation("Extracting snapshot frame for video {Path} at position {Position}", sourcePath, captureTime);
             return await ExtractSnapshotAsync(sourcePath, captureTime);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[VideoFrameExtractor] Video processing error: {ex.Message}");
+            _logger.LogError(ex, "Video processing error during frame extraction for file: {Path}", sourcePath);
             return null;
         }
     }
 
-    private static async Task<TimeSpan?> AnalyzeDurationAsync(string sourcePath)
+    private async Task<TimeSpan?> AnalyzeDurationAsync(string sourcePath)
     {
         try
         {
             IMediaAnalysis analysis = await FFProbe.AnalyseAsync(sourcePath);
             return analysis.Duration;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "FFProbe duration analysis failed for file: {Path}", sourcePath);
             return null;
         }
     }
@@ -3094,7 +3365,7 @@ public class VideoFrameExtractor
         return TimeSpan.FromSeconds(seconds);
     }
 
-    private static async Task<string?> ExtractSnapshotAsync(string sourcePath, TimeSpan captureTime)
+    private async Task<string?> ExtractSnapshotAsync(string sourcePath, TimeSpan captureTime)
     {
         string tempPath = Path.GetTempFileName() + ".jpg";
 
@@ -3103,25 +3374,42 @@ public class VideoFrameExtractor
             await FFMpeg.SnapshotAsync(sourcePath, tempPath, null, captureTime);
             return File.Exists(tempPath) ? tempPath : null;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "FFMpeg snapshot operation failed for: {Path}", sourcePath);
             CleanupTempFile(tempPath);
             return null;
         }
     }
 
-    public static void CleanupTempFile(string path)
+    public void CleanupTempFile(string path)
     {
-        try
+        if (!File.Exists(path))
         {
-            if (File.Exists(path))
+            return;
+        }
+
+        const int maxRetries = 3;
+        const int delayMs = 100;
+
+        for (int i = 1; i <= maxRetries; i++)
+        {
+            try
             {
                 File.Delete(path);
+                _logger.LogDebug("Successfully cleaned up temporary video thumbnail file: {Path}", path);
+                return;
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[VideoFrameExtractor] Failed to cleanup temp file {path}: {ex.Message}");
+            catch (IOException ex) when (i < maxRetries)
+            {
+                _logger.LogDebug("Antivirus/OS file lock detected on {Path}. Retrying cleanup (Attempt {Current}/{Max})... Reason: {Reason}", path, i, maxRetries, ex.Message);
+                Thread.Sleep(delayMs);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cleanup temporary video thumbnail file {Path}", path);
+                break;
+            }
         }
     }
 }
@@ -3972,6 +4260,9 @@ public class UndoService
 
 ```csharp
 using Photino.Blazor;
+using Serilog;
+using Serilog.Events;
+using Tagium.Core.Helpers;
 using Tagium.Photino.Blazor.Setup;
 
 namespace Tagium.Photino.Blazor;
@@ -3982,30 +4273,59 @@ public class Program
     [Obsolete]
     private static void Main(string[] args)
     {
-        PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
+        InitializeLogger();
 
-        // Register Services
-        ServiceRegistrar.ConfigureServices(appBuilder.Services);
+        try
+        {
+            Log.Information("Starting Tagium Application...");
 
-        // Register Root Component
-        appBuilder.RootComponents.Add<App>("#app");
+            PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
 
-        PhotinoBlazorApp app = appBuilder.Build();
+            // Register Services
+            ServiceRegistrar.ConfigureServices(appBuilder.Services);
 
-        // Pass ServiceProvider to static SchemeHandler
-        SchemeHandlers.ServiceProvider = app.Services;
+            // Register Root Component
+            appBuilder.RootComponents.Add<App>("#app");
 
-        // Custom Scheme for Thumbnails and Previews
-        _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
+            PhotinoBlazorApp app = appBuilder.Build();
 
-        _ = app.MainWindow
-            .SetTitle("Tagium")
-            .SetUseOsDefaultSize(false)
-            .SetSize(1200, 800)
-            .Center()
-            .SetLogVerbosity(0);
+            // Pass ServiceProvider to static SchemeHandler
+            SchemeHandlers.ServiceProvider = app.Services;
 
-        app.Run();
+            // Custom Scheme for Thumbnails and Previews
+            _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
+
+            _ = app.MainWindow
+                .SetTitle("Tagium")
+                .SetUseOsDefaultSize(false)
+                .SetSize(1200, 800)
+                .Center()
+                .SetLogVerbosity(0);
+
+            app.Run();
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Tagium application terminated unexpectedly.");
+        }
+        finally
+        {
+            Log.CloseAndFlush();
+        }
+    }
+
+    private static void InitializeLogger()
+    {
+        string baseDir = AppDataHelper.GetBaseDirectory();
+        string logPath = Path.Combine(baseDir, "app.log");
+
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
+            .WriteTo.Console()
+            .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+            .CreateLogger();
     }
 }
 ```
@@ -4017,31 +4337,35 @@ public class Program
 ```xml
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AssemblyName>Tagium</AssemblyName>
-    <UseWindowsForms>False</UseWindowsForms>
-  </PropertyGroup>
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AssemblyName>Tagium</AssemblyName>
+		<UseWindowsForms>False</UseWindowsForms>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
-    <PackageReference Include="NativeFileDialogs.Net" Version="1.3.0.1" />
-    <!-- Downgraded to 3.2.3 to restore RegisterFileDropHandler support -->
-    <PackageReference Include="Photino.Blazor" Version="3.2.3" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+		<PackageReference Include="NativeFileDialogs.Net" Version="1.3.0.1" />
+		<!-- Downgraded to 3.2.3 to restore RegisterFileDropHandler support -->
+		<PackageReference Include="Photino.Blazor" Version="3.2.3" />
+		<PackageReference Include="Serilog" Version="4.3.1" />
+		<PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+		<PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+		<PackageReference Include="Serilog.Extensions.Logging" Version="9.0.0" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Tagium.Core\Tagium.Core.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Tagium.Core\Tagium.Core.csproj" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Content Update="wwwroot\**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+	<ItemGroup>
+		<Content Update="wwwroot\**">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
 
 </Project>
 ```
@@ -4200,7 +4524,6 @@ public partial class AppToolbar
 @inject LibraryService Library
 @inject AppState AppState
 @inject SettingsManager Settings
-@inject SystemLauncherService Launcher
 @inject IJSRuntime JS
 
 <style>
@@ -4215,10 +4538,10 @@ public partial class AppToolbar
         transition: opacity 0.15s ease-in-out !important;
     }
 
-    #file-grid-container.initializing {
-        opacity: 0 !important;
-        pointer-events: none !important;
-    }
+        #file-grid-container.initializing {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
 
     .file-grid-row {
         display: flex !important;
@@ -4298,6 +4621,7 @@ namespace Tagium.Photino.Blazor.Components;
 public partial class FileGrid : IDisposable
 {
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+    [Inject] private SystemLauncherService Launcher { get; set; } = default!;
 
     private List<FileEntry> Files = [];
     private List<List<FileEntry>> FileRows = [];
@@ -4384,7 +4708,7 @@ public partial class FileGrid : IDisposable
 
         _ = Task.Run(async () =>
         {
-            await Task.Delay(150);
+            await Task.Delay(200);
             lock (_renderLock)
             {
                 _isRenderPending = false;
@@ -4443,14 +4767,14 @@ public partial class FileGrid : IDisposable
         AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
 
-    private static void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
+    private void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
     {
         if (file.IsMissing)
         {
             return;
         }
 
-        SystemLauncherService.OpenFile(file.Path);
+        Launcher.OpenFile(file.Path);
     }
 
     [JSInvokable]
@@ -4502,7 +4826,7 @@ public partial class FileGrid : IDisposable
             return;
         }
 
-        SystemLauncherService.OpenFile(file.Path);
+        Launcher.OpenFile(file.Path);
     }
 
     [JSInvokable]
@@ -4622,7 +4946,6 @@ public partial class FileGrid : IDisposable
 @inject LibraryService Library
 @inject AppState AppState
 @inject SettingsManager Settings
-@inject SystemLauncherService Launcher
 @inject IJSRuntime JS
 
 <div id="file-list-container" class="list-container">
@@ -4693,6 +5016,7 @@ namespace Tagium.Photino.Blazor.Components;
 public partial class FileListView : IDisposable
 {
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+    [Inject] private SystemLauncherService Launcher { get; set; } = default!;
 
     private List<FileEntry> Files = [];
     private bool _isRenderPending = false;
@@ -4736,7 +5060,7 @@ public partial class FileListView : IDisposable
 
         _ = Task.Run(async () =>
         {
-            await Task.Delay(150);
+            await Task.Delay(200);
             lock (_renderLock)
             {
                 _isRenderPending = false;
@@ -4770,7 +5094,7 @@ public partial class FileListView : IDisposable
             return;
         }
 
-        SystemLauncherService.OpenFile(file.Path);
+        Launcher.OpenFile(file.Path);
     }
 
     private static string FormatDate(long unixTimestamp)
@@ -6238,38 +6562,50 @@ public class ModalService
 ### `Tagium.Photino.Blazor\Services\SystemLauncherService.cs`
 
 ```csharp
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
 namespace Tagium.Photino.Blazor.Services;
 
 public class SystemLauncherService
 {
-    public static void OpenFile(string path)
+    private readonly ILogger<SystemLauncherService> _logger;
+
+    public SystemLauncherService(ILogger<SystemLauncherService> logger)
+    {
+        _logger = logger;
+    }
+
+    public void OpenFile(string path)
     {
         if (!File.Exists(path))
         {
+            _logger.LogWarning("Cannot open file. File does not exist at path: {Path}", path);
             return;
         }
 
         try
         {
+            _logger.LogInformation("Opening file: {Path}", path);
             _ = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Launcher] Failed to open file: {ex.Message}");
+            _logger.LogError(ex, "Failed to open file: {Path}", path);
         }
     }
 
-    public static void ShowInExplorer(string path)
+    public void ShowInExplorer(string path)
     {
         if (!File.Exists(path))
         {
+            _logger.LogWarning("Cannot show in explorer. File does not exist at path: {Path}", path);
             return;
         }
 
         try
         {
+            _logger.LogInformation("Showing file in explorer: {Path}", path);
             // Select the file in explorer
             string argument = $"/select,\"{path}\"";
 
@@ -6282,7 +6618,7 @@ public class SystemLauncherService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Launcher] Failed to show in explorer: {ex.Message}");
+            _logger.LogError(ex, "Failed to show file in explorer: {Path}", path);
         }
     }
 }
@@ -6321,7 +6657,7 @@ public static class SchemeHandlers
     [Obsolete]
     private static Stream HandleThumbnail(Uri uri, out string contentType)
     {
-        contentType = "image/png";
+        contentType = "image/jpeg";
 
         string[] segments = uri.AbsolutePath.Trim('/').Split('/');
         if (segments.Length == 0 || !Guid.TryParse(segments[0], out Guid fileId))
@@ -6410,7 +6746,9 @@ public static class SchemeHandlers
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
+using Serilog;
 using Tagium.Core.Data;
+using Tagium.Core.Helpers;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
 using Tagium.Core.Services.DataMerge;
@@ -6427,6 +6765,9 @@ public static class ServiceRegistrar
 {
     public static void ConfigureServices(IServiceCollection services)
     {
+        // Logging
+        _ = services.AddLogging(loggingBuilder => loggingBuilder.AddSerilog(dispose: true));
+
         // Core - Settings
         _ = services.AddSingleton<SettingsManager>();
 
@@ -6435,14 +6776,21 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<TagRepository>();
         _ = services.AddSingleton<FileRepository>();
         _ = services.AddSingleton<FileTagRepository>();
+        _ = services.AddSingleton<SearchQueryCompiler>();
         _ = services.AddSingleton<FileSearchRepository>();
         _ = services.AddSingleton<LibraryRootRepository>();
 
         // Core - Undo
         _ = services.AddSingleton<UndoService>();
 
+        // Core - Helpers
+        _ = services.AddSingleton<FileHasher>();
+
         // Core - Services
         _ = services.AddSingleton<ExifToolService>();
+        _ = services.AddSingleton<ThumbnailCache>();
+        _ = services.AddSingleton<ThumbnailGenerator>();
+        _ = services.AddSingleton<VideoFrameExtractor>();
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryScanService>();
         _ = services.AddSingleton<LibraryService>();
@@ -7139,6 +7487,8 @@ namespace Tagium.Photino.Blazor.Components.Inspectors;
 
 public partial class SingleFileInspector
 {
+    [Inject] private SystemLauncherService Launcher { get; set; } = default!;
+
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
     [Parameter] public List<Tag> AssignedTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
@@ -7164,12 +7514,12 @@ public partial class SingleFileInspector
 
     private void OpenFile()
     {
-        SystemLauncherService.OpenFile(File.Path);
+        Launcher.OpenFile(File.Path);
     }
 
     private void ShowInExplorer()
     {
-        SystemLauncherService.ShowInExplorer(File.Path);
+        Launcher.ShowInExplorer(File.Path);
     }
 }
 ```

@@ -4,30 +4,34 @@
 @inject LibraryService Library
 
 <div class="multi-file-inspector">
-    <div class="inspector-header">
-        <h3>@AppState.SelectedFileIds.Count Files Selected</h3>
+    <div class="inspector-multi-header">
+        <h3 class="multi-title">@AppState.SelectedFileIds.Count Files Selected</h3>
     </div>
 
     <div class="inspector-tags">
-        <h4>Common Tags</h4>
+        <h4 class="section-title">Common Tags</h4>
         <div class="tag-pills">
             @foreach (var tag in CommonTags)
             {
                 <span class="tag-pill" style="background-color: @tag.ColorHex">
                     @if (!string.IsNullOrEmpty(tag.Emoji))
                     {
-                        <span>@tag.Emoji</span>
+                        <span class="pill-emoji">@tag.Emoji</span>
                     }
-                    @tag.Name
+                    <span class="pill-text">@tag.Name</span>
                     <button class="btn-remove-tag" @onclick="() => BulkRemoveTag(tag.Id)">✕</button>
                 </span>
+            }
+            @if (CommonTags.Count == 0)
+            {
+                <span class="empty-tag">No tags in common.</span>
             }
         </div>
 
         @if (AvailableTags.Count > 0)
         {
             <div class="add-tag-section">
-                <select @onchange="@(e => { if (Guid.TryParse(e.Value?.ToString(), out var tid)) BulkAddTag(tid); })">
+                <select class="add-tag-select" @onchange="@(e => { if (Guid.TryParse(e.Value?.ToString(), out var tid)) BulkAddTag(tid); })">
                     <option value="">Add tag to all...</option>
                     @foreach (var tag in AvailableTags)
                     {

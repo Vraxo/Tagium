@@ -1,66 +1,70 @@
 .data-tools {
-        padding: 5px;
+    padding: var(--space-2xs);
+}
+
+.section {
+    margin-bottom: var(--space-sm);
+}
+
+h4 {
+    margin: 0 0 var(--space-2xs) 0;
+    color: var(--text-color);
+}
+
+.desc {
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
+    margin: 0 0 var(--space-xs) 0;
+}
+
+.btn {
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px var(--space-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+    .btn:hover {
+        background-color: var(--surface-hover);
+        border-color: var(--text-muted);
     }
 
-    .section {
-        margin-bottom: 15px;
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
-    h4 {
-        margin: 0 0 5px 0;
-        color: #eee;
+.btn-danger {
+    background: var(--danger-color);
+    border-color: var(--danger-hover);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background: var(--danger-hover);
     }
 
-    .desc {
-        font-size: 0.9em;
-        color: #aaa;
-        margin: 0 0 10px 0;
-    }
+.btn-row {
+    display: flex;
+    gap: var(--space-xs);
+}
 
-    .btn {
-        background: #444;
-        border: 1px solid #555;
-        color: white;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-    }
+.result-box {
+    margin-top: var(--space-xs);
+    padding: var(--space-xs);
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
+}
 
-        .btn:hover {
-            background: #555;
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-    .btn-danger {
-        background: #c62828;
-        border-color: #b71c1c;
-    }
-
-        .btn-danger:hover {
-            background: #d32f2f;
-        }
-
-    .btn-row {
-        display: flex;
-        gap: 10px;
-    }
-
-    .result-box {
-        margin-top: 10px;
-        padding: 8px;
-        background: #222;
-        border: 1px solid #333;
-        border-radius: 4px;
-        font-size: 0.9em;
-        color: #ccc;
-    }
-
-    hr {
-        border: 0;
-        border-top: 1px solid #444;
-        margin: 15px 0;
-    }
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: var(--space-sm) 0;
+}
