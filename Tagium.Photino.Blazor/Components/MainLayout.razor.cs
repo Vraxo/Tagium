@@ -3,7 +3,6 @@ using Microsoft.JSInterop;
 using Tagium.Core.Models;
 using Tagium.Core.Services;
 using Tagium.Core.Settings;
-using Tagium.Photino.Blazor.Components.Views;
 using Tagium.Photino.Blazor.Services;
 using Tagium.Photino.Blazor.Services.Toasting;
 
@@ -31,7 +30,7 @@ public partial class MainLayout : IDisposable
 
     private DotNetObjectReference<MainLayout>? _objRef;
 
-    private FilesViewToolbar? FilesViewToolbarRef { get; set; }
+    private AppToolbar? AppToolbarRef { get; set; }
 
     protected override void OnInitialized()
     {
@@ -81,9 +80,9 @@ public partial class MainLayout : IDisposable
                 AppState.Undo();
                 break;
             case "f":
-                if (FilesViewToolbarRef != null)
+                if (AppToolbarRef != null)
                 {
-                    await FilesViewToolbarRef.FocusSearchAsync();
+                    await AppToolbarRef.FocusSearchAsync();
                 }
                 break;
             case "t":

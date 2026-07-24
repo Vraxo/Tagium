@@ -1,20 +1,91 @@
 @namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Services
 @inject AppState AppState
+@inject SettingsManager Settings
 
 <div class="app-toolbar">
+    <!-- Left Section: Scope & Directory tools -->
     <div class="toolbar-left">
-        <button class="btn btn-primary" @onclick="OpenLibraryFolders">
-            📁 Library Folders
+        <button class="btn-action" @onclick="OpenLibraryFolders" title="Configure Library Folders">
+            <i class="fa-solid fa-folder-open"></i> Folders
         </button>
+
+        <div class="vertical-divider"></div>
+
+        <div class="segmented-control">
+            <button class="segment-btn @(AppState.CurrentView == AppView.Files ? "active" : "")"
+                    @onclick="() => AppState.SwitchView(AppView.Files)">
+                <i class="fa-solid fa-images"></i> Files
+            </button>
+            <button class="segment-btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
+                    @onclick="() => AppState.SwitchView(AppView.Tags)">
+                <i class="fa-solid fa-tags"></i> Tags
+            </button>
+        </div>
     </div>
 
+    <!-- Center Section: Dynamic query input -->
     <div class="toolbar-center">
+        @if (AppState.CurrentView == AppView.Files)
+        {
+            <div class="search-wrapper">
+                <SearchInput @ref="SearchInput" />
+            </div>
+        }
     </div>
 
+    <!-- Right Section: Media grid controls, database settings & global preferences -->
     <div class="toolbar-right">
-        <button class="btn btn-secondary" @onclick="ToggleTagView">
-            @(AppState.CurrentView == AppView.Tags ? "Show Files" : "Manage Tags")
+        @if (AppState.CurrentView == AppView.Files)
+        {
+            <button class="btn-icon"
+                    @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
+                    title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+                @if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                {
+                    <i class="fa-solid fa-list"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-table-cells"></i>
+                }
+            </button>
+
+            <div class="view-options-wrapper">
+                <button class="btn-icon @(IsMenuOpen ? "active" : "")"
+                        @onclick="ToggleMenu"
+                        title="View Options">
+                    <i class="fa-solid fa-eye"></i>
+                </button>
+
+                @if (IsMenuOpen)
+                {
+                    <div class="view-menu-overlay" @onclick="CloseMenu"></div>
+                    <div class="view-menu-dropdown">
+                        <div class="menu-section">
+                            <label>Sort By</label>
+                            <SortControls />
+                        </div>
+                        <hr />
+                        <div class="menu-section">
+                            <label>Thumbnail Size</label>
+                            <ThumbnailSizeSlider />
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="vertical-divider"></div>
+        }
+
+        <button class="btn-icon" @onclick="OpenDataManagement" title="Database & Integrity Tools">
+            <i class="fa-solid fa-database"></i>
+        </button>
+
+        <button class="btn-icon" @onclick="OpenPreferences" title="Preferences">
+            <i class="fa-solid fa-gear"></i>
         </button>
     </div>
 </div>

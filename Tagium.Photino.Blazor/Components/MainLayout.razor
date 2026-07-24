@@ -143,14 +143,12 @@
     <div class="splitter" id="splitter-left"></div>
 
     <div class="content-panel">
-        <AppToolbar />
+        <AppToolbar @ref="AppToolbarRef" />
 
         <div class="view-container">
             @if (AppState.CurrentView == AppView.Files)
             {
                 <div style="display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;">
-                    <FilesViewToolbar @ref="FilesViewToolbarRef" />
-
                     @if (SettingsManager.Current.FileViewMode == FileViewMode.Grid)
                     {
                         <FileGrid />

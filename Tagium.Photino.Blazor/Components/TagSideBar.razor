@@ -12,12 +12,12 @@
     <div class="tag-list @GetDisplayModeClass()">
         <div class="tag-item system-item @(IsAllFilesActive ? "active" : "")"
              @onclick="() => SetSearch(string.Empty)">
-            <span class="icon">📁</span> All Files
+            <i class="fa-solid fa-folder icon fa-fw"></i> All Files
         </div>
 
         <div class="tag-item system-item @(IsMissingActive ? "active" : "")"
              @onclick="() => AppState.SetMissingOnly(true)">
-            <span class="icon">⚠️</span> Missing Files
+            <i class="fa-solid fa-triangle-exclamation icon fa-fw"></i> Missing Files
         </div>
 
         <hr />

@@ -13,7 +13,14 @@
         <button class="btn-icon"
                 @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
                 title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
-            <span>@(Settings.Current.FileViewMode == FileViewMode.Grid ? "☰" : "⊞")</span>
+            @if (Settings.Current.FileViewMode == FileViewMode.Grid)
+            {
+                <i class="fa-solid fa-list"></i>
+            }
+            else
+            {
+                <i class="fa-solid fa-table-cells"></i>
+            }
         </button>
     </div>
 
@@ -21,7 +28,7 @@
         <button class="btn-icon @(IsMenuOpen ? "active" : "")"
                 @onclick="ToggleMenu"
                 title="View Options">
-            <span>👁</span>
+            <i class="fa-solid fa-eye"></i>
         </button>
 
         @if (IsMenuOpen)

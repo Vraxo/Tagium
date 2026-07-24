@@ -18,7 +18,9 @@
         }
         else
         {
-            <div class="generic-file-preview">📄</div>
+            <div class="generic-file-preview">
+                <i class="fa-solid fa-file"></i>
+            </div>
         }
     </div>
 
@@ -33,7 +35,9 @@
                         <span class="pill-emoji">@tag.Emoji</span>
                     }
                     <span class="pill-text">@tag.Name</span>
-                    <button class="btn-remove-tag" @onclick="() => RemoveTag(tag.Id)">✕</button>
+                    <button class="btn-remove-tag" @onclick="() => RemoveTag(tag.Id)">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </span>
             }
         </div>

@@ -19,7 +19,9 @@
                         <span class="pill-emoji">@tag.Emoji</span>
                     }
                     <span class="pill-text">@tag.Name</span>
-                    <button class="btn-remove-tag" @onclick="() => BulkRemoveTag(tag.Id)">✕</button>
+                    <button class="btn-remove-tag" @onclick="() => BulkRemoveTag(tag.Id)">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </span>
             }
             @if (CommonTags.Count == 0)
