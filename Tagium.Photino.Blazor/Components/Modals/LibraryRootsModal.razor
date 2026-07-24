@@ -6,7 +6,7 @@
 @inject ModalService ModalService
 
 <div class="library-roots-modal">
-    <div class="modal-body">
+    <div class="roots-modal-content">
         <p class="description">
             The library syncs automatically with configured root folders. Supported image and video formats will be indexed.
         </p>
@@ -14,14 +14,21 @@
         <div class="actions">
             <button class="btn btn-primary" @onclick="AddFolder">Add Folder...</button>
             <button class="btn btn-secondary" @onclick="TriggerRescan" disabled="@ScanService.IsScanning">
-                @(ScanService.IsScanning ? "Scanning..." : "Rescan All")
+                @if (ScanService.IsScanning)
+                {
+                    <span>Scanning...</span>
+                }
+                else
+                {
+                    <span>Rescan All</span>
+                }
             </button>
         </div>
 
         @if (ScanService.IsScanning)
         {
             <div class="scanning-status">
-                <span class="spinner"></span>
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
                 <span>Scanning files (@ScanService.ProgressCurrent / @ScanService.ProgressTotal)...</span>
             </div>
         }
@@ -54,8 +61,8 @@
                                 <input type="checkbox" checked="@root.IsEnabled" @onchange="() => ToggleRoot(root)" />
                                 <span class="slider"></span>
                             </label>
-                            <button class="btn btn-danger-icon" @onclick="() => RemoveRoot(root)" title="Remove folder">
-                                ✕
+                            <button class="btn-danger-icon" @onclick="() => RemoveRoot(root)" title="Remove folder">
+                                <i class="fa-solid fa-trash-can"></i>
                             </button>
                         </div>
                     </div>
