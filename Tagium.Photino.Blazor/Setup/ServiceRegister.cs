@@ -61,5 +61,6 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<SystemLauncherService>();
         _ = services.AddSingleton<ToastService>();
         _ = services.AddSingleton<KeyboardShortcutService>();
+        _ = services.AddSingleton<ThemeService>();
     }
 }

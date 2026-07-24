@@ -94,6 +94,20 @@
                 </div>
 
                 <div class="appearance-section">
+                    <h5>Application Theme</h5>
+                    <p class="section-hint">Select a dynamic JSON theme loaded from your local AppData folder.</p>
+                    <select class="theme-select" value="@Settings.Current.SelectedTheme" @onchange="OnThemeChanged">
+                        <option value="Default">Default (Dark charcoal)</option>
+                        @foreach (var theme in ThemeService.LoadedThemes)
+                        {
+                            <option value="@theme.Name">@theme.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <hr />
+
+                <div class="appearance-section">
                     <h5>Tag Sidebar Style</h5>
                     <div class="radio-group">
                         <label>

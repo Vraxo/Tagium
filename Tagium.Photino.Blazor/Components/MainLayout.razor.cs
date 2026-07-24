@@ -17,6 +17,7 @@ public partial class MainLayout : IDisposable
     [Inject] private LibraryScanService ScanService { get; set; } = default!;
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private ThemeService ThemeService { get; set; } = default!;
 
     private bool _scanInProgress = false;
     private int _scanProcessed = 0;
@@ -64,6 +65,10 @@ public partial class MainLayout : IDisposable
             "splitter-right");
 
         await JS.InvokeVoidAsync("globalShortcuts.init", _objRef);
+
+        // Safely boot theme configurations after the DOM is fully loaded and interactive
+        await ThemeService.InitializeAsync(JS);
+        await ThemeService.ApplyThemeAsync(JS, SettingsManager.Current.SelectedTheme);
     }
 
     [JSInvokable]

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services;
@@ -22,6 +23,8 @@ public partial class SettingsModal : IDisposable
     [Inject] private DatabaseManager DbManager { get; set; } = default!;
     [Inject] private ToastService Toast { get; set; } = default!;
     [Inject] private ModalService ModalService { get; set; } = default!;
+    [Inject] private ThemeService ThemeService { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     private enum SettingsTab { Folders, Appearance, Data }
     private SettingsTab ActiveTab { get; set; } = SettingsTab.Folders;
@@ -114,6 +117,18 @@ public partial class SettingsModal : IDisposable
     private void UpdateEmojiSet(EmojiSet set)
     {
         Settings.Update(s => s.EmojiPreference = set);
+    }
+
+    private async Task OnThemeChanged(ChangeEventArgs e)
+    {
+        string? themeName = e.Value?.ToString();
+        if (string.IsNullOrEmpty(themeName))
+        {
+            return;
+        }
+
+        Settings.Update(s => s.SelectedTheme = themeName);
+        await ThemeService.ApplyThemeAsync(JS, themeName);
     }
 
     // --- Maintenance (Data Management) Methods ---

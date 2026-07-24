@@ -49,6 +49,19 @@
 <body>
     <div id="app">Loading...</div>
     <script>
+        window.themeManager = {
+            applyTheme: function (colors) {
+                if (!colors) {
+                    document.documentElement.removeAttribute('style');
+                    return;
+                }
+                document.documentElement.removeAttribute('style');
+                for (const [key, value] of Object.entries(colors)) {
+                    document.documentElement.style.setProperty(key, value);
+                }
+            }
+        };
+
         window.globalShortcuts = {
             init: function (dotNetRef) {
                 document.addEventListener('keydown', function (e) {

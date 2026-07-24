@@ -32,4 +32,16 @@ public static class AppDataHelper
 
         return path;
     }
+
+    public static string GetThemesDirectory()
+    {
+        string path = Path.Combine(GetBaseDirectory(), "Themes");
+
+        if (!Directory.Exists(path))
+        {
+            _ = Directory.CreateDirectory(path);
+        }
+
+        return path;
+    }
 }

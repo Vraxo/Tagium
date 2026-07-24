@@ -11,4 +11,5 @@ public class Settings
     public TagSortBy TagSortBy { get; set; } = TagSortBy.Name;
     public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
     public FileViewMode FileViewMode { get; set; } = FileViewMode.Grid;
+    public string SelectedTheme { get; set; } = "Default";
 }
