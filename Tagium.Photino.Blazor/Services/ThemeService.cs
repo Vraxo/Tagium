@@ -10,6 +10,7 @@ public class ThemeService
     public List<Theme> LoadedThemes { get; } = [];
 
     private readonly string _themesDir;
+    private readonly object _lock = new();
     private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
     public ThemeService()
@@ -20,7 +21,8 @@ public class ThemeService
     public async Task InitializeAsync(IJSRuntime js)
     {
         SyncDefaultThemesFromShippingDir();
-        await ReloadThemesAsync();
+        ReloadThemes();
+        await Task.CompletedTask;
     }
 
     public async Task ApplyThemeAsync(IJSRuntime js, string themeName)
@@ -31,37 +33,51 @@ public class ThemeService
             return;
         }
 
-        Theme? active = LoadedThemes.FirstOrDefault(t => string.Equals(t.Name, themeName, StringComparison.OrdinalIgnoreCase));
+        Theme? active;
+        lock (_lock)
+        {
+            active = LoadedThemes.FirstOrDefault(t => string.Equals(t.Name, themeName, StringComparison.OrdinalIgnoreCase));
+        }
+
         if (active != null)
         {
             await js.InvokeVoidAsync("themeManager.applyTheme", active.Colors);
         }
     }
 
-    private async Task ReloadThemesAsync()
+    private void ReloadThemes()
     {
-        LoadedThemes.Clear();
-
-        if (!Directory.Exists(_themesDir))
+        lock (_lock)
         {
-            return;
-        }
+            LoadedThemes.Clear();
 
-        string[] files = Directory.GetFiles(_themesDir, "*.json");
-        foreach (string file in files)
-        {
-            try
+            if (!Directory.Exists(_themesDir))
             {
-                string json = await File.ReadAllTextAsync(file);
-                Theme? theme = JsonSerializer.Deserialize<Theme>(json, _jsonOptions);
-                if (theme != null && !string.IsNullOrWhiteSpace(theme.Name))
-                {
-                    LoadedThemes.Add(theme);
-                }
+                return;
             }
-            catch (Exception ex)
+
+            string[] files = Directory.GetFiles(_themesDir, "*.json");
+            foreach (string file in files)
             {
-                Console.WriteLine($"[ThemeService] Error loading theme file '{file}': {ex.Message}");
+                try
+                {
+                    string json = File.ReadAllText(file);
+                    Theme? theme = JsonSerializer.Deserialize<Theme>(json, _jsonOptions);
+
+                    if (theme != null && !string.IsNullOrWhiteSpace(theme.Name))
+                    {
+                        // Safely de-duplicate in memory to handle orphaned files on the user's disk
+                        bool alreadyLoaded = LoadedThemes.Any(t => string.Equals(t.Name, theme.Name, StringComparison.OrdinalIgnoreCase));
+                        if (!alreadyLoaded)
+                        {
+                            LoadedThemes.Add(theme);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ThemeService] Error loading theme file '{file}': {ex.Message}");
+                }
             }
         }
     }
