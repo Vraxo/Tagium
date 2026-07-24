@@ -59,7 +59,7 @@
         }
 
         .tab-btn i.fa-palette {
-            color: #ba68c8;
+            color: var(--appearance-color);
         }
 
         .tab-btn i.fa-database {

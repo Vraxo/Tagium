@@ -3,7 +3,6 @@
     --bg-color: #181818;
     --panel-bg: #202020;
     --surface-bg: #2D2D2D;
-    --surface-hover: rgba(255, 255, 255, 0.05);
     --border-color: #383838;
     --text-color: #E0E0E0;
     --text-muted: #9E9E9E;
@@ -14,6 +13,7 @@
     /* Semantic Icon Accent Colors */
     --folder-color: #ffca28;
     --warning-color: #ff9800;
+    --appearance-color: #ba68c8;
     /* Spacing Scale (8px system) */
     --space-2xs: 4px;
     --space-xs: 8px;

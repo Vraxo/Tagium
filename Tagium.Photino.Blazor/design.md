@@ -32,6 +32,7 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 | Danger Hover | `var(--danger-hover)` | Active destructive hover states |
 | Folder Amber | `var(--folder-color)` | Color token for directories, roots, and folder paths (`#ffca28`) |
 | Alert Warning | `var(--warning-color)` | High-visibility alert orange for missing file flags (`#ff9800`) |
+| Appearance Accent | `var(--appearance-color)` | Creative accent violet/magenta for theme preferences and palettes (`#ba68c8`) |
 
 ### Icon Color States
 
@@ -46,7 +47,7 @@ To maintain clean typography and consistent contrast, follow these color states 
 
 To allow users to navigate configuration panels by rapid visual association, tab icon colors are mapped to their specific domain:
 * **Library Folders Tab**: Uses `var(--folder-color)` (amber) representing storage paths.
-* **Appearance Tab**: Uses `#ba68c8` (violet/purple) representing design themes and creative customization.
+* **Appearance Tab**: Uses `var(--appearance-color)` (violet/purple) representing design themes and creative customization.
 * **Maintenance Tab**: Uses `var(--primary-color)` (steel blue) representing structural utilities and database operations.
 * **Active State**: When a tab is selected, its icon color shifts cleanly to `var(--primary-color)` to lock in with the highlighted text style.
 
