@@ -13,19 +13,18 @@
 .file-card {
     background: var(--surface-bg);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     flex-direction: column;
     cursor: pointer;
     user-select: none;
-    transition: border-color 0.1s; /* Removed width/height transition for instant responsiveness */
-    /* Dynamic Sizing via CSS Variable */
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
     width: var(--thumb-size);
     height: calc(var(--thumb-size) + 30px);
 }
 
     .file-card:hover {
-        border-color: #666;
+        border-color: var(--text-muted);
         background: var(--panel-bg);
     }
 
@@ -54,13 +53,18 @@
 
 .placeholder-icon {
     position: absolute;
-    font-size: 2em;
+    font-size: 2.2em;
     color: var(--border-color);
     z-index: 1;
+    transition: color var(--transition-fast);
+}
+
+.file-card:hover .placeholder-icon {
+    color: var(--text-muted);
 }
 
 .thumbnail.broken .placeholder-icon {
-    color: var(--text-muted);
+    color: var(--warning-color);
 }
 
 .filename {

@@ -15,9 +15,9 @@
     background: var(--surface-bg);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    width: 500px;
-    max-width: 90%;
-    max-height: 80vh;
+    width: 640px;
+    max-width: 95%;
+    max-height: 85vh;
     display: flex;
     flex-direction: column;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);

@@ -21,7 +21,7 @@
     border-radius: 12px;
     margin-bottom: 3px;
     color: var(--text-color);
-    transition: background-color 0.1s, border-color 0.1s, color 0.1s;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
     user-select: none;
     font-size: var(--font-size-sm);
     line-height: 1;
@@ -54,7 +54,7 @@
     border-radius: 4px;
     margin-bottom: 2px;
     color: var(--text-color);
-    transition: background-color 0.1s;
+    transition: background-color var(--transition-fast);
     user-select: none;
     font-size: var(--font-size-sm);
     line-height: 1;
@@ -95,7 +95,7 @@
     border-radius: 4px;
     cursor: pointer;
     user-select: none;
-    transition: background-color 0.1s;
+    transition: background-color var(--transition-fast);
 }
 
     ::deep .system-item.active {
@@ -109,6 +109,22 @@
     width: 1.2em;
     text-align: center;
     font-size: 1em;
+    transition: color var(--transition-fast);
+}
+
+/* Color definitions */
+::deep .system-item .folder-accent {
+    color: var(--folder-color);
+}
+
+::deep .system-item .warning-accent {
+    color: var(--warning-color);
+}
+
+/* High contrast active selection override */
+::deep .system-item.active .folder-accent,
+::deep .system-item.active .warning-accent {
+    color: white !important;
 }
 
 ::deep hr {

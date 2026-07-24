@@ -30,6 +30,17 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 | Primary Hover | `var(--primary-hover)` | Active primary button hover states |
 | Danger Accent | `var(--danger-color)` | Destructive buttons, warnings, missing alerts |
 | Danger Hover | `var(--danger-hover)` | Active destructive hover states |
+| Folder Amber | `var(--folder-color)` | Color token for directories, roots, and folder paths (`#ffca28`) |
+| Alert Warning | `var(--warning-color)` | High-visibility alert orange for missing file flags (`#ff9800`) |
+
+### Icon Color States
+
+To maintain clean typography and consistent contrast, follow these color states for vector icons:
+* **Inactive System Controls**: Rendered as `var(--text-muted)` by default.
+* **System Folders**: Always use `var(--folder-color)` to mimic traditional file explorer elements.
+* **Alarms & Warnings**: Always use `var(--warning-color)` for missing elements or alert triangles.
+* **Selection Overrides**: When a container gains the active selection state (e.g., a sidebar row becomes selected), colored icons must revert to `color: white !important` to stay readable against high-intensity primary background colors.
+* **Interactive Deletions**: Tag-removal buttons, folder-removal trash cans, and delete controls should rest at a muted tone but instantly transition to `var(--danger-color)` on hover.
 
 ### Spacing (8px Scale)
 

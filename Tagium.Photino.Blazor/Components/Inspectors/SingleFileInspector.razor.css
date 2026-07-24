@@ -104,17 +104,17 @@
 .btn-remove-tag {
     background: none;
     border: none;
-    color: white;
+    color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
     padding: 0 2px;
     font-size: var(--font-size-xs);
     margin-left: var(--space-2xs);
     line-height: 1;
-    transition: opacity var(--transition-fast);
+    transition: color var(--transition-fast);
 }
 
     .btn-remove-tag:hover {
-        opacity: 0.8;
+        color: var(--danger-color) !important;
     }
 
 .add-tag-section {

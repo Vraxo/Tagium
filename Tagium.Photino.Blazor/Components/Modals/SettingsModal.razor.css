@@ -1,0 +1,297 @@
+.settings-modal-layout {
+    display: flex;
+    height: 380px;
+    box-sizing: border-box;
+}
+
+.settings-sidebar {
+    width: 170px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding-right: var(--space-sm);
+    border-right: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.settings-content {
+    flex: 1;
+    padding-left: var(--space-sm);
+    overflow-y: auto;
+    min-width: 0;
+}
+
+/* Sidebar Tab buttons */
+.tab-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+    .tab-btn:hover {
+        background-color: var(--surface-hover);
+        color: var(--text-color);
+    }
+
+    .tab-btn.active {
+        background-color: var(--surface-bg);
+        color: var(--primary-color);
+        border-color: var(--border-color);
+    }
+
+/* Panels shared styles */
+.settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.panel-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+}
+
+    .panel-header h4 {
+        margin: 0;
+        color: var(--text-color);
+        font-size: 1.1em;
+    }
+
+    .panel-header p {
+        margin: 0;
+        font-size: var(--font-size-sm);
+        color: var(--text-muted);
+        line-height: 1.4;
+    }
+
+/* Secondary Headers */
+h5 {
+    margin: 0 0 var(--space-2xs) 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.section-hint {
+    margin: -2px 0 var(--space-xs) 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    line-height: 1.3;
+}
+
+/* Radio groups */
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin-top: var(--space-2xs);
+}
+
+    .radio-group label {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+    }
+
+/* Folder List elements */
+.actions {
+    display: flex;
+    gap: var(--space-xs);
+}
+
+.scanning-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    color: var(--primary-color);
+    font-size: var(--font-size-sm);
+    padding: var(--space-xs);
+    background-color: var(--surface-hover);
+    border-radius: var(--radius-sm);
+}
+
+.roots-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.root-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: opacity var(--transition-fast);
+}
+
+    .root-item.disabled {
+        opacity: 0.5;
+    }
+
+.root-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.root-path {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.root-meta {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+}
+
+.root-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+/* Switches (Pill toggle switch selectors) */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 20px;
+}
+
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    transition: var(--transition-normal);
+    border-radius: 20px;
+}
+
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 12px;
+        width: 12px;
+        left: 3px;
+        bottom: 3px;
+        background-color: var(--text-muted);
+        transition: var(--transition-normal);
+        border-radius: 50%;
+    }
+
+input:checked + .slider {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+    input:checked + .slider:before {
+        transform: translateX(14px);
+        background-color: white;
+    }
+
+.btn-danger-icon {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+    .btn-danger-icon:hover {
+        color: var(--danger-color);
+        background-color: var(--surface-hover);
+    }
+
+/* Action button configurations */
+.btn {
+    padding: 6px var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+    background-color: var(--surface-bg);
+    color: var(--text-color);
+    transition: all var(--transition-fast);
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+    .btn-primary:hover {
+        background-color: var(--primary-hover);
+        border-color: var(--primary-hover);
+    }
+
+.btn:hover {
+    background-color: var(--surface-hover);
+    border-color: var(--text-muted);
+}
+
+.btn-danger {
+    background-color: var(--danger-color);
+    border-color: var(--danger-hover);
+    color: white;
+}
+
+    .btn-danger:hover {
+        background-color: var(--danger-hover);
+    }
+
+.btn-row {
+    display: flex;
+    gap: var(--space-xs);
+}
+
+.result-box {
+    padding: var(--space-xs);
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
+    margin-top: var(--space-xs);
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: var(--space-sm) 0;
+    width: 100%;
+}

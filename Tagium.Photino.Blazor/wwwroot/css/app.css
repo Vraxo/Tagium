@@ -11,6 +11,9 @@
     --primary-hover: #1e88e5;
     --danger-color: #d32f2f;
     --danger-hover: #b71c1c;
+    /* Semantic Icon Accent Colors */
+    --folder-color: #ffca28;
+    --warning-color: #ff9800;
     /* Spacing Scale (8px system) */
     --space-2xs: 4px;
     --space-xs: 8px;

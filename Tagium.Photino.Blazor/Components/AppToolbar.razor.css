@@ -36,27 +36,6 @@
     margin: 0 var(--space-2xs);
 }
 
-/* Action Buttons */
-.btn-action {
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-color);
-    padding: 3px var(--space-sm);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    font-weight: 500;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast);
-}
-
-    .btn-action:hover {
-        background-color: var(--surface-hover);
-        border-color: var(--border-color);
-    }
-
 /* Segmented Control Switcher */
 .segmented-control {
     display: inline-flex;

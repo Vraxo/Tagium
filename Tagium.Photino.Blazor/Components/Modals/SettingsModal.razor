@@ -1,0 +1,195 @@
+@namespace Tagium.Photino.Blazor.Components.Modals
+@using Tagium.Core.Settings
+
+<div class="settings-modal-layout">
+    <!-- Left Navigation Column -->
+    <div class="settings-sidebar">
+        <button class="tab-btn @(ActiveTab == SettingsTab.Folders ? "active" : "")" @onclick="() => SetTab(SettingsTab.Folders)">
+            <i class="fa-solid fa-folder-open fa-fw"></i> Library Folders
+        </button>
+        <button class="tab-btn @(ActiveTab == SettingsTab.Appearance ? "active" : "")" @onclick="() => SetTab(SettingsTab.Appearance)">
+            <i class="fa-solid fa-palette fa-fw"></i> Appearance
+        </button>
+        <button class="tab-btn @(ActiveTab == SettingsTab.Data ? "active" : "")" @onclick="() => SetTab(SettingsTab.Data)">
+            <i class="fa-solid fa-database fa-fw"></i> Maintenance
+        </button>
+    </div>
+
+    <!-- Right Dynamic Settings View -->
+    <div class="settings-content">
+        @if (ActiveTab == SettingsTab.Folders)
+        {
+            <div class="settings-panel">
+                <div class="panel-header">
+                    <h4>Library Folders</h4>
+                    <p>Configure sync roots. Supported image and video formats in these folders will automatically be indexed.</p>
+                </div>
+
+                <div class="actions">
+                    <button class="btn btn-primary" @onclick="AddFolder">Add Folder...</button>
+                    <button class="btn" @onclick="TriggerRescan" disabled="@ScanService.IsScanning">
+                        @if (ScanService.IsScanning)
+                        {
+                            <span>Scanning...</span>
+                        }
+                        else
+                        {
+                            <span>Rescan All</span>
+                        }
+                    </button>
+                </div>
+
+                @if (ScanService.IsScanning)
+                {
+                    <div class="scanning-status">
+                        <i class="fa-solid fa-circle-notch fa-spin"></i>
+                        <span>Scanning files (@ScanService.ProgressCurrent / @ScanService.ProgressTotal)...</span>
+                    </div>
+                }
+
+                <div class="roots-list">
+                    @if (Roots.Count == 0)
+                    {
+                        <div class="empty-state">No library folders configured. Add a folder to start indexing.</div>
+                    }
+                    else
+                    {
+                        @foreach (var root in Roots)
+                        {
+                            <div class="root-item @(root.IsEnabled ? "" : "disabled")">
+                                <div class="root-info">
+                                    <span class="root-path" title="@root.Path">@root.Path</span>
+                                    <span class="root-meta">
+                                        @if (root.LastScanTime.HasValue)
+                                        {
+                                            <span>Last scanned: @FormatDate(root.LastScanTime.Value)</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Never scanned</span>
+                                        }
+                                    </span>
+                                </div>
+                                <div class="root-actions">
+                                    <label class="switch" title="@(root.IsEnabled ? "Disable folder" : "Enable folder")">
+                                        <input type="checkbox" checked="@root.IsEnabled" @onchange="() => ToggleRoot(root)" />
+                                        <span class="slider"></span>
+                                    </label>
+                                    <button class="btn-danger-icon" @onclick="() => RemoveRoot(root)" title="Remove folder">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+        else if (ActiveTab == SettingsTab.Appearance)
+        {
+            <div class="settings-panel">
+                <div class="panel-header">
+                    <h4>Appearance & Interface</h4>
+                    <p>Tweak how visual elements display inside your workspaces.</p>
+                </div>
+
+                <div class="appearance-section">
+                    <h5>Tag Sidebar Style</h5>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="tagSidebarStyle"
+                                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.Pill)"
+                                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.Pill))" />
+                            Colored Pills
+                        </label>
+                        <label>
+                            <input type="radio" name="tagSidebarStyle"
+                                   checked="@(Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)"
+                                   @onchange="@(() => UpdateTagSidebarStyle(TagSidebarDisplayMode.MinimalCircle))" />
+                            Minimal Circles
+                        </label>
+                    </div>
+                </div>
+
+                <hr />
+
+                <div class="appearance-section">
+                    <h5>Emoji Set Preference</h5>
+                    <p class="section-hint">Requires application restart to fully apply font adjustments.</p>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="emojiSet"
+                                   checked="@(Settings.Current.EmojiPreference == EmojiSet.SystemDefault)"
+                                   @onchange="@(() => UpdateEmojiSet(EmojiSet.SystemDefault))" />
+                            System Default (Windows/Segoe)
+                        </label>
+                        <label>
+                            <input type="radio" name="emojiSet"
+                                   checked="@(Settings.Current.EmojiPreference == EmojiSet.Apple)"
+                                   @onchange="@(() => UpdateEmojiSet(EmojiSet.Apple))" />
+                            Apple Color Emoji
+                        </label>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (ActiveTab == SettingsTab.Data)
+        {
+            <div class="settings-panel">
+                <div class="panel-header">
+                    <h4>Maintenance & Database Tools</h4>
+                    <p>Integrity diagnostic scanning, data migration imports, and catalog backups.</p>
+                </div>
+
+                <div class="maintenance-group">
+                    <h5>Integrity Diagnostics</h5>
+                    <p class="section-hint">Scan library references to clean up missing directory files.</p>
+                    <div class="btn-row">
+                        <button class="btn" @onclick="ScanIntegrity">Scan Missing References</button>
+                        <button class="btn btn-danger" @onclick="PurgeMissing" disabled="@(Library.GetFiles(null, true).Count == 0)">Purge Missing</button>
+                    </div>
+
+                    @if (ScanResult is not null)
+                    {
+                        <div class="result-box">
+                            Scanned: @ScanResult.FilesScanned <br />
+                            Missing: @ScanResult.NewlyMissing <br />
+                            Found: @ScanResult.NewlyFound
+                        </div>
+                    }
+                </div>
+
+                <hr />
+
+                <div class="maintenance-group">
+                    <h5>Export & Backups</h5>
+                    <div class="btn-row">
+                        <button class="btn" @onclick="ExportJson">Export JSON</button>
+                        <button class="btn" @onclick="ExportCsv">Export CSV</button>
+                        <button class="btn" @onclick="BackupDb">Backup DB</button>
+                    </div>
+                </div>
+
+                <hr />
+
+                <div class="maintenance-group">
+                    <h5>Database Merge & Restore</h5>
+                    <p class="section-hint">Combine indices from an alternate database file, or run a backup recovery.</p>
+                    <div class="btn-row">
+                        <button class="btn" @onclick="MergeDb">Merge Alternate...</button>
+                        <button class="btn btn-danger" @onclick="RestoreDb">Restore Backup...</button>
+                    </div>
+
+                    @if (MergeResult is not null)
+                    {
+                        <div class="result-box">
+                            New Files: @MergeResult.NewFiles <br />
+                            New Tags: @MergeResult.NewTags <br />
+                            Associations: @MergeResult.NewAssociations
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>

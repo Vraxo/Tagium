@@ -36,29 +36,11 @@ public partial class AppToolbar
         Settings.Update(s => s.FileViewMode = mode);
     }
 
-    private void OpenLibraryFolders()
+    private void OpenSettings()
     {
-        ModalService.Show("Library Folders", builder =>
+        ModalService.Show("Settings", builder =>
         {
-            builder.OpenComponent<LibraryRootsModal>(0);
-            builder.CloseComponent();
-        });
-    }
-
-    private void OpenPreferences()
-    {
-        ModalService.Show("Preferences", builder =>
-        {
-            builder.OpenComponent<PreferencesModal>(0);
-            builder.CloseComponent();
-        });
-    }
-
-    private void OpenDataManagement()
-    {
-        ModalService.Show("Data Tools & Integrity", builder =>
-        {
-            builder.OpenComponent<DataManagementModal>(0);
+            builder.OpenComponent<SettingsModal>(0);
             builder.CloseComponent();
         });
     }

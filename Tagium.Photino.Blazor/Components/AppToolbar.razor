@@ -6,14 +6,8 @@
 @inject SettingsManager Settings
 
 <div class="app-toolbar">
-    <!-- Left Section: Scope & Directory tools -->
+    <!-- Left Section: Scope selector -->
     <div class="toolbar-left">
-        <button class="btn-action" @onclick="OpenLibraryFolders" title="Configure Library Folders">
-            <i class="fa-solid fa-folder-open"></i> Folders
-        </button>
-
-        <div class="vertical-divider"></div>
-
         <div class="segmented-control">
             <button class="segment-btn @(AppState.CurrentView == AppView.Files ? "active" : "")"
                     @onclick="() => AppState.SwitchView(AppView.Files)">
@@ -36,7 +30,7 @@
         }
     </div>
 
-    <!-- Right Section: Media grid controls, database settings & global preferences -->
+    <!-- Right Section: Media grid controls & Settings triggers -->
     <div class="toolbar-right">
         @if (AppState.CurrentView == AppView.Files)
         {
@@ -80,11 +74,7 @@
             <div class="vertical-divider"></div>
         }
 
-        <button class="btn-icon" @onclick="OpenDataManagement" title="Database & Integrity Tools">
-            <i class="fa-solid fa-database"></i>
-        </button>
-
-        <button class="btn-icon" @onclick="OpenPreferences" title="Preferences">
+        <button class="btn-icon" @onclick="OpenSettings" title="Settings & Preferences">
             <i class="fa-solid fa-gear"></i>
         </button>
     </div>
