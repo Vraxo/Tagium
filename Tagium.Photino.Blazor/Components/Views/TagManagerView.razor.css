@@ -35,22 +35,24 @@
         border-radius: var(--radius-sm);
         flex: 1;
         font-size: var(--font-size-sm);
+        line-height: 1.2;
         outline: none;
     }
 
         .add-row input:focus {
+            outline: none;
             border-color: var(--primary-color);
         }
 
 .btn-primary {
     background: var(--primary-color);
     border: none;
-    color: white;
-    padding: 0 var(--space-sm);
+    color: var(--text-on-primary);
+    padding: var(--space-2xs) var(--space-sm);
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: var(--font-size-xs);
-    height: 24px;
+    line-height: 1.2;
     transition: background-color var(--transition-fast);
 }
 
@@ -71,9 +73,10 @@
         background: var(--bg-color);
         border: 1px solid var(--border-color);
         color: var(--text-color);
-        padding: 2px 6px;
+        padding: var(--space-2xs) var(--space-xs);
         border-radius: var(--radius-sm);
         font-size: var(--font-size-sm);
+        line-height: 1.2;
         outline: none;
     }
 
@@ -128,7 +131,7 @@
     z-index: 1000;
     border-radius: var(--radius-md);
     width: 140px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
 .color-grid {
@@ -144,7 +147,7 @@
     height: 16px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255,255,255,0.1);
 }
 
     .swatch:hover {
@@ -174,6 +177,7 @@
 }
 
     .emoji-input:focus {
+        outline: none;
         border-color: var(--primary-color);
     }
 

@@ -88,13 +88,15 @@
 
 .add-tag-select {
     width: 100%;
-    padding: 6px;
+    padding: var(--space-2xs) var(--space-xs);
     background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     color: var(--text-color);
     font-size: var(--font-size-sm);
+    line-height: 1.2;
     outline: none;
+    transition: border-color var(--transition-fast);
 }
 
     .add-tag-select:focus {

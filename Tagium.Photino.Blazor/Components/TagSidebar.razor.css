@@ -67,7 +67,7 @@
 
     ::deep .tag-item.legacy.active {
         background: var(--primary-color);
-        color: white;
+        color: var(--text-on-primary);
     }
 
     ::deep .tag-item.legacy .count {
@@ -100,7 +100,7 @@
 
     ::deep .system-item.active {
         background: var(--primary-color) !important;
-        color: white !important;
+        color: var(--text-on-primary) !important;
     }
 
 ::deep .icon {
@@ -124,7 +124,7 @@
 /* High contrast active selection override */
 ::deep .system-item.active .folder-accent,
 ::deep .system-item.active .warning-accent {
-    color: white !important;
+    color: var(--text-on-primary) !important;
 }
 
 ::deep hr {

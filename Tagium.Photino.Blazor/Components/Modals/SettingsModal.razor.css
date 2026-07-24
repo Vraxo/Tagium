@@ -26,7 +26,7 @@
     background: transparent;
     border: 1px solid transparent;
     color: var(--text-muted);
-    padding: var(--space-xs) var(--space-sm);
+    padding: 6px var(--space-sm);
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: var(--font-size-sm);
@@ -119,10 +119,11 @@ h5 {
     background: var(--surface-bg);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 6px;
+    padding: var(--space-2xs) var(--space-xs);
     border-radius: var(--radius-sm);
     outline: none;
     font-size: var(--font-size-sm);
+    line-height: 1.2;
     transition: border-color var(--transition-fast);
 }
 
@@ -285,7 +286,7 @@ input:checked + .slider {
 
 /* Action button configurations */
 .btn {
-    padding: 6px var(--space-sm);
+    padding: var(--space-2xs) var(--space-xs);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
     cursor: pointer;
@@ -293,13 +294,14 @@ input:checked + .slider {
     border: 1px solid var(--border-color);
     background-color: var(--surface-bg);
     color: var(--text-color);
+    line-height: 1.2;
     transition: all var(--transition-fast);
 }
 
 .btn-primary {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-primary);
 }
 
     .btn-primary:hover {

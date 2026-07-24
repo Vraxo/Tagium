@@ -9,6 +9,7 @@
     "--text-muted": "#808D9C",
     "--primary-color": "#39ADB5",
     "--primary-hover": "#2E9AA1",
+    "--text-on-primary": "#0b1017",
     "--danger-color": "#F07178",
     "--danger-hover": "#E55B62",
     "--folder-color": "#FFB454",
