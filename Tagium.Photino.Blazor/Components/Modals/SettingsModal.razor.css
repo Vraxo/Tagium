@@ -49,6 +49,28 @@
         border-color: var(--border-color);
     }
 
+    /* Tab Icon Semantic Color Rules */
+    .tab-btn i {
+        transition: color var(--transition-fast);
+    }
+
+        .tab-btn i.fa-folder-open {
+            color: var(--folder-color);
+        }
+
+        .tab-btn i.fa-palette {
+            color: #ba68c8;
+        }
+
+        .tab-btn i.fa-database {
+            color: var(--primary-color);
+        }
+
+    /* Force standard highlighted text-color synchronization when tab is active */
+    .tab-btn.active i {
+        color: var(--primary-color) !important;
+    }
+
 /* Panels shared styles */
 .settings-panel {
     display: flex;
@@ -171,7 +193,7 @@ h5 {
     gap: var(--space-sm);
 }
 
-/* Switches (Pill toggle switch selectors) */
+/* Switches */
 .switch {
     position: relative;
     display: inline-block;
@@ -227,13 +249,21 @@ input:checked + .slider {
     cursor: pointer;
     padding: 4px;
     border-radius: var(--radius-sm);
-    transition: color var(--transition-fast), background-color var(--transition-fast);
+    transition: background-color var(--transition-fast);
 }
 
+    .btn-danger-icon i {
+        color: var(--text-muted);
+        transition: color var(--transition-fast);
+    }
+
     .btn-danger-icon:hover {
-        color: var(--danger-color);
         background-color: var(--surface-hover);
     }
+
+        .btn-danger-icon:hover i {
+            color: var(--danger-color);
+        }
 
 /* Action button configurations */
 .btn {

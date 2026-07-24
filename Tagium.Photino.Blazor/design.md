@@ -42,6 +42,14 @@ To maintain clean typography and consistent contrast, follow these color states 
 * **Selection Overrides**: When a container gains the active selection state (e.g., a sidebar row becomes selected), colored icons must revert to `color: white !important` to stay readable against high-intensity primary background colors.
 * **Interactive Deletions**: Tag-removal buttons, folder-removal trash cans, and delete controls should rest at a muted tone but instantly transition to `var(--danger-color)` on hover.
 
+### Settings Panel Tab Accents
+
+To allow users to navigate configuration panels by rapid visual association, tab icon colors are mapped to their specific domain:
+* **Library Folders Tab**: Uses `var(--folder-color)` (amber) representing storage paths.
+* **Appearance Tab**: Uses `#ba68c8` (violet/purple) representing design themes and creative customization.
+* **Maintenance Tab**: Uses `var(--primary-color)` (steel blue) representing structural utilities and database operations.
+* **Active State**: When a tab is selected, its icon color shifts cleanly to `var(--primary-color)` to lock in with the highlighted text style.
+
 ### Spacing (8px Scale)
 
 | Token | CSS Variable | Size | Purpose |
