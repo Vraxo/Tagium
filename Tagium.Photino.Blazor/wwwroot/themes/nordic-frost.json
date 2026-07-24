@@ -1,0 +1,18 @@
+{
+  "Name": "Nordic Frost",
+  "Colors": {
+    "--bg-color": "#0F141C",
+    "--panel-bg": "#161B25",
+    "--surface-bg": "#1F2430",
+    "--border-color": "#2D323F",
+    "--text-color": "#E0E6F0",
+    "--text-muted": "#808D9C",
+    "--primary-color": "#39ADB5",
+    "--primary-hover": "#2E9AA1",
+    "--danger-color": "#F07178",
+    "--danger-hover": "#E55B62",
+    "--folder-color": "#FFB454",
+    "--warning-color": "#FF8F40",
+    "--appearance-color": "#C249C4"
+  }
+}

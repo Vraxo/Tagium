@@ -19,7 +19,7 @@ public class ThemeService
 
     public async Task InitializeAsync(IJSRuntime js)
     {
-        SeedDefaultThemesIfEmpty();
+        SyncDefaultThemesFromShippingDir();
         await ReloadThemesAsync();
     }
 
@@ -66,70 +66,32 @@ public class ThemeService
         }
     }
 
-    private void SeedDefaultThemesIfEmpty()
+    private void SyncDefaultThemesFromShippingDir()
     {
-        if (!Directory.Exists(_themesDir))
+        string shippingThemesDir = Path.Combine(AppContext.BaseDirectory, "wwwroot", "themes");
+        if (!Directory.Exists(shippingThemesDir) || !Directory.Exists(_themesDir))
         {
             return;
         }
-
-        if (Directory.GetFiles(_themesDir, "*.json").Length > 0)
-        {
-            return;
-        }
-
-        // 1. Classic Light Theme
-        Theme classicLight = new()
-        {
-            Name = "Classic Light",
-            Colors = new Dictionary<string, string>
-            {
-                { "--bg-color", "#F5F5F5" },
-                { "--panel-bg", "#EAEAEA" },
-                { "--surface-bg", "#FFFFFF" },
-                { "--border-color", "#DCDCDC" },
-                { "--text-color", "#212121" },
-                { "--text-muted", "#666666" },
-                { "--primary-color", "#1976D2" },
-                { "--primary-hover", "#1565C0" },
-                { "--danger-color", "#D32F2F" },
-                { "--danger-hover", "#C62828" },
-                { "--folder-color", "#E65100" },
-                { "--warning-color", "#F57C00" },
-                { "--appearance-color", "#8E24AA" }
-            }
-        };
-
-        // 2. Nordic Frost Theme (Teal/Blue Dark theme)
-        Theme nordicFrost = new()
-        {
-            Name = "Nordic Frost",
-            Colors = new Dictionary<string, string>
-            {
-                { "--bg-color", "#0F141C" },
-                { "--panel-bg", "#161B25" },
-                { "--surface-bg", "#1F2430" },
-                { "--border-color", "#2D323F" },
-                { "--text-color", "#E0E6F0" },
-                { "--text-muted", "#808D9C" },
-                { "--primary-color", "#39ADB5" },
-                { "--primary-hover", "#2E9AA1" },
-                { "--danger-color", "#F07178" },
-                { "--danger-hover", "#E55B62" },
-                { "--folder-color", "#FFB454" },
-                { "--warning-color", "#FF8F40" },
-                { "--appearance-color", "#C249C4" }
-            }
-        };
 
         try
         {
-            File.WriteAllText(Path.Combine(_themesDir, "classic_light.json"), JsonSerializer.Serialize(classicLight, _jsonOptions));
-            File.WriteAllText(Path.Combine(_themesDir, "nordic_frost.json"), JsonSerializer.Serialize(nordicFrost, _jsonOptions));
+            string[] shippingFiles = Directory.GetFiles(shippingThemesDir, "*.json");
+            foreach (string file in shippingFiles)
+            {
+                string fileName = Path.GetFileName(file);
+                string destPath = Path.Combine(_themesDir, fileName);
+
+                // Copy default templates only if missing to prevent overriding user customizations
+                if (!File.Exists(destPath))
+                {
+                    File.Copy(file, destPath, true);
+                }
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ThemeService] Error seeding default themes: {ex.Message}");
+            Console.WriteLine($"[ThemeService] Error syncing default themes from shipping folder: {ex.Message}");
         }
     }
 }

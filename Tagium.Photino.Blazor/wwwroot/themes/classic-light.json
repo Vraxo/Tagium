@@ -1,0 +1,18 @@
+{
+  "Name": "Classic Light",
+  "Colors": {
+    "--bg-color": "#F5F5F5",
+    "--panel-bg": "#EAEAEA",
+    "--surface-bg": "#FFFFFF",
+    "--border-color": "#DCDCDC",
+    "--text-color": "#212121",
+    "--text-muted": "#666666",
+    "--primary-color": "#1976D2",
+    "--primary-hover": "#1565C0",
+    "--danger-color": "#D32F2F",
+    "--danger-hover": "#C62828",
+    "--folder-color": "#E65100",
+    "--warning-color": "#F57C00",
+    "--appearance-color": "#8E24AA"
+  }
+}
