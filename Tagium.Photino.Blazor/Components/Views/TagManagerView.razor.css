@@ -25,9 +25,12 @@
 .add-row {
     display: flex;
     gap: var(--space-xs);
+    align-items: center;
 }
 
     .add-row input {
+        height: 26px;
+        box-sizing: border-box;
         padding: var(--space-2xs) var(--space-xs);
         background: var(--surface-bg);
         border: 1px solid var(--border-color);
@@ -45,13 +48,19 @@
         }
 
 .btn-primary {
+    height: 26px;
+    box-sizing: border-box;
     background: var(--primary-color);
-    border: none;
+    border: 1px solid transparent;
     color: var(--text-on-primary);
     padding: var(--space-2xs) var(--space-sm);
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: var(--font-size-xs);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     line-height: 1.2;
     transition: background-color var(--transition-fast);
 }
