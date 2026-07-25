@@ -34,13 +34,20 @@ public partial class MainLayout : IDisposable
     private int _tagSyncTotal = 0;
     private double _tagSyncProgress = 0;
 
+    private bool _showZoomToast = false;
+    private int _lastActiveZoom = 100;
+    private CancellationTokenSource? _zoomToastCts;
+
     private DotNetObjectReference<MainLayout>? _objRef;
 
     private AppToolbar? AppToolbarRef { get; set; }
 
+    private static readonly int[] ZoomSteps = [75, 90, 100, 110, 120, 130, 150];
+
     protected override void OnInitialized()
     {
-        SettingsManager.SettingsChanged += StateHasChanged;
+        _lastActiveZoom = SettingsManager.Current.Zoom;
+        SettingsManager.SettingsChanged += OnSettingsChanged;
         ScanService.ScanProgress += UpdateScanProgress;
         ScanService.ScanCompleted += ShowScanStatus;
         ThumbnailService.QueueProgressChanged += UpdateThumbnailProgress;
@@ -73,6 +80,7 @@ public partial class MainLayout : IDisposable
             "splitter-right");
 
         await JS.InvokeVoidAsync("globalShortcuts.init", _objRef);
+        await JS.InvokeVoidAsync("zoomTracker.init", _objRef, SettingsManager.Current.Zoom);
 
         // Safely boot theme configurations after the DOM is fully loaded and interactive
         await ThemeService.InitializeAsync(JS);
@@ -106,6 +114,16 @@ public partial class MainLayout : IDisposable
             case "r":
                 await ScanService.ScanAllAsync();
                 break;
+            case "+":
+            case "=":
+                AdjustZoom(1);
+                break;
+            case "-":
+                AdjustZoom(-1);
+                break;
+            case "0":
+                ResetZoom();
+                break;
         }
     }
 
@@ -119,6 +137,102 @@ public partial class MainLayout : IDisposable
     public void SaveRightSidebarWidth(int width)
     {
         SettingsManager.Update(s => s.RightSidebarWidth = width);
+    }
+
+    [JSInvokable]
+    public void OnNativeZoomChanged(int rawZoom)
+    {
+        int closestZoom = 100;
+        int minDiff = int.MaxValue;
+        foreach (int step in ZoomSteps)
+        {
+            int diff = Math.Abs(step - rawZoom);
+            if (diff < minDiff)
+            {
+                minDiff = diff;
+                closestZoom = step;
+            }
+        }
+
+        if (SettingsManager.Current.Zoom != closestZoom)
+        {
+            SettingsManager.Update(s => s.Zoom = closestZoom);
+        }
+    }
+
+    private void AdjustZoom(int direction)
+    {
+        int currentZoom = SettingsManager.Current.Zoom;
+        int currentIndex = Array.IndexOf(ZoomSteps, currentZoom);
+
+        if (currentIndex == -1)
+        {
+            int closestIndex = 0;
+            int minDiff = int.MaxValue;
+            for (int i = 0; i < ZoomSteps.Length; i++)
+            {
+                int diff = Math.Abs(ZoomSteps[i] - currentZoom);
+                if (diff < minDiff)
+                {
+                    minDiff = diff;
+                    closestIndex = i;
+                }
+            }
+            currentIndex = closestIndex;
+        }
+
+        int newIndex = currentIndex + direction;
+        if (newIndex >= 0 && newIndex < ZoomSteps.Length)
+        {
+            int targetZoom = ZoomSteps[newIndex];
+            SettingsManager.Update(s => s.Zoom = targetZoom);
+            Program.MainWindow?.SetZoom(targetZoom);
+        }
+    }
+
+    private void ResetZoom()
+    {
+        SettingsManager.Update(s => s.Zoom = 100);
+        Program.MainWindow?.SetZoom(100);
+    }
+
+    private void OnSettingsChanged()
+    {
+        if (SettingsManager.Current.Zoom != _lastActiveZoom)
+        {
+            _lastActiveZoom = SettingsManager.Current.Zoom;
+            TriggerZoomToast();
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void TriggerZoomToast()
+    {
+        _showZoomToast = true;
+
+        _zoomToastCts?.Cancel();
+        _zoomToastCts = new CancellationTokenSource();
+        CancellationToken token = _zoomToastCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(1200, token);
+                await InvokeAsync(() =>
+                {
+                    if (!token.IsCancellationRequested)
+                    {
+                        _showZoomToast = false;
+                        StateHasChanged();
+                    }
+                });
+            }
+            catch (TaskCanceledException)
+            {
+                // Gracefully catch cancellation
+            }
+        }, token);
     }
 
     private void UpdateScanProgress(int current, int total)
@@ -229,7 +343,7 @@ public partial class MainLayout : IDisposable
 
     public void Dispose()
     {
-        SettingsManager.SettingsChanged -= StateHasChanged;
+        SettingsManager.SettingsChanged -= OnSettingsChanged;
         ScanService.ScanProgress -= UpdateScanProgress;
         ScanService.ScanCompleted -= ShowScanStatus;
         ThumbnailService.QueueProgressChanged -= UpdateThumbnailProgress;
@@ -238,6 +352,9 @@ public partial class MainLayout : IDisposable
         Library.TagSyncCompleted -= ShowTagSyncStatus;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
+
+        _zoomToastCts?.Cancel();
+        _zoomToastCts?.Dispose();
 
         // Cancel background task on dispose to prevent thread leaks during shutdown
         ThumbnailService.CancelBackgroundGeneration();

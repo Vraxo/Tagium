@@ -131,6 +131,15 @@ public partial class SettingsModal : IDisposable
         await ThemeService.ApplyThemeAsync(JS, themeName);
     }
 
+    private void OnZoomChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int zoom))
+        {
+            Settings.Update(s => s.Zoom = zoom);
+            Program.MainWindow?.SetZoom(zoom);
+        }
+    }
+
     // --- Maintenance (Data Management) Methods ---
     private async Task ScanIntegrity()
     {

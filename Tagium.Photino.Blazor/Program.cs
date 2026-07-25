@@ -1,13 +1,18 @@
-﻿using Photino.Blazor;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Photino.Blazor;
+using Photino.NET;
 using Serilog;
 using Serilog.Events;
 using Tagium.Core.Helpers;
+using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Setup;
 
 namespace Tagium.Photino.Blazor;
 
 public class Program
 {
+    public static PhotinoWindow? MainWindow { get; set; }
+
     [STAThread]
     [Obsolete]
     private static void Main(string[] args)
@@ -31,14 +36,22 @@ public class Program
             // Pass ServiceProvider to static SchemeHandler
             SchemeHandlers.ServiceProvider = app.Services;
 
+            // Pass MainWindow to static property for runtime accessibility
+            MainWindow = app.MainWindow;
+
             // Custom Scheme for Thumbnails and Previews
             _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
+
+            // Load saved zoom factor on startup
+            SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
+            int savedZoom = settings.Current.Zoom;
 
             _ = app.MainWindow
                 .SetTitle("Tagium")
                 .SetUseOsDefaultSize(false)
                 .SetSize(1200, 800)
                 .Center()
+                .SetZoom(savedZoom)
                 .SetLogVerbosity(0);
 
             app.Run();

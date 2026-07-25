@@ -108,6 +108,22 @@
                 <hr />
 
                 <div class="appearance-section">
+                    <h5>Interface Zoom Level</h5>
+                    <p class="section-hint">Adjust the global scaling and size of interface text and elements.</p>
+                    <select class="theme-select" value="@Settings.Current.Zoom" @onchange="OnZoomChanged">
+                        <option value="75">75% (Small)</option>
+                        <option value="90">90%</option>
+                        <option value="100">100% (Default)</option>
+                        <option value="110">110%</option>
+                        <option value="120">120%</option>
+                        <option value="130">130%</option>
+                        <option value="150">150% (Large)</option>
+                    </select>
+                </div>
+
+                <hr />
+
+                <div class="appearance-section">
                     <h5>Tag Sidebar Style</h5>
                     <div class="radio-group">
                         <label>

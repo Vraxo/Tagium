@@ -14,4 +14,5 @@ public class Settings
     public string SelectedTheme { get; set; } = "Default";
     public int LeftSidebarWidth { get; set; } = 250;
     public int RightSidebarWidth { get; set; } = 320;
+    public int Zoom { get; set; } = 100;
 }
