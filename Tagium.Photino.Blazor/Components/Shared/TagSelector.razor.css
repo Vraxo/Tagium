@@ -41,12 +41,22 @@
     align-items: center;
     padding: 6px var(--space-sm);
     cursor: pointer;
-    transition: background-color var(--transition-fast);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
-    .tag-dropdown-item:hover, .tag-dropdown-item.active {
-        background-color: var(--surface-hover);
+    .tag-dropdown-item:hover {
+        background-color: rgba(255, 255, 255, 0.08);
     }
+
+    .tag-dropdown-item.active {
+        background-color: var(--primary-color) !important;
+        color: var(--text-on-primary) !important;
+    }
+
+        /* Coordinate text colors when active keyboard highlighting is used */
+        .tag-dropdown-item.active .tag-name {
+            color: var(--text-on-primary) !important;
+        }
 
 .tag-name {
     font-size: var(--font-size-sm);

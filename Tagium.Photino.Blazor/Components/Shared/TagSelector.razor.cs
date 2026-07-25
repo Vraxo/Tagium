@@ -13,6 +13,7 @@ public partial class TagSelector
     [Parameter, EditorRequired] public EventCallback<Guid> OnTagSelected { get; set; }
 
     private List<Tag> _filteredTags = [];
+    private List<Tag> _oldAvailableTags = [];
     private int _activeIndex = 0;
     private bool _isOpen;
 
@@ -32,7 +33,15 @@ public partial class TagSelector
 
     protected override void OnParametersSet()
     {
-        UpdateFilter();
+        // Only reset the active index and filter if the actual tag list content has changed from the parent
+        bool hasChanged = _oldAvailableTags.Count != AvailableTags.Count ||
+                          !_oldAvailableTags.Select(t => t.Id).SequenceEqual(AvailableTags.Select(t => t.Id));
+
+        if (hasChanged)
+        {
+            _oldAvailableTags = AvailableTags.ToList();
+            UpdateFilter();
+        }
     }
 
     private void UpdateFilter()
@@ -63,7 +72,7 @@ public partial class TagSelector
             return;
         }
 
-        if (e.Key == "ArrowDown")
+        if (e.Key is "ArrowDown" or "Down")
         {
             _activeIndex++;
             if (_activeIndex >= _filteredTags.Count)
@@ -72,7 +81,7 @@ public partial class TagSelector
             }
             await ScrollActiveItemIntoView();
         }
-        else if (e.Key == "ArrowUp")
+        else if (e.Key is "ArrowUp" or "Up")
         {
             _activeIndex--;
             if (_activeIndex < 0)
