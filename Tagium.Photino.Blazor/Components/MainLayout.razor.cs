@@ -66,6 +66,7 @@ public partial class MainLayout : IDisposable
 
         await JS.InvokeVoidAsync(
             "layoutResizer.init",
+            _objRef,
             "sidebar-panel",
             "splitter-left",
             "inspector-panel",
@@ -106,6 +107,18 @@ public partial class MainLayout : IDisposable
                 await ScanService.ScanAllAsync();
                 break;
         }
+    }
+
+    [JSInvokable]
+    public void SaveLeftSidebarWidth(int width)
+    {
+        SettingsManager.Update(s => s.LeftSidebarWidth = width);
+    }
+
+    [JSInvokable]
+    public void SaveRightSidebarWidth(int width)
+    {
+        SettingsManager.Update(s => s.RightSidebarWidth = width);
     }
 
     private void UpdateScanProgress(int current, int total)

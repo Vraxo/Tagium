@@ -1,5 +1,5 @@
 window.layoutResizer = {
-    init: function (leftPanelId, leftSplitterId, rightPanelId, rightSplitterId) {
+    init: function (dotNetRef, leftPanelId, leftSplitterId, rightPanelId, rightSplitterId) {
         const leftPanel = document.getElementById(leftPanelId);
         const rightPanel = document.getElementById(rightPanelId);
         const leftSplitter = document.getElementById(leftSplitterId);
@@ -38,6 +38,13 @@ window.layoutResizer = {
 
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
+
+                    const width = parseInt(panel.style.width);
+                    if (side === 'left') {
+                        dotNetRef.invokeMethodAsync('SaveLeftSidebarWidth', width);
+                    } else {
+                        dotNetRef.invokeMethodAsync('SaveRightSidebarWidth', width);
+                    }
                 }
 
                 document.addEventListener('mousemove', onMouseMove);

@@ -12,4 +12,6 @@ public class Settings
     public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
     public FileViewMode FileViewMode { get; set; } = FileViewMode.Grid;
     public string SelectedTheme { get; set; } = "Default";
+    public int LeftSidebarWidth { get; set; } = 250;
+    public int RightSidebarWidth { get; set; } = 320;
 }

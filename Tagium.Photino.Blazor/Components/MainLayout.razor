@@ -143,7 +143,7 @@
 </style>
 
 <div class="main-layout">
-    <div class="sidebar-panel" id="sidebar-panel">
+    <div class="sidebar-panel" id="sidebar-panel" style="width: @(SettingsManager.Current.LeftSidebarWidth)px;">
         <TagSidebar />
     </div>
 
@@ -199,7 +199,7 @@
 
     <div class="splitter" id="splitter-right"></div>
 
-    <div class="inspector-panel" id="inspector-panel">
+    <div class="inspector-panel" id="inspector-panel" style="width: @(SettingsManager.Current.RightSidebarWidth)px;">
         <Tagium.Photino.Blazor.Components.Inspectors.FileInspector />
     </div>
 
