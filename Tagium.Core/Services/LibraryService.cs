@@ -2,6 +2,7 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
+using System.Threading;
 
 namespace Tagium.Core.Services;
 
@@ -20,6 +21,17 @@ public class LibraryService
     private readonly LibraryScanService _scanService;
     private readonly ExifToolService _exifTool;
 
+    private bool _tagSyncInProgress;
+    private int _tagSyncProcessed;
+    private int _tagSyncTotal;
+    private CancellationTokenSource? _tagSyncCts;
+
+    public bool IsTagSyncRunning => _tagSyncInProgress;
+    public int TagSyncProcessed => _tagSyncProcessed;
+    public int TagSyncTotal => _tagSyncTotal;
+
+    public event Action<int, int>? TagSyncProgress;
+    public event Action? TagSyncCompleted;
     public event Action? LibraryChanged;
 
     public LibraryService(
@@ -29,7 +41,7 @@ public class LibraryService
         FileSearchRepository searchRepo,
         ThumbnailService thumbnailService,
         SettingsManager settingsManager,
-        UndoService undoService,
+        UndoService _undoService,
         LibraryRootRepository rootRepo,
         LibraryScanService scanService,
         ExifToolService exifTool)
@@ -40,7 +52,7 @@ public class LibraryService
         _searchRepo = searchRepo;
         _thumbnailService = thumbnailService;
         _settingsManager = settingsManager;
-        _undoService = undoService;
+        this._undoService = _undoService;
         _rootRepo = rootRepo;
         _scanService = scanService;
         _exifTool = exifTool;
@@ -270,8 +282,64 @@ public class LibraryService
 
     public void UpdateTag(Tag tag)
     {
+        Tag? original = _tagRepo.GetTagsByIds([tag.Id]).FirstOrDefault();
+        bool nameChanged = original is not null && !string.Equals(original.Name, tag.Name, StringComparison.OrdinalIgnoreCase);
+
         _tagRepo.Update(tag);
+
+        if (nameChanged)
+        {
+            List<Guid> fileIds = _fileTagRepo.GetFileIdsForTag(tag.Id);
+            QueueTagMetadataSync(fileIds);
+        }
+
         LibraryChanged?.Invoke();
+    }
+
+    private void QueueTagMetadataSync(List<Guid> fileIds)
+    {
+        _tagSyncCts?.Cancel();
+        _tagSyncCts = new CancellationTokenSource();
+        CancellationToken token = _tagSyncCts.Token;
+
+        if (fileIds.Count == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            _tagSyncInProgress = true;
+            _tagSyncProcessed = 0;
+            _tagSyncTotal = fileIds.Count;
+
+            TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
+
+            try
+            {
+                foreach (Guid fileId in fileIds)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    await SyncMetadataToFileAsync(fileId);
+
+                    _tagSyncProcessed++;
+                    TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
+                }
+            }
+            catch (Exception)
+            {
+                // Gracefully log/ignore
+            }
+            finally
+            {
+                _tagSyncInProgress = false;
+                TagSyncCompleted?.Invoke();
+            }
+        }, token);
     }
 
     public void DeleteTag(Guid id)

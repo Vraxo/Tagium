@@ -29,6 +29,11 @@ public partial class MainLayout : IDisposable
     private int _thumbnailTotal = 0;
     private double _thumbnailProgress = 0;
 
+    private bool _tagSyncInProgress = false;
+    private int _tagSyncProcessed = 0;
+    private int _tagSyncTotal = 0;
+    private double _tagSyncProgress = 0;
+
     private DotNetObjectReference<MainLayout>? _objRef;
 
     private AppToolbar? AppToolbarRef { get; set; }
@@ -40,6 +45,8 @@ public partial class MainLayout : IDisposable
         ScanService.ScanCompleted += ShowScanStatus;
         ThumbnailService.QueueProgressChanged += UpdateThumbnailProgress;
         ThumbnailService.QueueCompleted += HideThumbnailProgress;
+        Library.TagSyncProgress += UpdateTagSyncProgress;
+        Library.TagSyncCompleted += ShowTagSyncStatus;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
 
@@ -152,6 +159,49 @@ public partial class MainLayout : IDisposable
         });
     }
 
+    private void UpdateTagSyncProgress(int current, int total)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _tagSyncInProgress = true;
+            _tagSyncProcessed = current;
+            _tagSyncTotal = total;
+            _tagSyncProgress = total > 0 ? (double)current / total * 100 : 0;
+            StateHasChanged();
+        });
+    }
+
+    private void ShowTagSyncStatus()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _tagSyncInProgress = false;
+            Toast.Show("Tag metadata synchronization complete.", ToastType.Success);
+            StateHasChanged();
+        });
+    }
+
+    private int GetThumbnailBottomOffset()
+    {
+        return _scanInProgress ? 24 : 0;
+    }
+
+    private int GetTagSyncBottomOffset()
+    {
+        int offset = 0;
+        if (_scanInProgress)
+        {
+            offset += 24;
+        }
+
+        if (_thumbnailQueueActive)
+        {
+            offset += 24;
+        }
+
+        return offset;
+    }
+
     private void OnLibraryChanged()
     {
         _ = InvokeAsync(StateHasChanged);
@@ -171,6 +221,8 @@ public partial class MainLayout : IDisposable
         ScanService.ScanCompleted -= ShowScanStatus;
         ThumbnailService.QueueProgressChanged -= UpdateThumbnailProgress;
         ThumbnailService.QueueCompleted -= HideThumbnailProgress;
+        Library.TagSyncProgress -= UpdateTagSyncProgress;
+        Library.TagSyncCompleted -= ShowTagSyncStatus;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
 

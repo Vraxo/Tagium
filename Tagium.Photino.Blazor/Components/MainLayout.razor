@@ -126,12 +126,19 @@
     }
 
     .scan-progress-bar.thumbnail-progress {
-        bottom: @(_scanInProgress ? "24px" : "0") !important;
         background-color: #222 !important;
     }
 
         .scan-progress-bar.thumbnail-progress .progress-fill {
             background-color: #4caf50 !important; /* Process-complimentary green for background rendering tasks */
+        }
+
+    .scan-progress-bar.tag-sync-progress {
+        background-color: #2b222c !important;
+    }
+
+        .scan-progress-bar.tag-sync-progress .progress-fill {
+            background-color: var(--appearance-color) !important; /* Creative preferences violet/magenta theme color */
         }
 </style>
 
@@ -175,9 +182,17 @@
 
         @if (_thumbnailQueueActive)
         {
-            <div class="scan-progress-bar thumbnail-progress">
+            <div class="scan-progress-bar thumbnail-progress" style="bottom: @(GetThumbnailBottomOffset())px !important;">
                 <div class="progress-fill" style="width: @(_thumbnailProgress)%"></div>
                 <div class="progress-label">Generating thumbnails... @(_thumbnailProcessed) / @(_thumbnailTotal)</div>
+            </div>
+        }
+
+        @if (_tagSyncInProgress)
+        {
+            <div class="scan-progress-bar tag-sync-progress" style="bottom: @(GetTagSyncBottomOffset())px !important;">
+                <div class="progress-fill" style="width: @(_tagSyncProgress)%"></div>
+                <div class="progress-label">Syncing physical files for renamed tag... @(_tagSyncProcessed) / @(_tagSyncTotal)</div>
             </div>
         }
     </div>

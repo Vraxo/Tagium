@@ -52,4 +52,24 @@ public class FileTagRepository
 
         return ids;
     }
+
+    public List<Guid> GetFileIdsForTag(Guid tagId)
+    {
+        List<Guid> ids = [];
+
+        using SqliteConnection conn = _db.GetConnection();
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT FileId FROM cache.FileTags WHERE TagId = @TagId";
+        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+
+        while (reader.Read())
+        {
+            ids.Add(Guid.Parse(reader.GetString(0)));
+        }
+
+        return ids;
+    }
 }

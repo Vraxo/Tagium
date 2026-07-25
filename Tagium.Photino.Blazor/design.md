@@ -77,7 +77,27 @@ To allow users to navigate configuration panels by rapid visual association, tab
 
 ---
 
-## 3. Mandatory AI Directives
+## 3. Component Sizing & Sizing Standards (Compact Desktop Scale)
+
+To preserve high visual density and a standard desktop utility feel, all inputs, selects, and action widgets must strictly adhere to this compact horizontal and vertical scale:
+
+### Utility Buttons, Dropdowns & Inputs
+All standard utility buttons, search input fields, and dropdown selectors must sit strictly between **24px and 26px** in height.
+* **Padding Formula**: Set vertical padding to `var(--space-2xs)` (4px) and horizontal padding to `var(--space-xs)` (8px) or `var(--space-sm)` (12px).
+* **Line Height**: Lock the element's CSS `line-height` to `1.2` or `1.3` to prevent browser rendering engine skew.
+* **Dropdown Alignment**: Dropdown select boxes must match the exact same vertical padding and line-height as adjacent buttons to align perfectly on a horizontal plane.
+
+### Hardware-Style Toggle Switches
+Slices and toggle elements inside preferences or listing grids are locked to an ultra-sleek, compact hardware profile:
+* **Outer Profile**: Width must be exactly `30px` and height exactly `16px`.
+* **Visual Slider Thumb**: A perfect circle with a diameter of exactly `10px`.
+* **Internal Margins**: Centered with exactly `2px` of clearance on all sides (`left: 2px` and `bottom: 2px` on the thumb element).
+* **Animation Transition**: The horizontal slide transition is locked to exactly `translateX(14px)`.
+* **Active Thumb Contrast**: The sliding circular thumb's background must map to `var(--text-on-primary)` to ensure high contrast when sliding over light/pastel brand colors.
+
+---
+
+## 4. Mandatory AI Directives
 When building, modifying, or refactoring UI components for Tagium:
 1. **Never use inline styles (`style="..."`)** for colors, padding, margins, or heights.
 2. **Never define new local colors** unless explicitly instructed.
