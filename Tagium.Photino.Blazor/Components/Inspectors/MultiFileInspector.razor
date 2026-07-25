@@ -1,41 +1,9 @@
 ﻿@namespace Tagium.Photino.Blazor.Components.Inspectors
-@using Tagium.Photino.Blazor.Services
-@using Tagium.Photino.Blazor.Components.Shared
-@inject AppState AppState
-@inject LibraryService Library
 
 <div class="multi-file-inspector">
     <div class="inspector-multi-header">
         <h3 class="multi-title">@AppState.SelectedFileIds.Count Files Selected</h3>
     </div>
 
-    <div class="inspector-tags">
-        <h4 class="section-title">Common Tags</h4>
-        <div class="tag-pills">
-            @foreach (var tag in CommonTags)
-            {
-                <span class="tag-pill" style="background-color: @tag.ColorHex">
-                    @if (!string.IsNullOrEmpty(tag.Emoji))
-                    {
-                        <span class="pill-emoji">@tag.Emoji</span>
-                    }
-                    <span class="pill-text">@tag.Name</span>
-                    <button class="btn-remove-tag" @onclick="() => BulkRemoveTag(tag.Id)">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </span>
-            }
-            @if (CommonTags.Count == 0)
-            {
-                <span class="empty-tag">No tags in common.</span>
-            }
-        </div>
-
-        @if (AvailableTags.Count > 0)
-        {
-            <div class="add-tag-section">
-                <TagSelector AvailableTags="AvailableTags" OnTagSelected="OnTagSelected" />
-            </div>
-        }
-    </div>
+    <TagInspectorPanel FileIds="AppState.SelectedFileIds" />
 </div>

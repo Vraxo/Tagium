@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using Tagium.Core.Data;
 using Tagium.Core.Models;
 
 namespace Tagium.Photino.Blazor.Components.Shared;
@@ -8,9 +9,11 @@ namespace Tagium.Photino.Blazor.Components.Shared;
 public partial class TagSelector
 {
     [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private TagRepository TagRepo { get; set; } = default!;
 
     [Parameter, EditorRequired] public List<Tag> AvailableTags { get; set; } = [];
     [Parameter, EditorRequired] public EventCallback<Guid> OnTagSelected { get; set; }
+    [Parameter] public EventCallback<string> OnTagCreated { get; set; }
 
     private List<Tag> _filteredTags = [];
     private List<Tag> _oldAvailableTags = [];
@@ -30,6 +33,10 @@ public partial class TagSelector
             }
         }
     }
+
+    private bool ShowCreateOption => OnTagCreated.HasDelegate &&
+                                     !string.IsNullOrWhiteSpace(_searchText) &&
+                                     TagRepo.ResolveTagId(_searchText) == null;
 
     protected override void OnParametersSet()
     {
@@ -67,7 +74,13 @@ public partial class TagSelector
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
-        if (!_isOpen || _filteredTags.Count == 0)
+        if (!_isOpen)
+        {
+            return;
+        }
+
+        int maxCount = ShowCreateOption ? _filteredTags.Count + 1 : _filteredTags.Count;
+        if (maxCount == 0)
         {
             return;
         }
@@ -75,9 +88,9 @@ public partial class TagSelector
         if (e.Key is "ArrowDown" or "Down")
         {
             _activeIndex++;
-            if (_activeIndex >= _filteredTags.Count)
+            if (_activeIndex >= maxCount)
             {
-                _activeIndex = _filteredTags.Count - 1;
+                _activeIndex = maxCount - 1;
             }
             await ScrollActiveItemIntoView();
         }
@@ -95,6 +108,10 @@ public partial class TagSelector
             if (_activeIndex >= 0 && _activeIndex < _filteredTags.Count)
             {
                 await SelectTag(_filteredTags[_activeIndex].Id);
+            }
+            else if (ShowCreateOption && _activeIndex == _filteredTags.Count)
+            {
+                await CreateAndSelectTag();
             }
         }
         else if (e.Key == "Escape")
@@ -118,7 +135,13 @@ public partial class TagSelector
     private async Task SelectTag(Guid id)
     {
         _searchText = "";
-        _isOpen = false;
         await OnTagSelected.InvokeAsync(id);
+    }
+
+    private async Task CreateAndSelectTag()
+    {
+        string textToCreate = _searchText.Trim();
+        _searchText = "";
+        await OnTagCreated.InvokeAsync(textToCreate);
     }
 }

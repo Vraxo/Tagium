@@ -1,0 +1,34 @@
+@namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Photino.Blazor.Components.Shared
+
+<div class="tag-inspector-panel">
+    <div class="inspector-tags">
+        <h4 class="section-title">Tags</h4>
+        <div class="tag-pills">
+            @foreach (var tag in _activeTags)
+            {
+                <span class="tag-pill" style="background-color: @tag.ColorHex">
+                    @if (!string.IsNullOrEmpty(tag.Emoji))
+                    {
+                        <span class="pill-emoji">@tag.Emoji</span>
+                    }
+                    <span class="pill-text">@tag.Name</span>
+                    <button class="btn-remove-tag" @onclick="() => RemoveTag(tag.Id)">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </span>
+            }
+            @if (_activeTags.Count == 0)
+            {
+                <span class="empty-tag">No tags assigned.</span>
+            }
+        </div>
+
+        @if (_availableTags.Count > 0 || true)
+        {
+            <div class="add-tag-section">
+                <TagSelector AvailableTags="_availableTags" OnTagSelected="OnTagSelected" OnTagCreated="OnTagCreated" />
+            </div>
+        }
+    </div>
+</div>

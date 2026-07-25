@@ -1,6 +1,4 @@
 @namespace Tagium.Photino.Blazor.Components.Inspectors
-@using Tagium.Photino.Blazor.Components.Shared
-@inject LibraryService Library
 
 <div class="single-file-inspector">
     <div class="inspector-file-header">
@@ -25,31 +23,7 @@
         }
     </div>
 
-    <div class="inspector-tags">
-        <h4 class="section-title">Tags</h4>
-        <div class="tag-pills">
-            @foreach (var tag in AssignedTags)
-            {
-                <span class="tag-pill" style="background-color: @tag.ColorHex">
-                    @if (!string.IsNullOrEmpty(tag.Emoji))
-                    {
-                        <span class="pill-emoji">@tag.Emoji</span>
-                    }
-                    <span class="pill-text">@tag.Name</span>
-                    <button class="btn-remove-tag" @onclick="() => RemoveTag(tag.Id)">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </span>
-            }
-        </div>
-
-        @if (AvailableTags.Count > 0)
-        {
-            <div class="add-tag-section">
-                <TagSelector AvailableTags="AvailableTags" OnTagSelected="OnTagSelected" />
-            </div>
-        }
-    </div>
+    <TagInspectorPanel FileIds="_fileIds" />
 
     <div class="inspector-actions">
         <button class="btn btn-secondary" @onclick="OpenFile">Open File</button>

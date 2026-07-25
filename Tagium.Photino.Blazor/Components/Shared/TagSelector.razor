@@ -12,7 +12,7 @@
            @onblur="Close"
            @onkeydown="HandleKeyDown" />
 
-    @if (_isOpen && _filteredTags.Count > 0)
+    @if (_isOpen && (_filteredTags.Count > 0 || ShowCreateOption))
     {
         <div class="tag-selector-dropdown">
             @for (int i = 0; i < _filteredTags.Count; i++)
@@ -27,9 +27,20 @@
                     <span class="tag-name">@tag.Name</span>
                 </div>
             }
+
+            @if (ShowCreateOption)
+            {
+                <div class="tag-dropdown-item create-item @(_activeIndex == _filteredTags.Count ? "active" : "")"
+                     @onmousedown="CreateAndSelectTag"
+                     @onmousedown:preventDefault="true"
+                     @onmouseover="() => _activeIndex = _filteredTags.Count">
+                    <i class="fa-solid fa-plus icon"></i>
+                    <span class="tag-name">Create tag "<strong>@_searchText</strong>"</span>
+                </div>
+            }
         </div>
     }
-    else if (_isOpen && _filteredTags.Count == 0)
+    else if (_isOpen && _filteredTags.Count == 0 && !ShowCreateOption)
     {
         <div class="tag-selector-dropdown empty">
             <span class="text-muted">No matching tags</span>

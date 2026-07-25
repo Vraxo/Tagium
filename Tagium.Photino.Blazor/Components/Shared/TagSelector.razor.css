@@ -63,6 +63,22 @@
     color: var(--text-color);
 }
 
+.tag-dropdown-item.create-item {
+    border-top: 1px dashed var(--border-color);
+    font-style: italic;
+}
+
+    .tag-dropdown-item.create-item .icon {
+        color: var(--primary-color);
+        margin-right: 8px;
+        font-size: var(--font-size-sm);
+        transition: color var(--transition-fast);
+    }
+
+    .tag-dropdown-item.create-item.active .icon {
+        color: var(--text-on-primary) !important;
+    }
+
 .tag-selector-dropdown.empty {
     padding: var(--space-xs) var(--space-sm);
     font-size: var(--font-size-sm);

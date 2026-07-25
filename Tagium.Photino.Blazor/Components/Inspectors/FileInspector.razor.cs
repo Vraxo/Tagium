@@ -8,35 +8,18 @@ public partial class FileInspector
     private InspectorMode SelectionMode = InspectorMode.None;
     private FileEntry? SelectedFile;
     private bool HasRenderError = false;
-    private List<Tag> AssignedTags = [];
-    private List<Tag> CommonTags = [];
-    private List<Tag> AvailableTags = [];
-    private List<Tag> _allTagsCache = [];
     private CancellationTokenSource? _cts;
     private string SelectionKey = Guid.NewGuid().ToString();
 
     protected override void OnInitialized()
     {
-        LoadAllTags();
         AppState.OnSelectionChange += OnSelectionChanged;
-        Library.LibraryChanged += OnLibraryChanged;
         _ = LoadInspectorDataAsync();
-    }
-
-    private void LoadAllTags()
-    {
-        _allTagsCache = Library.GetTags();
     }
 
     private void OnSelectionChanged()
     {
         SelectionKey = Guid.NewGuid().ToString();
-        _ = LoadInspectorDataAsync();
-    }
-
-    private void OnLibraryChanged()
-    {
-        LoadAllTags(); // Refresh tag cache
         _ = LoadInspectorDataAsync();
     }
 
@@ -77,9 +60,6 @@ public partial class FileInspector
                         return;
                     }
 
-                    var assigned = file.Tags ?? [];
-                    var available = GetAvailableTags(assigned);
-
                     // Update UI on UI thread
                     await InvokeAsync(() =>
                     {
@@ -90,16 +70,11 @@ public partial class FileInspector
 
                         SelectionMode = InspectorMode.Single;
                         SelectedFile = file;
-                        AssignedTags = assigned;
-                        AvailableTags = available;
                         StateHasChanged();
                     });
                 }
                 else
                 {
-                    var common = Library.GetCommonTags(selectedIds);
-                    var available = GetAvailableTags(common);
-
                     await InvokeAsync(() =>
                     {
                         if (token.IsCancellationRequested)
@@ -109,8 +84,6 @@ public partial class FileInspector
 
                         SelectionMode = InspectorMode.Multi;
                         SelectedFile = null;
-                        CommonTags = common;
-                        AvailableTags = available;
                         StateHasChanged();
                     });
                 }
@@ -138,16 +111,9 @@ public partial class FileInspector
         }
     }
 
-    private List<Tag> GetAvailableTags(List<Tag> existingTags)
-    {
-        HashSet<Guid> existingIds = [.. existingTags.Select(t => t.Id)];
-        return [.. _allTagsCache.Where(t => !existingIds.Contains(t.Id))];
-    }
-
     public void Dispose()
     {
         _cts?.Cancel();
         AppState.OnSelectionChange -= OnSelectionChanged;
-        Library.LibraryChanged -= OnLibraryChanged;
     }
 }
