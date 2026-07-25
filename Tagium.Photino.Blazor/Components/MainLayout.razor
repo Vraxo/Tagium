@@ -5,6 +5,7 @@
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Components.Shared
 
 <style>
     /* 1. Force the main container to be a rigid, full-screen horizontal row that never wraps */
@@ -96,51 +97,6 @@
         flex-shrink: 0 !important;
     }
 
-    /* Stackable and highly synchronized status indicators */
-    .scan-progress-bar {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 24px !important;
-        background-color: #1a1a1a !important;
-        z-index: 9999 !important;
-        box-sizing: border-box !important;
-    }
-
-    .progress-fill {
-        height: 100% !important;
-        background-color: var(--primary-color) !important;
-        transition: width 0.15s ease-in-out !important;
-    }
-
-    .progress-label {
-        position: absolute !important;
-        top: 0 !important;
-        left: 16px !important;
-        height: 24px !important;
-        line-height: 24px !important;
-        font-size: var(--font-size-xs) !important;
-        color: white !important;
-        font-weight: 500 !important;
-    }
-
-    .scan-progress-bar.thumbnail-progress {
-        background-color: #222 !important;
-    }
-
-        .scan-progress-bar.thumbnail-progress .progress-fill {
-            background-color: #4caf50 !important; /* Process-complimentary green for background rendering tasks */
-        }
-
-    .scan-progress-bar.tag-sync-progress {
-        background-color: #2b222c !important;
-    }
-
-        .scan-progress-bar.tag-sync-progress .progress-fill {
-            background-color: var(--appearance-color) !important; /* Creative preferences violet/magenta theme color */
-        }
-
     .zoom-indicator-toast {
         position: fixed !important;
         top: 60px !important;
@@ -201,29 +157,7 @@
             }
         </div>
 
-        @if (_scanInProgress)
-        {
-            <div class="scan-progress-bar">
-                <div class="progress-fill" style="width: @(_scanProgress)%"></div>
-                <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
-            </div>
-        }
-
-        @if (_thumbnailQueueActive)
-        {
-            <div class="scan-progress-bar thumbnail-progress" style="bottom: @(GetThumbnailBottomOffset())px !important;">
-                <div class="progress-fill" style="width: @(_thumbnailProgress)%"></div>
-                <div class="progress-label">Generating thumbnails... @(_thumbnailProcessed) / @(_thumbnailTotal)</div>
-            </div>
-        }
-
-        @if (_tagSyncInProgress)
-        {
-            <div class="scan-progress-bar tag-sync-progress" style="bottom: @(GetTagSyncBottomOffset())px !important;">
-                <div class="progress-fill" style="width: @(_tagSyncProgress)%"></div>
-                <div class="progress-label">Syncing physical files for renamed tag... @(_tagSyncProcessed) / @(_tagSyncTotal)</div>
-            </div>
-        }
+        <StatusBar />
     </div>
 
     <div class="splitter" id="splitter-right"></div>

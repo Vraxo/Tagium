@@ -1,0 +1,27 @@
+@namespace Tagium.Photino.Blazor.Components.Shared
+
+<div class="status-bar-container">
+    @if (_scanInProgress)
+    {
+        <div class="scan-progress-bar">
+            <div class="progress-fill" style="width: @(_scanProgress)%"></div>
+            <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
+        </div>
+    }
+
+    @if (_thumbnailQueueActive)
+    {
+        <div class="scan-progress-bar thumbnail-progress" style="bottom: @(GetThumbnailBottomOffset())px !important;">
+            <div class="progress-fill" style="width: @(_thumbnailProgress)%"></div>
+            <div class="progress-label">Generating thumbnails... @(_thumbnailProcessed) / @(_thumbnailTotal)</div>
+        </div>
+    }
+
+    @if (_tagSyncInProgress)
+    {
+        <div class="scan-progress-bar tag-sync-progress" style="bottom: @(GetTagSyncBottomOffset())px !important;">
+            <div class="progress-fill" style="width: @(_tagSyncProgress)%"></div>
+            <div class="progress-label">Syncing physical files for renamed tag... @(_tagSyncProcessed) / @(_tagSyncTotal)</div>
+        </div>
+    }
+</div>

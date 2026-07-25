@@ -19,21 +19,6 @@ public partial class MainLayout : IDisposable
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ThemeService ThemeService { get; set; } = default!;
 
-    private bool _scanInProgress = false;
-    private int _scanProcessed = 0;
-    private int _scanTotal = 0;
-    private double _scanProgress = 0;
-
-    private bool _thumbnailQueueActive = false;
-    private int _thumbnailProcessed = 0;
-    private int _thumbnailTotal = 0;
-    private double _thumbnailProgress = 0;
-
-    private bool _tagSyncInProgress = false;
-    private int _tagSyncProcessed = 0;
-    private int _tagSyncTotal = 0;
-    private double _tagSyncProgress = 0;
-
     private bool _showZoomToast = false;
     private int _lastActiveZoom = 100;
     private CancellationTokenSource? _zoomToastCts;
@@ -48,12 +33,7 @@ public partial class MainLayout : IDisposable
     {
         _lastActiveZoom = SettingsManager.Current.Zoom;
         SettingsManager.SettingsChanged += OnSettingsChanged;
-        ScanService.ScanProgress += UpdateScanProgress;
         ScanService.ScanCompleted += ShowScanStatus;
-        ThumbnailService.QueueProgressChanged += UpdateThumbnailProgress;
-        ThumbnailService.QueueCompleted += HideThumbnailProgress;
-        Library.TagSyncProgress += UpdateTagSyncProgress;
-        Library.TagSyncCompleted += ShowTagSyncStatus;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
 
@@ -241,23 +221,10 @@ public partial class MainLayout : IDisposable
         }, token);
     }
 
-    private void UpdateScanProgress(int current, int total)
-    {
-        _ = InvokeAsync(() =>
-        {
-            _scanInProgress = true;
-            _scanProcessed = current;
-            _scanTotal = total;
-            _scanProgress = total > 0 ? (double)current / total * 100 : 0;
-            StateHasChanged();
-        });
-    }
-
     private void ShowScanStatus()
     {
         _ = InvokeAsync(() =>
         {
-            _scanInProgress = false;
             Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
             StateHasChanged();
@@ -266,73 +233,6 @@ public partial class MainLayout : IDisposable
             List<FileEntry> allFiles = Library.GetFiles(null, false);
             ThumbnailService.QueueBackgroundGeneration(allFiles);
         });
-    }
-
-    private void UpdateThumbnailProgress(int processed, int total)
-    {
-        _ = InvokeAsync(() =>
-        {
-            _thumbnailQueueActive = true;
-            _thumbnailProcessed = processed;
-            _thumbnailTotal = total;
-            _thumbnailProgress = total > 0 ? (double)processed / total * 100 : 0;
-            StateHasChanged();
-        });
-    }
-
-    private void HideThumbnailProgress()
-    {
-        _ = InvokeAsync(() =>
-        {
-            _thumbnailQueueActive = false;
-            _thumbnailProcessed = 0;
-            _thumbnailTotal = 0;
-            _thumbnailProgress = 0;
-            StateHasChanged();
-        });
-    }
-
-    private void UpdateTagSyncProgress(int current, int total)
-    {
-        _ = InvokeAsync(() =>
-        {
-            _tagSyncInProgress = true;
-            _tagSyncProcessed = current;
-            _tagSyncTotal = total;
-            _tagSyncProgress = total > 0 ? (double)current / total * 100 : 0;
-            StateHasChanged();
-        });
-    }
-
-    private void ShowTagSyncStatus()
-    {
-        _ = InvokeAsync(() =>
-        {
-            _tagSyncInProgress = false;
-            Toast.Show("Tag metadata synchronization complete.", ToastType.Success);
-            StateHasChanged();
-        });
-    }
-
-    private int GetThumbnailBottomOffset()
-    {
-        return _scanInProgress ? 24 : 0;
-    }
-
-    private int GetTagSyncBottomOffset()
-    {
-        int offset = 0;
-        if (_scanInProgress)
-        {
-            offset += 24;
-        }
-
-        if (_thumbnailQueueActive)
-        {
-            offset += 24;
-        }
-
-        return offset;
     }
 
     private void OnLibraryChanged()
@@ -350,12 +250,7 @@ public partial class MainLayout : IDisposable
     public void Dispose()
     {
         SettingsManager.SettingsChanged -= OnSettingsChanged;
-        ScanService.ScanProgress -= UpdateScanProgress;
         ScanService.ScanCompleted -= ShowScanStatus;
-        ThumbnailService.QueueProgressChanged -= UpdateThumbnailProgress;
-        ThumbnailService.QueueCompleted -= HideThumbnailProgress;
-        Library.TagSyncProgress -= UpdateTagSyncProgress;
-        Library.TagSyncCompleted -= ShowTagSyncStatus;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
 
