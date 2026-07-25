@@ -44,7 +44,7 @@
     transition: background-color var(--transition-fast);
 }
 
-    .tag-dropdown-item:hover {
+    .tag-dropdown-item:hover, .tag-dropdown-item.active {
         background-color: var(--surface-hover);
     }
 

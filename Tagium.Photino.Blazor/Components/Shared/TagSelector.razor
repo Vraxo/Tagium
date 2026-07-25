@@ -5,26 +5,30 @@
     <input type="text"
            class="tag-selector-input"
            placeholder="Add tag..."
-           @bind="_searchText"
+           @bind="SearchText"
            @bind:event="oninput"
            @onfocus="Open"
-           @onblur="Close" />
+           @onblur="Close"
+           @onkeydown="HandleKeyDown" />
 
-    @if (_isOpen && FilteredTags.Any())
+    @if (_isOpen && _filteredTags.Count > 0)
     {
         <div class="tag-selector-dropdown">
-            @foreach (var tag in FilteredTags)
+            @for (int i = 0; i < _filteredTags.Count; i++)
             {
-                <div class="tag-dropdown-item"
+                var tag = _filteredTags[i];
+                int index = i;
+                <div class="tag-dropdown-item @(_activeIndex == index ? "active" : "")"
                      @onmousedown="() => SelectTag(tag.Id)"
-                     @onmousedown:preventDefault="true">
+                     @onmousedown:preventDefault="true"
+                     @onmouseover="() => _activeIndex = index">
                     <TagIcon Tag="tag" />
                     <span class="tag-name">@tag.Name</span>
                 </div>
             }
         </div>
     }
-    else if (_isOpen && !FilteredTags.Any())
+    else if (_isOpen && _filteredTags.Count == 0)
     {
         <div class="tag-selector-dropdown empty">
             <span class="text-muted">No matching tags</span>
