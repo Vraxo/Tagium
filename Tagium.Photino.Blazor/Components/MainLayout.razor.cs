@@ -42,7 +42,7 @@ public partial class MainLayout : IDisposable
 
     private AppToolbar? AppToolbarRef { get; set; }
 
-    private static readonly int[] ZoomSteps = [75, 90, 100, 110, 120, 130, 150];
+    private static readonly int[] ZoomSteps = [50, 67, 75, 90, 100, 110, 120, 133, 150, 175, 200];
 
     protected override void OnInitialized()
     {
@@ -125,6 +125,12 @@ public partial class MainLayout : IDisposable
                 ResetZoom();
                 break;
         }
+    }
+
+    [JSInvokable]
+    public void HandleWheelZoom(int direction)
+    {
+        AdjustZoom(direction);
     }
 
     [JSInvokable]

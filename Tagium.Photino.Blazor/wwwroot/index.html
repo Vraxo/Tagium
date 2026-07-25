@@ -87,6 +87,15 @@
                         }
                     }
                 });
+
+                // Intercept Ctrl + mousewheel scroll zooms globally to prevent native distortion
+                document.addEventListener('wheel', function (e) {
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        const direction = e.deltaY < 0 ? 1 : -1;
+                        dotNetRef.invokeMethodAsync('HandleWheelZoom', direction);
+                    }
+                }, { passive: false });
             }
         };
 

@@ -145,7 +145,6 @@
         position: fixed !important;
         top: 60px !important;
         left: 50% !important;
-        transform: translateX(-50%) !important;
         background: rgba(30, 30, 30, 0.95) !important;
         color: var(--text-color) !important;
         padding: 6px 16px !important;
@@ -235,7 +234,7 @@
 
     @if (_showZoomToast)
     {
-        <div class="zoom-indicator-toast">
+        <div class="zoom-indicator-toast" style="transform: translateX(-50%) scale(@((100.0 / SettingsManager.Current.Zoom).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))) !important;">
             @(SettingsManager.Current.Zoom)%
         </div>
     }
