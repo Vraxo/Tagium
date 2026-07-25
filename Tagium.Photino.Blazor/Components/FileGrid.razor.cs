@@ -14,7 +14,7 @@ public partial class FileGrid : IDisposable
 
     private List<FileEntry> Files = [];
     private List<List<FileEntry>> FileRows = [];
-    private int _columnsCount = 5;
+    protected int _columnsCount = 5;
     private bool _isInitialized = false;
     private DotNetObjectReference<FileGrid>? _objRef;
     private bool _isRenderPending = false;

@@ -30,10 +30,11 @@
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 16px !important;
-        width: 100% !important;
+        /* Calculate exact width of active columns block plus gaps */
+        width: calc((var(--cols-count) * var(--thumb-size)) + ((var(--cols-count) - 1) * 16px)) !important;
         height: calc(var(--thumb-size) + 30px) !important; /* Explicitly lock row height to prevent virtualizer math skewing */
         box-sizing: border-box !important;
-        margin-bottom: 16px !important;
+        margin: 0 auto 16px auto !important; /* Center the row block horizontally */
         contain: layout style paint !important; /* CSS containment for massive reflow savings */
     }
 
@@ -49,7 +50,7 @@
 
 <div id="file-grid-container"
      class="grid-container @(_isInitialized ? "" : "initializing")"
-     style="--thumb-size: @(Settings.Current.ThumbnailSize)px">
+     style="--thumb-size: @(Settings.Current.ThumbnailSize)px; --cols-count: @_columnsCount">
 
     <Virtualize Items="FileRows" ItemSize="@(Settings.Current.ThumbnailSize + 46)" Context="row">
         <div @key="row" class="file-grid-row">
