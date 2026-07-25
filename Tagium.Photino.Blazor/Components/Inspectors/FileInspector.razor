@@ -31,13 +31,15 @@
         }
         else if (SelectionMode == InspectorMode.Single && SelectedFile is not null)
         {
-            <SingleFileInspector File="SelectedFile"
+            <SingleFileInspector @key="SelectionKey"
+                                 File="SelectedFile"
                                  AssignedTags="AssignedTags"
                                  AvailableTags="AvailableTags" />
         }
         else if (SelectionMode == InspectorMode.Multi)
         {
-            <MultiFileInspector CommonTags="CommonTags"
+            <MultiFileInspector @key="SelectionKey"
+                                CommonTags="CommonTags"
                                 AvailableTags="AvailableTags" />
         }
         else

@@ -13,6 +13,7 @@ public partial class FileInspector
     private List<Tag> AvailableTags = [];
     private List<Tag> _allTagsCache = [];
     private CancellationTokenSource? _cts;
+    private string SelectionKey = Guid.NewGuid().ToString();
 
     protected override void OnInitialized()
     {
@@ -29,6 +30,7 @@ public partial class FileInspector
 
     private void OnSelectionChanged()
     {
+        SelectionKey = Guid.NewGuid().ToString();
         _ = LoadInspectorDataAsync();
     }
 
@@ -42,14 +44,14 @@ public partial class FileInspector
     {
         // Cancel any previous ongoing operation
         _cts?.Cancel();
-        using var cts = new CancellationTokenSource();
+        using CancellationTokenSource cts = new();
         _cts = cts;
         var token = cts.Token;
 
         try
         {
             // Capture selected IDs on UI thread
-            var selectedIds = AppState.SelectedFileIds.ToList();
+            List<Guid> selectedIds = AppState.SelectedFileIds.ToList();
             int count = selectedIds.Count;
 
             if (count == 0)

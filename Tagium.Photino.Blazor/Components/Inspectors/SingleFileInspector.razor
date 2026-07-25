@@ -45,8 +45,8 @@
         @if (AvailableTags.Count > 0)
         {
             <div class="add-tag-section">
-                <select class="add-tag-select" @onchange="@(e => { if (Guid.TryParse(e.Value?.ToString(), out var tid)) AddTag(tid); })">
-                    <option value="">Add tag...</option>
+                <select class="add-tag-select" @key="_selectKey" @onchange="OnTagSelected">
+                    <option value="" selected>Add tag...</option>
                     @foreach (var tag in AvailableTags)
                     {
                         <option value="@tag.Id">@tag.Name</option>

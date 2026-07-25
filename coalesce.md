@@ -677,6 +677,26 @@ public class FileTagRepository
 
         return ids;
     }
+
+    public List<Guid> GetFileIdsForTag(Guid tagId)
+    {
+        List<Guid> ids = [];
+
+        using SqliteConnection conn = _db.GetConnection();
+
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT FileId FROM cache.FileTags WHERE TagId = @TagId";
+        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+
+        while (reader.Read())
+        {
+            ids.Add(Guid.Parse(reader.GetString(0)));
+        }
+
+        return ids;
+    }
 }
 ```
 
@@ -1976,6 +1996,7 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
+using System.Threading;
 
 namespace Tagium.Core.Services;
 
@@ -1994,6 +2015,17 @@ public class LibraryService
     private readonly LibraryScanService _scanService;
     private readonly ExifToolService _exifTool;
 
+    private bool _tagSyncInProgress;
+    private int _tagSyncProcessed;
+    private int _tagSyncTotal;
+    private CancellationTokenSource? _tagSyncCts;
+
+    public bool IsTagSyncRunning => _tagSyncInProgress;
+    public int TagSyncProcessed => _tagSyncProcessed;
+    public int TagSyncTotal => _tagSyncTotal;
+
+    public event Action<int, int>? TagSyncProgress;
+    public event Action? TagSyncCompleted;
     public event Action? LibraryChanged;
 
     public LibraryService(
@@ -2003,7 +2035,7 @@ public class LibraryService
         FileSearchRepository searchRepo,
         ThumbnailService thumbnailService,
         SettingsManager settingsManager,
-        UndoService undoService,
+        UndoService _undoService,
         LibraryRootRepository rootRepo,
         LibraryScanService scanService,
         ExifToolService exifTool)
@@ -2014,7 +2046,7 @@ public class LibraryService
         _searchRepo = searchRepo;
         _thumbnailService = thumbnailService;
         _settingsManager = settingsManager;
-        _undoService = undoService;
+        this._undoService = _undoService;
         _rootRepo = rootRepo;
         _scanService = scanService;
         _exifTool = exifTool;
@@ -2244,8 +2276,64 @@ public class LibraryService
 
     public void UpdateTag(Tag tag)
     {
+        Tag? original = _tagRepo.GetTagsByIds([tag.Id]).FirstOrDefault();
+        bool nameChanged = original is not null && !string.Equals(original.Name, tag.Name, StringComparison.OrdinalIgnoreCase);
+
         _tagRepo.Update(tag);
+
+        if (nameChanged)
+        {
+            List<Guid> fileIds = _fileTagRepo.GetFileIdsForTag(tag.Id);
+            QueueTagMetadataSync(fileIds);
+        }
+
         LibraryChanged?.Invoke();
+    }
+
+    private void QueueTagMetadataSync(List<Guid> fileIds)
+    {
+        _tagSyncCts?.Cancel();
+        _tagSyncCts = new CancellationTokenSource();
+        CancellationToken token = _tagSyncCts.Token;
+
+        if (fileIds.Count == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            _tagSyncInProgress = true;
+            _tagSyncProcessed = 0;
+            _tagSyncTotal = fileIds.Count;
+
+            TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
+
+            try
+            {
+                foreach (Guid fileId in fileIds)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    await SyncMetadataToFileAsync(fileId);
+
+                    _tagSyncProcessed++;
+                    TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
+                }
+            }
+            catch (Exception)
+            {
+                // Gracefully log/ignore
+            }
+            finally
+            {
+                _tagSyncInProgress = false;
+                TagSyncCompleted?.Invoke();
+            }
+        }, token);
     }
 
     public void DeleteTag(Guid id)
@@ -3474,6 +3562,9 @@ public class Settings
     public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
     public FileViewMode FileViewMode { get; set; } = FileViewMode.Grid;
     public string SelectedTheme { get; set; } = "Default";
+    public int LeftSidebarWidth { get; set; } = 250;
+    public int RightSidebarWidth { get; set; } = 320;
+    public int Zoom { get; set; } = 100;
 }
 ```
 
@@ -4384,16 +4475,21 @@ When building, modifying, or refactoring UI components for Tagium:
 ### `Tagium.Photino.Blazor\Program.cs`
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
 using Photino.Blazor;
+using Photino.NET;
 using Serilog;
 using Serilog.Events;
 using Tagium.Core.Helpers;
+using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Setup;
 
 namespace Tagium.Photino.Blazor;
 
 public class Program
 {
+    public static PhotinoWindow? MainWindow { get; set; }
+
     [STAThread]
     [Obsolete]
     private static void Main(string[] args)
@@ -4417,14 +4513,22 @@ public class Program
             // Pass ServiceProvider to static SchemeHandler
             SchemeHandlers.ServiceProvider = app.Services;
 
+            // Pass MainWindow to static property for runtime accessibility
+            MainWindow = app.MainWindow;
+
             // Custom Scheme for Thumbnails and Previews
             _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
+
+            // Load saved zoom factor on startup
+            SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
+            int savedZoom = settings.Current.Zoom;
 
             _ = app.MainWindow
                 .SetTitle("Tagium")
                 .SetUseOsDefaultSize(false)
                 .SetSize(1200, 800)
                 .Center()
+                .SetZoom(savedZoom)
                 .SetLogVerbosity(0);
 
             app.Run();
@@ -5613,6 +5717,7 @@ public partial class FileListView : IDisposable
 @using Tagium.Core.Services
 @using Tagium.Core.Settings
 @using Tagium.Photino.Blazor.Components.Views
+@using Tagium.Photino.Blazor.Components.Shared
 
 <style>
     /* 1. Force the main container to be a rigid, full-screen horizontal row that never wraps */
@@ -5664,8 +5769,8 @@ public partial class FileListView : IDisposable
     }
 
     /* 6. Lock the inspector panel width.
-                  Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
-                  and allows the splitter's JavaScript inline style modification to override it perfectly. */
+                      Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
+                      and allows the splitter's JavaScript inline style modification to override it perfectly. */
     .inspector-panel {
         width: 320px;
         height: 100% !important;
@@ -5704,47 +5809,38 @@ public partial class FileListView : IDisposable
         flex-shrink: 0 !important;
     }
 
-    /* Stackable and highly synchronized status indicators */
-    .scan-progress-bar {
+    .zoom-indicator-toast {
         position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 24px !important;
-        background-color: #1a1a1a !important;
-        z-index: 9999 !important;
-        box-sizing: border-box !important;
+        top: 60px !important;
+        left: 50% !important;
+        background: rgba(30, 30, 30, 0.95) !important;
+        color: var(--text-color) !important;
+        padding: 6px 16px !important;
+        border-radius: 20px !important;
+        font-size: var(--font-size-sm) !important;
+        font-weight: 600;
+        border: 1px solid var(--border-color) !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+        z-index: 10000 !important;
+        pointer-events: none !important;
+        animation: zoomToastFade var(--transition-normal) ease-out !important;
     }
 
-    .progress-fill {
-        height: 100% !important;
-        background-color: var(--primary-color) !important;
-        transition: width 0.15s ease-in-out !important;
-    }
-
-    .progress-label {
-        position: absolute !important;
-        top: 0 !important;
-        left: 16px !important;
-        height: 24px !important;
-        line-height: 24px !important;
-        font-size: var(--font-size-xs) !important;
-        color: white !important;
-        font-weight: 500 !important;
-    }
-
-    .scan-progress-bar.thumbnail-progress {
-        bottom: @(_scanInProgress ? "24px" : "0") !important;
-        background-color: #222 !important;
-    }
-
-        .scan-progress-bar.thumbnail-progress .progress-fill {
-            background-color: #4caf50 !important; /* Process-complimentary green for background rendering tasks */
+    @@keyframes zoomToastFade {
+        from {
+            opacity: 0;
+            transform: translate(-50%, -10px);
         }
+
+        to {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+    }
 </style>
 
 <div class="main-layout">
-    <div class="sidebar-panel" id="sidebar-panel">
+    <div class="sidebar-panel" id="sidebar-panel" style="width: @(SettingsManager.Current.LeftSidebarWidth)px;">
         <TagSidebar />
     </div>
 
@@ -5773,30 +5869,22 @@ public partial class FileListView : IDisposable
             }
         </div>
 
-        @if (_scanInProgress)
-        {
-            <div class="scan-progress-bar">
-                <div class="progress-fill" style="width: @(_scanProgress)%"></div>
-                <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
-            </div>
-        }
-
-        @if (_thumbnailQueueActive)
-        {
-            <div class="scan-progress-bar thumbnail-progress">
-                <div class="progress-fill" style="width: @(_thumbnailProgress)%"></div>
-                <div class="progress-label">Generating thumbnails... @(_thumbnailProcessed) / @(_thumbnailTotal)</div>
-            </div>
-        }
+        <StatusBar />
     </div>
 
     <div class="splitter" id="splitter-right"></div>
 
-    <div class="inspector-panel" id="inspector-panel">
+    <div class="inspector-panel" id="inspector-panel" style="width: @(SettingsManager.Current.RightSidebarWidth)px;">
         <Tagium.Photino.Blazor.Components.Inspectors.FileInspector />
     </div>
 
-    <ToastContainer />
+    @if (_showZoomToast)
+    {
+        <div class="zoom-indicator-toast" style="transform: translateX(-50%) scale(@((100.0 / SettingsManager.Current.Zoom).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))) !important;">
+            @(SettingsManager.Current.Zoom)%
+        </div>
+    }
+
     <ModalHost />
 </div>
 ```
@@ -5827,27 +5915,21 @@ public partial class MainLayout : IDisposable
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ThemeService ThemeService { get; set; } = default!;
 
-    private bool _scanInProgress = false;
-    private int _scanProcessed = 0;
-    private int _scanTotal = 0;
-    private double _scanProgress = 0;
-
-    private bool _thumbnailQueueActive = false;
-    private int _thumbnailProcessed = 0;
-    private int _thumbnailTotal = 0;
-    private double _thumbnailProgress = 0;
+    private bool _showZoomToast = false;
+    private int _lastActiveZoom = 100;
+    private CancellationTokenSource? _zoomToastCts;
 
     private DotNetObjectReference<MainLayout>? _objRef;
 
     private AppToolbar? AppToolbarRef { get; set; }
 
+    private static readonly int[] ZoomSteps = [50, 67, 75, 90, 100, 110, 120, 133, 150, 175, 200];
+
     protected override void OnInitialized()
     {
-        SettingsManager.SettingsChanged += StateHasChanged;
-        ScanService.ScanProgress += UpdateScanProgress;
+        _lastActiveZoom = SettingsManager.Current.Zoom;
+        SettingsManager.SettingsChanged += OnSettingsChanged;
         ScanService.ScanCompleted += ShowScanStatus;
-        ThumbnailService.QueueProgressChanged += UpdateThumbnailProgress;
-        ThumbnailService.QueueCompleted += HideThumbnailProgress;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
 
@@ -5867,12 +5949,14 @@ public partial class MainLayout : IDisposable
 
         await JS.InvokeVoidAsync(
             "layoutResizer.init",
+            _objRef,
             "sidebar-panel",
             "splitter-left",
             "inspector-panel",
             "splitter-right");
 
         await JS.InvokeVoidAsync("globalShortcuts.init", _objRef);
+        await JS.InvokeVoidAsync("zoomTracker.init", _objRef, SettingsManager.Current.Zoom);
 
         // Safely boot theme configurations after the DOM is fully loaded and interactive
         await ThemeService.InitializeAsync(JS);
@@ -5906,26 +5990,137 @@ public partial class MainLayout : IDisposable
             case "r":
                 await ScanService.ScanAllAsync();
                 break;
+            case "+":
+            case "=":
+                AdjustZoom(1);
+                break;
+            case "-":
+                AdjustZoom(-1);
+                break;
+            case "0":
+                ResetZoom();
+                break;
         }
     }
 
-    private void UpdateScanProgress(int current, int total)
+    [JSInvokable]
+    public void HandleWheelZoom(int direction)
     {
-        _ = InvokeAsync(() =>
+        AdjustZoom(direction);
+    }
+
+    [JSInvokable]
+    public void SaveLeftSidebarWidth(int width)
+    {
+        SettingsManager.Update(s => s.LeftSidebarWidth = width);
+    }
+
+    [JSInvokable]
+    public void SaveRightSidebarWidth(int width)
+    {
+        SettingsManager.Update(s => s.RightSidebarWidth = width);
+    }
+
+    [JSInvokable]
+    public void OnNativeZoomChanged(int rawZoom)
+    {
+        int closestZoom = 100;
+        int minDiff = int.MaxValue;
+        foreach (int step in ZoomSteps)
         {
-            _scanInProgress = true;
-            _scanProcessed = current;
-            _scanTotal = total;
-            _scanProgress = total > 0 ? (double)current / total * 100 : 0;
-            StateHasChanged();
-        });
+            int diff = Math.Abs(step - rawZoom);
+            if (diff < minDiff)
+            {
+                minDiff = diff;
+                closestZoom = step;
+            }
+        }
+
+        if (SettingsManager.Current.Zoom != closestZoom)
+        {
+            SettingsManager.Update(s => s.Zoom = closestZoom);
+        }
+    }
+
+    private void AdjustZoom(int direction)
+    {
+        int currentZoom = SettingsManager.Current.Zoom;
+        int currentIndex = Array.IndexOf(ZoomSteps, currentZoom);
+
+        if (currentIndex == -1)
+        {
+            int closestIndex = 0;
+            int minDiff = int.MaxValue;
+            for (int i = 0; i < ZoomSteps.Length; i++)
+            {
+                int diff = Math.Abs(ZoomSteps[i] - currentZoom);
+                if (diff < minDiff)
+                {
+                    minDiff = diff;
+                    closestIndex = i;
+                }
+            }
+            currentIndex = closestIndex;
+        }
+
+        int newIndex = currentIndex + direction;
+        if (newIndex >= 0 && newIndex < ZoomSteps.Length)
+        {
+            int targetZoom = ZoomSteps[newIndex];
+            SettingsManager.Update(s => s.Zoom = targetZoom);
+            Program.MainWindow?.SetZoom(targetZoom);
+        }
+    }
+
+    private void ResetZoom()
+    {
+        SettingsManager.Update(s => s.Zoom = 100);
+        Program.MainWindow?.SetZoom(100);
+    }
+
+    private void OnSettingsChanged()
+    {
+        if (SettingsManager.Current.Zoom != _lastActiveZoom)
+        {
+            _lastActiveZoom = SettingsManager.Current.Zoom;
+            TriggerZoomToast();
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void TriggerZoomToast()
+    {
+        _showZoomToast = true;
+
+        _zoomToastCts?.Cancel();
+        _zoomToastCts = new CancellationTokenSource();
+        CancellationToken token = _zoomToastCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(1200, token);
+                await InvokeAsync(() =>
+                {
+                    if (!token.IsCancellationRequested)
+                    {
+                        _showZoomToast = false;
+                        StateHasChanged();
+                    }
+                });
+            }
+            catch (TaskCanceledException)
+            {
+                // Gracefully catch cancellation
+            }
+        }, token);
     }
 
     private void ShowScanStatus()
     {
         _ = InvokeAsync(() =>
         {
-            _scanInProgress = false;
             Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
             StateHasChanged();
@@ -5933,30 +6128,6 @@ public partial class MainLayout : IDisposable
             // Automatically queue background pre-generation of newly cataloged files
             List<FileEntry> allFiles = Library.GetFiles(null, false);
             ThumbnailService.QueueBackgroundGeneration(allFiles);
-        });
-    }
-
-    private void UpdateThumbnailProgress(int processed, int total)
-    {
-        _ = InvokeAsync(() =>
-        {
-            _thumbnailQueueActive = true;
-            _thumbnailProcessed = processed;
-            _thumbnailTotal = total;
-            _thumbnailProgress = total > 0 ? (double)processed / total * 100 : 0;
-            StateHasChanged();
-        });
-    }
-
-    private void HideThumbnailProgress()
-    {
-        _ = InvokeAsync(() =>
-        {
-            _thumbnailQueueActive = false;
-            _thumbnailProcessed = 0;
-            _thumbnailTotal = 0;
-            _thumbnailProgress = 0;
-            StateHasChanged();
         });
     }
 
@@ -5974,13 +6145,13 @@ public partial class MainLayout : IDisposable
 
     public void Dispose()
     {
-        SettingsManager.SettingsChanged -= StateHasChanged;
-        ScanService.ScanProgress -= UpdateScanProgress;
+        SettingsManager.SettingsChanged -= OnSettingsChanged;
         ScanService.ScanCompleted -= ShowScanStatus;
-        ThumbnailService.QueueProgressChanged -= UpdateThumbnailProgress;
-        ThumbnailService.QueueCompleted -= HideThumbnailProgress;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
+
+        _zoomToastCts?.Cancel();
+        _zoomToastCts?.Dispose();
 
         // Cancel background task on dispose to prevent thread leaks during shutdown
         ThumbnailService.CancelBackgroundGeneration();
@@ -7379,28 +7550,12 @@ public static class ServiceRegistrar
                 }
             }
         };
-
-        window.globalShortcuts = {
-            init: function (dotNetRef) {
-                document.addEventListener('keydown', function (e) {
-                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
-                        return;
-                    }
-
-                    if (e.ctrlKey || e.metaKey) {
-                        const key = e.key.toLowerCase();
-                        if (['z', 'f', 't', 'r'].includes(key)) {
-                            e.preventDefault();
-                            dotNetRef.invokeMethodAsync('HandleGlobalKeyDown', key, e.ctrlKey || e.metaKey, e.shiftKey);
-                        }
-                    }
-                });
-            }
-        };
     </script>
     <script src="js/dragdrop.js"></script>
     <script src="js/grid.js"></script>
     <script src="js/layout.js"></script>
+    <script src="js/shortcuts.js"></script>
+    <script src="js/zoom.js"></script>
     <script src="_framework/blazor.webview.js"></script>
 </body>
 </html>
@@ -8430,6 +8585,26 @@ public partial class DuplicateFileModal
                 <hr />
 
                 <div class="appearance-section">
+                    <h5>Interface Zoom Level</h5>
+                    <p class="section-hint">Adjust the global scaling and size of interface text and elements.</p>
+                    <select class="theme-select" value="@Settings.Current.Zoom" @onchange="OnZoomChanged">
+                        <option value="50">50% (Smallest)</option>
+                        <option value="67">67%</option>
+                        <option value="75">75% (Small)</option>
+                        <option value="90">90%</option>
+                        <option value="100">100% (Default)</option>
+                        <option value="110">110%</option>
+                        <option value="120">120%</option>
+                        <option value="133">133%</option>
+                        <option value="150">150% (Large)</option>
+                        <option value="175">175%</option>
+                        <option value="200">200% (Largest)</option>
+                    </select>
+                </div>
+
+                <hr />
+
+                <div class="appearance-section">
                     <h5>Tag Sidebar Style</h5>
                     <div class="radio-group">
                         <label>
@@ -8667,6 +8842,15 @@ public partial class SettingsModal : IDisposable
 
         Settings.Update(s => s.SelectedTheme = themeName);
         await ThemeService.ApplyThemeAsync(JS, themeName);
+    }
+
+    private void OnZoomChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int zoom))
+        {
+            Settings.Update(s => s.Zoom = zoom);
+            Program.MainWindow?.SetZoom(zoom);
+        }
     }
 
     // --- Maintenance (Data Management) Methods ---
@@ -9364,6 +9548,241 @@ select {
 
 ---
 
+### `Tagium.Photino.Blazor\Components\Shared\StatusBar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components.Shared
+
+<div class="status-bar-container">
+    @if (_scanInProgress)
+    {
+        <div class="scan-progress-bar">
+            <div class="progress-fill" style="width: @(_scanProgress)%"></div>
+            <div class="progress-label">Scanning library... @(_scanProcessed) / @(_scanTotal)</div>
+        </div>
+    }
+
+    @if (_thumbnailQueueActive)
+    {
+        <div class="scan-progress-bar thumbnail-progress" style="bottom: @(GetThumbnailBottomOffset())px !important;">
+            <div class="progress-fill" style="width: @(_thumbnailProgress)%"></div>
+            <div class="progress-label">Generating thumbnails... @(_thumbnailProcessed) / @(_thumbnailTotal)</div>
+        </div>
+    }
+
+    @if (_tagSyncInProgress)
+    {
+        <div class="scan-progress-bar tag-sync-progress" style="bottom: @(GetTagSyncBottomOffset())px !important;">
+            <div class="progress-fill" style="width: @(_tagSyncProgress)%"></div>
+            <div class="progress-label">Syncing physical files for renamed tag... @(_tagSyncProcessed) / @(_tagSyncTotal)</div>
+        </div>
+    }
+</div>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\StatusBar.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Services;
+
+namespace Tagium.Photino.Blazor.Components.Shared;
+
+public partial class StatusBar : IDisposable
+{
+    [Inject] private LibraryScanService ScanService { get; set; } = default!;
+    [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
+    [Inject] private LibraryService Library { get; set; } = default!;
+
+    private bool _scanInProgress;
+    private int _scanProcessed;
+    private int _scanTotal;
+    private double _scanProgress;
+
+    private bool _thumbnailQueueActive;
+    private int _thumbnailProcessed;
+    private int _thumbnailTotal;
+    private double _thumbnailProgress;
+
+    private bool _tagSyncInProgress;
+    private int _tagSyncProcessed;
+    private int _tagSyncTotal;
+    private double _tagSyncProgress;
+
+    protected override void OnInitialized()
+    {
+        ScanService.ScanProgress += UpdateScanProgress;
+        ScanService.ScanCompleted += HideScanProgress;
+        ThumbnailService.QueueProgressChanged += UpdateThumbnailProgress;
+        ThumbnailService.QueueCompleted += HideThumbnailProgress;
+        Library.TagSyncProgress += UpdateTagSyncProgress;
+        Library.TagSyncCompleted += HideTagSyncProgress;
+    }
+
+    private void UpdateScanProgress(int current, int total)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _scanInProgress = true;
+            _scanProcessed = current;
+            _scanTotal = total;
+            _scanProgress = total > 0 ? (double)current / total * 100 : 0;
+            StateHasChanged();
+        });
+    }
+
+    private void HideScanProgress()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _scanInProgress = false;
+            _scanProcessed = 0;
+            _scanTotal = 0;
+            _scanProgress = 0;
+            StateHasChanged();
+        });
+    }
+
+    private void UpdateThumbnailProgress(int processed, int total)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _thumbnailQueueActive = true;
+            _thumbnailProcessed = processed;
+            _thumbnailTotal = total;
+            _thumbnailProgress = total > 0 ? (double)processed / total * 100 : 0;
+            StateHasChanged();
+        });
+    }
+
+    private void HideThumbnailProgress()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _thumbnailQueueActive = false;
+            _thumbnailProcessed = 0;
+            _thumbnailTotal = 0;
+            _thumbnailProgress = 0;
+            StateHasChanged();
+        });
+    }
+
+    private void UpdateTagSyncProgress(int current, int total)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _tagSyncInProgress = true;
+            _tagSyncProcessed = current;
+            _tagSyncTotal = total;
+            _tagSyncProgress = total > 0 ? (double)current / total * 100 : 0;
+            StateHasChanged();
+        });
+    }
+
+    private void HideTagSyncProgress()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _tagSyncInProgress = false;
+            _tagSyncProcessed = 0;
+            _tagSyncTotal = 0;
+            _tagSyncProgress = 0;
+            StateHasChanged();
+        });
+    }
+
+    private int GetThumbnailBottomOffset()
+    {
+        return _scanInProgress ? 24 : 0;
+    }
+
+    private int GetTagSyncBottomOffset()
+    {
+        int offset = 0;
+        if (_scanInProgress)
+        {
+            offset += 24;
+        }
+
+        if (_thumbnailQueueActive)
+        {
+            offset += 24;
+        }
+
+        return offset;
+    }
+
+    public void Dispose()
+    {
+        ScanService.ScanProgress -= UpdateScanProgress;
+        ScanService.ScanCompleted -= HideScanProgress;
+        ThumbnailService.QueueProgressChanged -= UpdateThumbnailProgress;
+        ThumbnailService.QueueCompleted -= HideThumbnailProgress;
+        Library.TagSyncProgress -= UpdateTagSyncProgress;
+        Library.TagSyncCompleted -= HideTagSyncProgress;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\Shared\StatusBar.razor.css`
+
+```css
+.status-bar-container {
+    position: relative;
+    width: 100%;
+}
+
+.scan-progress-bar {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 24px !important;
+    background-color: #1a1a1a !important;
+    z-index: 9999 !important;
+    box-sizing: border-box !important;
+}
+
+.progress-fill {
+    height: 100% !important;
+    background-color: var(--primary-color) !important;
+    transition: width 0.15s ease-in-out !important;
+}
+
+.progress-label {
+    position: absolute !important;
+    top: 0 !important;
+    left: 16px !important;
+    height: 24px !important;
+    line-height: 24px !important;
+    font-size: var(--font-size-xs) !important;
+    color: white !important;
+    font-weight: 500 !important;
+}
+
+.scan-progress-bar.thumbnail-progress {
+    background-color: #222 !important;
+}
+
+    .scan-progress-bar.thumbnail-progress .progress-fill {
+        background-color: #4caf50 !important;
+    }
+
+.scan-progress-bar.tag-sync-progress {
+    background-color: #2b222c !important;
+}
+
+    .scan-progress-bar.tag-sync-progress .progress-fill {
+        background-color: var(--appearance-color) !important;
+    }
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\Shared\TagIcon.razor`
 
 ```
@@ -9980,9 +10399,12 @@ public partial class TagManagerView
 .add-row {
     display: flex;
     gap: var(--space-xs);
+    align-items: center;
 }
 
     .add-row input {
+        height: 26px;
+        box-sizing: border-box;
         padding: var(--space-2xs) var(--space-xs);
         background: var(--surface-bg);
         border: 1px solid var(--border-color);
@@ -10000,13 +10422,19 @@ public partial class TagManagerView
         }
 
 .btn-primary {
+    height: 26px;
+    box-sizing: border-box;
     background: var(--primary-color);
-    border: none;
+    border: 1px solid transparent;
     color: var(--text-on-primary);
     padding: var(--space-2xs) var(--space-sm);
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: var(--font-size-xs);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     line-height: 1.2;
     transition: background-color var(--transition-fast);
 }
@@ -10616,7 +11044,7 @@ window.gridInteractions = {
 
 ```javascript
 window.layoutResizer = {
-    init: function (leftPanelId, leftSplitterId, rightPanelId, rightSplitterId) {
+    init: function (dotNetRef, leftPanelId, leftSplitterId, rightPanelId, rightSplitterId) {
         const leftPanel = document.getElementById(leftPanelId);
         const rightPanel = document.getElementById(rightPanelId);
         const leftSplitter = document.getElementById(leftSplitterId);
@@ -10655,11 +11083,93 @@ window.layoutResizer = {
 
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
+
+                    const width = parseInt(panel.style.width);
+                    if (side === 'left') {
+                        dotNetRef.invokeMethodAsync('SaveLeftSidebarWidth', width);
+                    } else {
+                        dotNetRef.invokeMethodAsync('SaveRightSidebarWidth', width);
+                    }
                 }
 
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
             });
+        }
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\shortcuts.js`
+
+```javascript
+window.globalShortcuts = {
+    init: function (dotNetRef) {
+        document.addEventListener('keydown', function (e) {
+            const isInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable;
+
+            if (e.ctrlKey || e.metaKey) {
+                const key = e.key.toLowerCase();
+
+                // Native zoom shortcuts must be intercepted globally even when typing in input controls
+                if (['+', '=', '-', '0'].includes(key)) {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('HandleGlobalKeyDown', key, e.ctrlKey || e.metaKey, e.shiftKey);
+                    return;
+                }
+
+                if (isInput) {
+                    return;
+                }
+
+                if (['z', 'f', 't', 'r'].includes(key)) {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('HandleGlobalKeyDown', key, e.ctrlKey || e.metaKey, e.shiftKey);
+                }
+            }
+        });
+
+        // Intercept Ctrl + mousewheel scroll zooms globally to prevent native distortion
+        document.addEventListener('wheel', function (e) {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const direction = e.deltaY < 0 ? 1 : -1;
+                dotNetRef.invokeMethodAsync('HandleWheelZoom', direction);
+            }
+        }, { passive: false });
+    }
+};
+```
+
+---
+
+### `Tagium.Photino.Blazor\wwwroot\js\zoom.js`
+
+```javascript
+window.zoomTracker = {
+    dotNetRef: null,
+    osScale: 1.0,
+    lastZoom: 100,
+
+    init: function (dotNetRef, initialZoomSetting) {
+        this.dotNetRef = dotNetRef;
+        this.lastZoom = initialZoomSetting;
+
+        const initialRatio = window.devicePixelRatio;
+        this.osScale = initialRatio / (initialZoomSetting / 100.0);
+
+        window.addEventListener('resize', this.checkZoom.bind(this));
+    },
+
+    checkZoom: function () {
+        const currentRatio = window.devicePixelRatio;
+        const computedZoom = Math.round((currentRatio / this.osScale) * 100);
+
+        if (Math.abs(computedZoom - this.lastZoom) >= 2) {
+            this.lastZoom = computedZoom;
+            this.dotNetRef.invokeMethodAsync('OnNativeZoomChanged', computedZoom);
         }
     }
 };
