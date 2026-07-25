@@ -9,15 +9,9 @@ public partial class MultiFileInspector
     [Parameter] public List<Tag> CommonTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
 
-    private int _selectKey = 0;
-
-    private void OnTagSelected(ChangeEventArgs e)
+    private void OnTagSelected(Guid tagId)
     {
-        if (Guid.TryParse(e.Value?.ToString(), out Guid tid))
-        {
-            Library.AddTagToFiles(AppState.SelectedFileIds, tid);
-        }
-        _selectKey++;
+        Library.AddTagToFiles(AppState.SelectedFileIds, tagId);
     }
 
     private void BulkRemoveTag(Guid tagId)

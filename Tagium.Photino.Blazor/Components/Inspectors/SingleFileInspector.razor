@@ -1,4 +1,5 @@
 @namespace Tagium.Photino.Blazor.Components.Inspectors
+@using Tagium.Photino.Blazor.Components.Shared
 @inject LibraryService Library
 
 <div class="single-file-inspector">
@@ -45,13 +46,7 @@
         @if (AvailableTags.Count > 0)
         {
             <div class="add-tag-section">
-                <select class="add-tag-select" @key="_selectKey" @onchange="OnTagSelected">
-                    <option value="" selected>Add tag...</option>
-                    @foreach (var tag in AvailableTags)
-                    {
-                        <option value="@tag.Id">@tag.Name</option>
-                    }
-                </select>
+                <TagSelector AvailableTags="AvailableTags" OnTagSelected="OnTagSelected" />
             </div>
         }
     </div>

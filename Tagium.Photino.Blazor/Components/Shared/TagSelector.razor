@@ -1,0 +1,33 @@
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Core.Models
+
+<div class="tag-selector-wrapper">
+    <input type="text"
+           class="tag-selector-input"
+           placeholder="Add tag..."
+           @bind="_searchText"
+           @bind:event="oninput"
+           @onfocus="Open"
+           @onblur="Close" />
+
+    @if (_isOpen && FilteredTags.Any())
+    {
+        <div class="tag-selector-dropdown">
+            @foreach (var tag in FilteredTags)
+            {
+                <div class="tag-dropdown-item"
+                     @onmousedown="() => SelectTag(tag.Id)"
+                     @onmousedown:preventDefault="true">
+                    <TagIcon Tag="tag" />
+                    <span class="tag-name">@tag.Name</span>
+                </div>
+            }
+        </div>
+    }
+    else if (_isOpen && !FilteredTags.Any())
+    {
+        <div class="tag-selector-dropdown empty">
+            <span class="text-muted">No matching tags</span>
+        </div>
+    }
+</div>

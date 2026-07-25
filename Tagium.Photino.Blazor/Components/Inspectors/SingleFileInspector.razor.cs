@@ -12,8 +12,6 @@ public partial class SingleFileInspector
     [Parameter] public List<Tag> AssignedTags { get; set; } = [];
     [Parameter] public List<Tag> AvailableTags { get; set; } = [];
 
-    private int _selectKey = 0;
-
     private bool IsImage => CheckExtension([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
     private bool IsVideo => CheckExtension([".mp4", ".webm", ".mov", ".mkv"]);
 
@@ -23,13 +21,9 @@ public partial class SingleFileInspector
         return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
     }
 
-    private void OnTagSelected(ChangeEventArgs e)
+    private void OnTagSelected(Guid tagId)
     {
-        if (Guid.TryParse(e.Value?.ToString(), out Guid tid))
-        {
-            Library.AddTagToFile(File.Id, tid);
-        }
-        _selectKey++;
+        Library.AddTagToFile(File.Id, tagId);
     }
 
     private void RemoveTag(Guid tagId)
