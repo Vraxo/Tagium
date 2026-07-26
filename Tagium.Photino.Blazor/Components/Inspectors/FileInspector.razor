@@ -9,11 +9,6 @@
 @inject ModalService ModalService
 
 <div class="inspector-container">
-    <div class="inspector-header">
-        <span class="title">Inspector</span>
-        <span class="badge">@AppState.SelectedFileIds.Count selected</span>
-    </div>
-
     <div class="inspector-content">
         @if (HasRenderError)
         {
@@ -26,7 +21,7 @@
         {
             <div class="state-message">
                 <i class="fa-solid fa-hand-pointer icon"></i>
-                <p>Select a file to view details</p>
+                <p>Select files to inspect</p>
             </div>
         }
         else if (SelectionMode == InspectorMode.Single && SelectedFile is not null)

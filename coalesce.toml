@@ -36,7 +36,8 @@ ExcludeDirectoryNames = [
   ".vs",
   "Properties",
   ".git",
-  "packages"
+  "packages",
+  "vendor"
 ]
 
 # Skip files with these names (case-insensitive).

@@ -1,12 +1,14 @@
 # Tagium UI/UX Design System Guidelines
 
-This document serves as the absolute, non-negotiable contract for all visual developments in Tagium. All styles must strictly adhere to the tokens defined here. No "magic numbers" or localized hex codes are allowed.
+This document serves as the absolute contract for all visual developments in Tagium. All styles must strictly adhere to the tokens defined here.
 
-## 1. Visual Design Philosophy
-Tagium is a highly compact, professional, and performance-minded tool. Visual elements must feel snappy, structurally cohesive, and aligned with a strict semantic hierarchy. 
+---
 
-* **No Hex Codes**: Never write raw colors (e.g., `#1a1a1a` or `#333`) in any component or page. Always map colors to semantic custom CSS properties.
-* **8px Grid System**: Layouts, padding, margins, and component gaps must be multipliers of the 8px grid. Use spacing custom properties.
+## 1. Absolute Guardrails & Anti-Patterns
+
+* **NO Raw Hex Codes**: Never write raw colors (e.g., `#1a1a1a` or `#333`) in any component or stylesheet. Always map colors to semantic CSS custom properties.
+* **NO Inline Styles**: Do not use `style="..."` attribute assignments for padding, margins, colors, or sizes. Keep CSS isolated inside companion `.razor.css` files.
+* **Grid Alignment**: Layouts, padding, margins, and component gaps must strictly use multipliers of the 8px grid (using spacing custom properties).
 * **Minimalist Feedback**: Keep hover states subtle and rounded. Ensure borders are thin (`1px`) and highly contrasting.
 
 ---
@@ -17,89 +19,79 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 
 ### Colors
 
-| Token | CSS Variable | Semantic Purpose |
-|---|---|---|
-| Background | `var(--bg-color)` | Core app background (dark charcoal) |
-| Panel Background | `var(--panel-bg)` | Sidebar and secondary panel background |
-| Surface Background | `var(--surface-bg)` | Cards, input fields, and elevated elements |
-| Surface Hover | `var(--surface-hover)` | Interactive hover state (semi-transparent white) |
-| Border Color | `var(--border-color)` | Structural separation lines, thin borders |
-| Text Primary | `var(--text-color)` | Primary readable content |
-| Text Muted | `var(--text-muted)` | Supporting descriptors, labels, and timestamps |
-| Primary Brand | `var(--primary-color)` | Focus rings, primary buttons, accents |
-| Primary Hover | `var(--primary-hover)` | Active primary button hover states |
-| Primary Text | `var(--text-on-primary)` | Contrasting text color sitting on primary-colored backgrounds to satisfy WCAG AA standards |
-| Danger Accent | `var(--danger-color)` | Destructive buttons, warnings, missing alerts |
-| Danger Hover | `var(--danger-hover)` | Active destructive hover states |
-| Folder Amber | `var(--folder-color)` | Color token for directories, roots, and folder paths (`#ffca28`) |
-| Alert Warning | `var(--warning-color)` | High-visibility alert orange for missing file flags (`#ff9800`) |
-| Appearance Accent | `var(--appearance-color)` | Creative accent violet/magenta for theme preferences and palettes (`#ba68c8`) |
+| CSS Variable | Semantic Purpose / Value Mapping |
+| :--- | :--- |
+| `var(--bg-color)` | Core app background (dark charcoal) |
+| `var(--panel-bg)` | Sidebar and secondary panel background |
+| `var(--surface-bg)` | Cards, input fields, and elevated elements |
+| `var(--surface-hover)` | Interactive hover state (semi-transparent white) |
+| `var(--border-color)` | Structural separation lines, thin borders |
+| `var(--text-color)` | Primary readable content |
+| `var(--text-muted)` | Supporting descriptors, labels, and timestamps |
+| `var(--primary-color)` | Focus rings, primary buttons, accents |
+| `var(--primary-hover)` | Active primary button hover states |
+| `var(--text-on-primary)` | Contrasting text color sitting on primary-colored backgrounds (WCAG AA) |
+| `var(--danger-color)` | Destructive buttons, warnings, missing alerts |
+| `var(--danger-hover)` | Active destructive hover states |
+| `var(--folder-color)` | Directories, roots, and folder paths (`#ffca28`) |
+| `var(--warning-color)` | High-visibility alert orange for missing file flags (`#ff9800`) |
+| `var(--appearance-color)` | Theme preferences and creative palettes (`#ba68c8`) |
 
-### Icon Color States
+### Spacing & Grid System
 
-To maintain clean typography and consistent contrast, follow these color states for vector icons:
-* **Inactive System Controls**: Rendered as `var(--text-muted)` by default.
-* **System Folders**: Always use `var(--folder-color)` to mimic traditional file explorer elements.
-* **Alarms & Warnings**: Always use `var(--warning-color)` for missing elements or alert triangles.
-* **Selection Overrides**: When a container gains the active selection state (e.g., a sidebar row becomes selected), colored icons must revert to `color: var(--text-on-primary) !important` to stay readable against high-intensity primary background colors.
-* **Interactive Deletions**: Tag-removal buttons, folder-removal trash cans, and delete controls should rest at a muted tone but instantly transition to `var(--danger-color)` on hover.
+| CSS Variable | Value | Purpose |
+| :--- | :--- | :--- |
+| `var(--space-2xs)` | 4px | Micro-paddings, element borders |
+| `var(--space-xs)` | 8px | Grid gap, label-to-input gap, list item vertical padding |
+| `var(--space-sm)` | 12px | Standard component padding, sub-panels |
+| `var(--space-md)` | 16px | Workspace borders, grid container margins |
+| `var(--space-lg)` | 24px | Layout spacing, empty state paddings |
+
+### Border Radii & Transitions
+
+| CSS Variable | Value | Purpose / Standard Application |
+| :--- | :--- | :--- |
+| `var(--radius-sm)` | 4px | Small buttons, badges, tag pills |
+| `var(--radius-md)` | 6px | Input fields, file cards, small containers |
+| `var(--radius-lg)` | 8px | Modals, preview windows, dialog frames |
+| `var(--transition-fast)` | 0.1s ease-in-out | Hovers, background transitions, selection changes |
+| `var(--transition-normal)` | 0.15s ease-in-out | Drawers, modal overlays, progress bars |
+
+---
+
+## 3. Interactive Component State Rules
+
+Configure UI elements and icons dynamically using these targeted states:
+
+* **Default Icons**: Render inactive system controls using `var(--text-muted)`.
+* **System Folders**: Always render folder icons with `color: var(--folder-color)`.
+* **Alarms & Warnings**: Render critical states and missing files with `color: var(--warning-color)`.
+* **Selection Override**: When a container gains the active selection state, all inner text and colored icons must immediately transition to `color: var(--text-on-primary) !important`.
+* **Interactive Deletions**: Tag-removal/delete controls must rest at `var(--text-muted)` and transition to `var(--danger-color)` on hover.
 
 ### Settings Panel Tab Accents
 
-To allow users to navigate configuration panels by rapid visual association, tab icon colors are mapped to their specific domain:
-* **Library Folders Tab**: Uses `var(--folder-color)` (amber) representing storage paths.
-* **Appearance Tab**: Uses `var(--appearance-color)` (violet/purple) representing design themes and creative customization.
-* **Maintenance Tab**: Uses `var(--primary-color)` (steel blue) representing structural utilities and database operations.
-* **Active State**: When a tab is selected, its icon color shifts cleanly to `var(--primary-color)` to lock in with the highlighted text style.
-
-### Spacing (8px Scale)
-
-| Token | CSS Variable | Size | Purpose |
-|---|---|---|---|
-| `space-2xs` | `var(--space-2xs)` | 4px | Micro-paddings, element borders |
-| `space-xs` | `var(--space-xs)` | 8px | Grid gap, label-to-input gap, list item vertical padding |
-| `space-sm` | `var(--space-sm)` | 12px | Standard component padding, sub-panels |
-| `space-md` | `var(--space-md)` | 16px | Workspace borders, grid container margins |
-| `space-lg` | `var(--space-lg)` | 24px | Layout spacing, empty state paddings |
-
-### Border Radii
-
-| Token | CSS Variable | Value | Purpose |
-|---|---|---|---|
-| Small | `var(--radius-sm)` | 4px | Small buttons, badges, tag pills |
-| Medium | `var(--radius-md)` | 6px | Input fields, file cards, small containers |
-| Large | `var(--radius-lg)` | 8px | Modals, preview windows, dialog frames |
-
-### Transitions
-
-* **Fast Interactive**: `var(--transition-fast)` (0.1s ease-in-out) — hover, background transitions, selections.
-* **Standard Interactive**: `var(--transition-normal)` (0.15s ease-in-out) — drawers, modal overlay fades, progress bars.
+Map category tab icons to these domains to optimize visual navigation:
+* **Library Folders Tab**: Icon color `var(--folder-color)`
+* **Appearance Tab**: Icon color `var(--appearance-color)`
+* **Maintenance Tab**: Icon color `var(--primary-color)`
+* **Active State**: Selected tab icon transition to `color: var(--primary-color)`.
 
 ---
 
-## 3. Component Sizing & Sizing Standards (Compact Desktop Scale)
+## 4. Component Sizing Specs (Compact Desktop)
 
-To preserve high visual density and a standard desktop utility feel, all inputs, selects, and action widgets must strictly adhere to this compact horizontal and vertical scale:
+Ensure all inputs, selectors, and controls conform to this compact desktop horizontal and vertical layout formula:
 
-### Utility Buttons, Dropdowns & Inputs
-All standard utility buttons, search input fields, and dropdown selectors must sit strictly between **24px and 26px** in height.
-* **Padding Formula**: Set vertical padding to `var(--space-2xs)` (4px) and horizontal padding to `var(--space-xs)` (8px) or `var(--space-sm)` (12px).
-* **Line Height**: Lock the element's CSS `line-height` to `1.2` or `1.3` to prevent browser rendering engine skew.
-* **Dropdown Alignment**: Dropdown select boxes must match the exact same vertical padding and line-height as adjacent buttons to align perfectly on a horizontal plane.
+### Standard Utility Buttons, Dropdowns & Inputs
+* **Height**: Lock strictly between **24px and 26px**.
+* **Padding**: Vertical: `var(--space-2xs)` (4px); Horizontal: `var(--space-xs)` (8px) or `var(--space-sm)` (12px).
+* **Line Height**: Lock to `line-height: 1.2` or `1.3` to prevent vertical skewing.
+* **Dropdowns**: Select fields must match adjacent button paddings and line heights exactly to ensure perfect horizontal alignment.
 
 ### Hardware-Style Toggle Switches
-Slices and toggle elements inside preferences or listing grids are locked to an ultra-sleek, compact hardware profile:
-* **Outer Profile**: Width must be exactly `30px` and height exactly `16px`.
-* **Visual Slider Thumb**: A perfect circle with a diameter of exactly `10px`.
-* **Internal Margins**: Centered with exactly `2px` of clearance on all sides (`left: 2px` and `bottom: 2px` on the thumb element).
-* **Animation Transition**: The horizontal slide transition is locked to exactly `translateX(14px)`.
-* **Active Thumb Contrast**: The sliding circular thumb's background must map to `var(--text-on-primary)` to ensure high contrast when sliding over light/pastel brand colors.
-
----
-
-## 4. Mandatory AI Directives
-When building, modifying, or refactoring UI components for Tagium:
-1. **Never use inline styles (`style="..."`)** for colors, padding, margins, or heights.
-2. **Never define new local colors** unless explicitly instructed.
-3. **Always keep CSS isolated** to the companion `.razor.css` file where applicable.
-4. **Ensure high contrast** and preserve readable dark-theme hierarchy at all times.
+* **Outer Profile**: Width `30px`, Height `16px`.
+* **Visual Thumb**: Perfect circle, diameter `10px`.
+* **Internal Clearance**: Centered with exactly `2px` clearance on all sides (`left: 2px; bottom: 2px`).
+* **Active Position**: Transform offset transition is locked to `translateX(14px)`.
+* **Thumb Color**: Always use `background: var(--text-on-primary)` for high contrast when activated.
