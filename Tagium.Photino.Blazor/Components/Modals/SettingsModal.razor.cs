@@ -4,7 +4,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
-using Tagium.Core.Services.DataMerge;
 using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Services;
@@ -19,7 +18,6 @@ public partial class SettingsModal : IDisposable
     [Inject] private SettingsManager Settings { get; set; } = default!;
     [Inject] private LibraryIntegrityService IntegrityService { get; set; } = default!;
     [Inject] private DataExportService ExportService { get; set; } = default!;
-    [Inject] private DatabaseMergeService MergeService { get; set; } = default!;
     [Inject] private DatabaseManager DbManager { get; set; } = default!;
     [Inject] private ToastService Toast { get; set; } = default!;
     [Inject] private ModalService ModalService { get; set; } = default!;
@@ -31,7 +29,6 @@ public partial class SettingsModal : IDisposable
 
     private List<LibraryRoot> Roots = [];
     private IntegrityScanResult? ScanResult;
-    private MergeResult? MergeResult;
 
     protected override void OnInitialized()
     {
@@ -176,19 +173,6 @@ public partial class SettingsModal : IDisposable
         string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
         File.Copy(source, dest, true);
         Toast.Show($"Library configuration backup saved to {dest}", ToastType.Success);
-    }
-
-    private void MergeDb()
-    {
-        string[]? files = FileDialogService.OpenFiles();
-        if (files is null || files.Length == 0)
-        {
-            return;
-        }
-
-        MergeResult = MergeService.Merge(files[0]);
-        Library.Refresh();
-        Toast.Show("Merge complete.", ToastType.Success);
     }
 
     private void RestoreDb()

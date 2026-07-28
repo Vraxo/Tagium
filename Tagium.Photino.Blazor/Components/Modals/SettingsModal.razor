@@ -172,7 +172,7 @@
             <div class="settings-panel">
                 <div class="panel-header">
                     <h4>Maintenance & Database Tools</h4>
-                    <p>Integrity diagnostic scanning, data migration imports, and catalog backups.</p>
+                    <p>Integrity diagnostic scanning, data migration exports, and catalog backups.</p>
                 </div>
 
                 <div class="maintenance-group">
@@ -197,31 +197,13 @@
 
                 <div class="maintenance-group">
                     <h5>Export & Backups</h5>
+                    <p class="section-hint">Export catalog data to flat files, or backup and restore the local library configurations.</p>
                     <div class="btn-row">
                         <button class="btn" @onclick="ExportJson">Export JSON</button>
                         <button class="btn" @onclick="ExportCsv">Export CSV</button>
                         <button class="btn" @onclick="BackupDb">Backup DB</button>
+                        <button class="btn btn-danger" @onclick="RestoreDb">Restore DB...</button>
                     </div>
-                </div>
-
-                <hr />
-
-                <div class="maintenance-group">
-                    <h5>Database Merge & Restore</h5>
-                    <p class="section-hint">Combine indices from an alternate database file, or run a backup recovery.</p>
-                    <div class="btn-row">
-                        <button class="btn" @onclick="MergeDb">Merge Alternate...</button>
-                        <button class="btn btn-danger" @onclick="RestoreDb">Restore Backup...</button>
-                    </div>
-
-                    @if (MergeResult is not null)
-                    {
-                        <div class="result-box">
-                            New Files: @MergeResult.NewFiles <br />
-                            New Tags: @MergeResult.NewTags <br />
-                            Associations: @MergeResult.NewAssociations
-                        </div>
-                    }
                 </div>
             </div>
         }

@@ -4,7 +4,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
-using Tagium.Core.Services.DataMerge;
 using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
@@ -49,7 +48,6 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<LibraryService>();
         _ = services.AddSingleton<LibraryIntegrityService>();
         _ = services.AddSingleton<DataExportService>();
-        _ = services.AddSingleton<DatabaseMergeService>();
 
         // UI - Components
         _ = services.AddTransient<SearchInput>();
