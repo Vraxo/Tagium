@@ -268,8 +268,8 @@ public class FileRepository
                 F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM cache.Files F
-            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
-            LEFT JOIN Tags T ON FT.TagId = T.Id
+            LEFT JOIN cache.FileTags FT ON LOWER(REPLACE(F.Id, '-', '')) = LOWER(REPLACE(FT.FileId, '-', ''))
+            LEFT JOIN Tags T ON LOWER(REPLACE(FT.TagId, '-', '')) = LOWER(REPLACE(T.Id, '-', ''))
             {missingFilter}
             GROUP BY F.Id
             {orderBy}";
@@ -285,6 +285,59 @@ public class FileRepository
         return dtos.Cast<FileEntry>().ToList();
     }
 
+    public List<FileEntry> GetFilesInFolderWithTags(string folder, SortBy sortBy, SortDirection direction, bool includeMissing = false)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        string separator = Path.DirectorySeparatorChar.ToString();
+        string parentWithSep = folder.EndsWith(separator) ? folder : folder + separator;
+        string prefix = parentWithSep + "%";
+        int prefixLen = parentWithSep.Length + 1;
+
+        string orderBy = GetOrderByClause(sortBy, direction);
+        string missingFilter = includeMissing ? "" : "AND F.IsMissing = 0";
+
+        string sql = $@"
+            SELECT 
+                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
+                F.Rating, F.Title, F.Description,
+                GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
+            FROM cache.Files F
+            LEFT JOIN cache.FileTags FT ON LOWER(REPLACE(F.Id, '-', '')) = LOWER(REPLACE(FT.FileId, '-', ''))
+            LEFT JOIN Tags T ON LOWER(REPLACE(FT.TagId, '-', '')) = LOWER(REPLACE(T.Id, '-', ''))
+            WHERE F.Path LIKE @Prefix
+              AND INSTR(SUBSTR(F.Path, @PrefixLen), @Separator) = 0
+              {missingFilter}
+            GROUP BY F.Id
+            {orderBy}";
+
+        IEnumerable<FileEntryDto> dtos = conn.Query<FileEntryDto>(sql, new { Prefix = prefix, PrefixLen = prefixLen, Separator = separator });
+        foreach (FileEntryDto dto in dtos)
+        {
+            if (!string.IsNullOrEmpty(dto.TagData))
+            {
+                dto.Tags = ParseTagData(dto.TagData);
+            }
+        }
+        return dtos.Cast<FileEntry>().ToList();
+    }
+
+    public List<string> GetSubfolders(string parentFolder)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        string separator = Path.DirectorySeparatorChar.ToString();
+        string parentWithSep = parentFolder.EndsWith(separator) ? parentFolder : parentFolder + separator;
+        string prefix = parentWithSep + "%";
+
+        string sql = @"
+            SELECT DISTINCT 
+                SUBSTR(Path, 1, LENGTH(@ParentWithSep) + INSTR(SUBSTR(Path, LENGTH(@ParentWithSep) + 1), @Separator) - 1) AS Subfolder
+            FROM cache.Files
+            WHERE Path LIKE @Prefix
+              AND INSTR(SUBSTR(Path, LENGTH(@ParentWithSep) + 1), @Separator) > 0";
+
+        return conn.Query<string>(sql, new { ParentWithSep = parentWithSep, Separator = separator, Prefix = prefix }).ToList();
+    }
+
     public FileEntry? GetFileWithTagsById(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
@@ -294,12 +347,12 @@ public class FileRepository
                 F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM cache.Files F
-            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
-            LEFT JOIN Tags T ON FT.TagId = T.Id
-            WHERE F.Id = @Id
+            LEFT JOIN cache.FileTags FT ON LOWER(REPLACE(F.Id, '-', '')) = LOWER(REPLACE(FT.FileId, '-', ''))
+            LEFT JOIN Tags T ON LOWER(REPLACE(FT.TagId, '-', '')) = LOWER(REPLACE(T.Id, '-', ''))
+            WHERE LOWER(REPLACE(F.Id, '-', '')) = @Id
             GROUP BY F.Id";
 
-        FileEntryDto? dto = conn.QueryFirstOrDefault<FileEntryDto>(sql, new { Id = id });
+        FileEntryDto? dto = conn.QueryFirstOrDefault<FileEntryDto>(sql, new { Id = id.ToString("N").ToLowerInvariant() });
         if (dto != null && !string.IsNullOrEmpty(dto.TagData))
         {
             dto.Tags = ParseTagData(dto.TagData);
@@ -311,8 +364,8 @@ public class FileRepository
     {
         using SqliteConnection conn = _db.GetConnection();
         return conn.QueryFirstOrDefault<FileEntry>(
-            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id",
-            new { Id = id });
+            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE LOWER(REPLACE(Id, '-', '')) = @Id",
+            new { Id = id.ToString("N").ToLowerInvariant() });
     }
 
     public FileEntry? GetByHash(string hash)
@@ -372,22 +425,34 @@ public class FileRepository
             UPDATE cache.Files 
             SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime, 
                 Rating = @Rating, Title = @Title, Description = @Description 
-            WHERE Id = @Id";
-        conn.Execute(sql, file);
+            WHERE LOWER(REPLACE(Id, '-', '')) = @Id";
+        conn.Execute(sql, new
+        {
+            file.Path,
+            file.Name,
+            file.Hash,
+            file.IsMissing,
+            file.Size,
+            file.ModifiedTime,
+            file.Rating,
+            file.Title,
+            file.Description,
+            Id = file.Id.ToString("N").ToLowerInvariant()
+        });
     }
 
     public void Remove(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-        conn.Execute("DELETE FROM cache.Files WHERE Id = @Id", new { Id = id });
+        conn.Execute("DELETE FROM cache.Files WHERE LOWER(REPLACE(Id, '-', '')) = @Id", new { Id = id.ToString("N").ToLowerInvariant() });
     }
 
     public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
         using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
-        var parameters = fileIds.Select(id => new { Id = id, IsMissing = isMissing });
-        conn.Execute("UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id", parameters, trans);
+        var parameters = fileIds.Select(id => new { Id = id.ToString("N").ToLowerInvariant(), IsMissing = isMissing });
+        conn.Execute("UPDATE cache.Files SET IsMissing = @IsMissing WHERE LOWER(REPLACE(Id, '-', '')) = @Id", parameters, trans);
         trans.Commit();
     }
 
@@ -1226,6 +1291,29 @@ public static class TagFormatter
 
 ---
 
+### `Tagium.Core\Models\AddRootResult.cs`
+
+```csharp
+namespace Tagium.Core.Models;
+
+public enum AddRootStatus
+{
+    Success,
+    Duplicate,
+    NestedInsideExisting,
+    ConsolidatedChildren
+}
+
+public class AddRootResult
+{
+    public AddRootStatus Status { get; set; }
+    public required string Message { get; set; }
+    public List<string> ConsolidatedPaths { get; set; } = [];
+}
+```
+
+---
+
 ### `Tagium.Core\Models\FileEntry.cs`
 
 ```csharp
@@ -1343,7 +1431,7 @@ public class ExifToolService : IDisposable
         {
             ProcessStartInfo startInfo = new(_commandName)
             {
-                Arguments = "-stay_open True -@ -",
+                Arguments = "-stay_open True -@ - -charset filename=utf8",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -1371,7 +1459,7 @@ public class ExifToolService : IDisposable
                 IsEnabled = !_exifToolProcess.HasExited;
                 if (IsEnabled)
                 {
-                    _logger.LogInformation("Persistent ExifTool daemon successfully started");
+                    _logger.LogInformation("Persistent ExifTool daemon successfully started with UTF-8 filename support");
                 }
             }
         }
@@ -1685,7 +1773,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
-using System.Threading;
 
 namespace Tagium.Core.Services;
 
@@ -1702,16 +1789,11 @@ public class LibraryService
     private readonly UndoService _undoService;
     private readonly LibraryRootRepository _rootRepo;
     private readonly LibraryScanService _scanService;
-    private readonly ExifToolService _exifTool;
+    private readonly TagMetadataSyncService _tagSyncService;
 
-    private bool _tagSyncInProgress;
-    private int _tagSyncProcessed;
-    private int _tagSyncTotal;
-    private CancellationTokenSource? _tagSyncCts;
-
-    public bool IsTagSyncRunning => _tagSyncInProgress;
-    public int TagSyncProcessed => _tagSyncProcessed;
-    public int TagSyncTotal => _tagSyncTotal;
+    public bool IsTagSyncRunning => _tagSyncService.IsTagSyncRunning;
+    public int TagSyncProcessed => _tagSyncService.TagSyncProcessed;
+    public int TagSyncTotal => _tagSyncService.TagSyncTotal;
 
     public event Action<int, int>? TagSyncProgress;
     public event Action? TagSyncCompleted;
@@ -1727,7 +1809,7 @@ public class LibraryService
         UndoService _undoService,
         LibraryRootRepository rootRepo,
         LibraryScanService scanService,
-        ExifToolService exifTool)
+        TagMetadataSyncService tagSyncService)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
@@ -1738,10 +1820,13 @@ public class LibraryService
         this._undoService = _undoService;
         _rootRepo = rootRepo;
         _scanService = scanService;
-        _exifTool = exifTool;
+        _tagSyncService = tagSyncService;
 
         _scanService.ScanCompleted += () => LibraryChanged?.Invoke();
         _scanService.FilesImported += () => LibraryChanged?.Invoke();
+
+        _tagSyncService.TagSyncProgress += (p, t) => TagSyncProgress?.Invoke(p, t);
+        _tagSyncService.TagSyncCompleted += () => TagSyncCompleted?.Invoke();
     }
 
     public void Refresh()
@@ -1754,7 +1839,7 @@ public class LibraryService
         _undoService.Undo();
     }
 
-    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
+    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false, string? folderPath = null)
     {
         SortBy sort = _settingsManager.Current.FileSortBy;
         SortDirection dir = _settingsManager.Current.FileSortDirection;
@@ -1764,12 +1849,21 @@ public class LibraryService
             return [.. _fileRepo.GetFilesWithTags(sort, dir, true)
                 .Where(f => f.IsMissing)];
         }
+        else if (!string.IsNullOrEmpty(folderPath))
+        {
+            return _fileRepo.GetFilesInFolderWithTags(folderPath, sort, dir);
+        }
         else
         {
             return string.IsNullOrWhiteSpace(searchText)
                 ? _fileRepo.GetFilesWithTags(sort, dir)
                 : _searchRepo.Search(searchText, sort, dir);
         }
+    }
+
+    public List<string> GetSubfolders(string parentFolder)
+    {
+        return _fileRepo.GetSubfolders(parentFolder);
     }
 
     public FileEntry? GetFileById(Guid id)
@@ -1784,27 +1878,7 @@ public class LibraryService
 
     public void AddTagToFile(Guid fileId, Guid tagId)
     {
-        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        bool alreadyHadTag = existingIds.Contains(tagId);
-
-        _fileTagRepo.AddTagToFile(fileId, tagId);
-
-        if (!alreadyHadTag)
-        {
-            _undoService.Push(new TagAssignmentUndoCommand(
-                _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
-                () => LibraryChanged?.Invoke(),
-                tagId,
-                [fileId],
-                wasAdding: true));
-
-            _ = SyncMetadataToFileAsync(fileId);
-        }
-
-        LibraryChanged?.Invoke();
+        AddTagToFiles([fileId], tagId);
     }
 
     public void AddTagToFiles(IEnumerable<Guid> fileIds, Guid tagId)
@@ -1833,9 +1907,7 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
+                _tagSyncService,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
@@ -1843,7 +1915,7 @@ public class LibraryService
 
             foreach (Guid fileId in modifiedFiles)
             {
-                _ = SyncMetadataToFileAsync(fileId);
+                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
             }
         }
 
@@ -1852,27 +1924,7 @@ public class LibraryService
 
     public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
-        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        bool hadTag = existingIds.Contains(tagId);
-
-        _fileTagRepo.RemoveTagFromFile(fileId, tagId);
-
-        if (hadTag)
-        {
-            _undoService.Push(new TagAssignmentUndoCommand(
-                _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
-                () => LibraryChanged?.Invoke(),
-                tagId,
-                [fileId],
-                wasAdding: false));
-
-            _ = SyncMetadataToFileAsync(fileId);
-        }
-
-        LibraryChanged?.Invoke();
+        RemoveTagFromFiles([fileId], tagId);
     }
 
     public void RemoveTagFromFiles(IEnumerable<Guid> fileIds, Guid tagId)
@@ -1900,9 +1952,7 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
+                _tagSyncService,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
@@ -1910,7 +1960,7 @@ public class LibraryService
 
             foreach (Guid fileId in modifiedFiles)
             {
-                _ = SyncMetadataToFileAsync(fileId);
+                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
             }
         }
 
@@ -1957,6 +2007,93 @@ public class LibraryService
         return _tagRepo.GetTagsByIds(commonIds);
     }
 
+    public List<LibraryRoot> GetRoots()
+    {
+        return _rootRepo.GetAll();
+    }
+
+    public void AddRoot(string path)
+    {
+        _rootRepo.Add(path);
+        LibraryChanged?.Invoke();
+    }
+
+    public AddRootResult AddRootWithValidation(string path)
+    {
+        string targetPath = path.Trim();
+        if (string.IsNullOrEmpty(targetPath))
+        {
+            return new AddRootResult { Status = AddRootStatus.Duplicate, Message = "Invalid path." };
+        }
+
+        string targetWithSep = targetPath.EndsWith(Path.DirectorySeparatorChar)
+            ? targetPath
+            : targetPath + Path.DirectorySeparatorChar;
+
+        List<LibraryRoot> existingRoots = _rootRepo.GetAll();
+
+        bool exactDuplicate = existingRoots.Any(r => string.Equals(r.Path.TrimEnd(Path.DirectorySeparatorChar), targetPath.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase));
+        if (exactDuplicate)
+        {
+            return new AddRootResult
+            {
+                Status = AddRootStatus.Duplicate,
+                Message = "This folder is already registered as a library root."
+            };
+        }
+
+        LibraryRoot? parentRoot = existingRoots.FirstOrDefault(r =>
+        {
+            string existingWithSep = r.Path.EndsWith(Path.DirectorySeparatorChar) ? r.Path : r.Path + Path.DirectorySeparatorChar;
+            return targetWithSep.StartsWith(existingWithSep, StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (parentRoot != null)
+        {
+            return new AddRootResult
+            {
+                Status = AddRootStatus.NestedInsideExisting,
+                Message = $"This folder is already covered by your existing library folder: {parentRoot.Path}"
+            };
+        }
+
+        List<LibraryRoot> childrenRoots = existingRoots.Where(r =>
+        {
+            string existingWithSep = r.Path.EndsWith(Path.DirectorySeparatorChar) ? r.Path : r.Path + Path.DirectorySeparatorChar;
+            return existingWithSep.StartsWith(targetWithSep, StringComparison.OrdinalIgnoreCase);
+        }).ToList();
+
+        List<string> consolidated = [];
+        if (childrenRoots.Count > 0)
+        {
+            foreach (LibraryRoot child in childrenRoots)
+            {
+                _rootRepo.Delete(child.Id, child.Path);
+                consolidated.Add(child.Path);
+            }
+        }
+
+        _rootRepo.Add(targetPath);
+        LibraryChanged?.Invoke();
+
+        if (consolidated.Count > 0)
+        {
+            string consolidatedNames = string.Join(", ", consolidated.Select(p => Path.GetFileName(p) is string name && !string.IsNullOrEmpty(name) ? name : p));
+            return new AddRootResult
+            {
+                Status = AddRootStatus.ConsolidatedChildren,
+                Message = $"Added {targetPath}. Consolidated nested folder(s): {consolidatedNames}",
+                ConsolidatedPaths = consolidated
+            };
+        }
+
+        return new AddRootResult
+        {
+            Status = AddRootStatus.Success,
+            Message = "Library folder added successfully."
+        };
+    }
+
     public void AddTag(string name)
     {
         _tagRepo.Add(name, "#757575", null);
@@ -1973,72 +2110,15 @@ public class LibraryService
         if (nameChanged)
         {
             List<Guid> fileIds = _fileTagRepo.GetFileIdsForTag(tag.Id);
-            QueueTagMetadataSync(fileIds);
+            _tagSyncService.QueueTagMetadataSync(fileIds);
         }
 
         LibraryChanged?.Invoke();
-    }
-
-    private void QueueTagMetadataSync(List<Guid> fileIds)
-    {
-        _tagSyncCts?.Cancel();
-        _tagSyncCts = new CancellationTokenSource();
-        CancellationToken token = _tagSyncCts.Token;
-
-        if (fileIds.Count == 0)
-        {
-            return;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            _tagSyncInProgress = true;
-            _tagSyncProcessed = 0;
-            _tagSyncTotal = fileIds.Count;
-
-            TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
-
-            try
-            {
-                foreach (Guid fileId in fileIds)
-                {
-                    if (token.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    await SyncMetadataToFileAsync(fileId);
-
-                    _tagSyncProcessed++;
-                    TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
-                }
-            }
-            catch (Exception)
-            {
-                // Gracefully log/ignore
-            }
-            finally
-            {
-                _tagSyncInProgress = false;
-                TagSyncCompleted?.Invoke();
-            }
-        }, token);
     }
 
     public void DeleteTag(Guid id)
     {
         _tagRepo.Delete(id);
-        LibraryChanged?.Invoke();
-    }
-
-    public List<LibraryRoot> GetRoots()
-    {
-        return _rootRepo.GetAll();
-    }
-
-    public void AddRoot(string path)
-    {
-        _rootRepo.Add(path);
         LibraryChanged?.Invoke();
     }
 
@@ -2057,28 +2137,6 @@ public class LibraryService
     public async Task ScanAsync()
     {
         await _scanService.ScanAllAsync();
-    }
-
-    private async Task SyncMetadataToFileAsync(Guid fileId)
-    {
-        FileEntry? file = _fileRepo.GetById(fileId);
-        if (file is null)
-        {
-            return;
-        }
-
-        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        List<Tag> tags = _tagRepo.GetTagsByIds(tagIds);
-
-        MediaMetadata metadata = new()
-        {
-            Tags = tags.Select(t => t.Name).ToList(),
-            Rating = file.Rating,
-            Title = file.Title,
-            Description = file.Description
-        };
-
-        _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
     }
 }
 ```
@@ -2247,7 +2305,22 @@ public class LibraryScanService
     {
         using LogTiming timer = LogTiming.Start(_logger, "Candidate file discovery in active roots");
 
-        foreach (LibraryRoot root in roots)
+        List<LibraryRoot> activeRoots = roots.Where(r => r.IsEnabled).OrderBy(r => r.Path.Length).ToList();
+        List<LibraryRoot> pruned = new();
+
+        foreach (var root in activeRoots)
+        {
+            bool isNested = pruned.Any(p =>
+                root.Path.StartsWith(p.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(root.Path, p.Path, StringComparison.OrdinalIgnoreCase));
+
+            if (!isNested)
+            {
+                pruned.Add(root);
+            }
+        }
+
+        foreach (LibraryRoot root in pruned)
         {
             if (!Directory.Exists(root.Path))
             {
@@ -2590,6 +2663,118 @@ public class LibraryScanService
 
             await Task.Delay(50, cancellationToken);
         }
+    }
+}
+```
+
+---
+
+### `Tagium.Core\Services\TagMetadataSyncService.cs`
+
+```csharp
+using Tagium.Core.Data;
+using Tagium.Core.Models;
+
+namespace Tagium.Core.Services;
+
+public class TagMetadataSyncService
+{
+    private readonly FileRepository _fileRepo;
+    private readonly TagRepository _tagRepo;
+    private readonly FileTagRepository _fileTagRepo;
+    private readonly ExifToolService _exifTool;
+    private CancellationTokenSource? _tagSyncCts;
+
+    public bool IsTagSyncRunning { get; private set; }
+    public int TagSyncProcessed { get; private set; }
+    public int TagSyncTotal { get; private set; }
+
+    public event Action<int, int>? TagSyncProgress;
+    public event Action? TagSyncCompleted;
+
+    public TagMetadataSyncService(
+        FileRepository fileRepo,
+        TagRepository tagRepo,
+        FileTagRepository fileTagRepo,
+        ExifToolService exifTool)
+    {
+        _fileRepo = fileRepo;
+        _tagRepo = tagRepo;
+        _fileTagRepo = fileTagRepo;
+        _exifTool = exifTool;
+    }
+
+    public void QueueTagMetadataSync(List<Guid> fileIds)
+    {
+        _tagSyncCts?.Cancel();
+        _tagSyncCts = new CancellationTokenSource();
+        CancellationToken token = _tagSyncCts.Token;
+
+        if (fileIds.Count == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            IsTagSyncRunning = true;
+            TagSyncProcessed = 0;
+            TagSyncTotal = fileIds.Count;
+
+            TagSyncProgress?.Invoke(TagSyncProcessed, TagSyncTotal);
+
+            try
+            {
+                foreach (Guid fileId in fileIds)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    await SyncMetadataToFileAsync(fileId);
+
+                    TagSyncProcessed++;
+                    TagSyncProgress?.Invoke(TagSyncProcessed, TagSyncTotal);
+                }
+            }
+            catch (Exception)
+            {
+                // Gracefully ignore
+            }
+            finally
+            {
+                IsTagSyncRunning = false;
+                TagSyncCompleted?.Invoke();
+            }
+        }, token);
+    }
+
+    public async Task SyncMetadataToFileAsync(Guid fileId)
+    {
+        FileEntry? file = _fileRepo.GetById(fileId);
+        if (file is null)
+        {
+            return;
+        }
+
+        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
+        List<Tag> tags = _tagRepo.GetTagsByIds(tagIds);
+
+        MediaMetadata metadata = new()
+        {
+            Tags = tags.Select(t => t.Name).ToList(),
+            Rating = file.Rating,
+            Title = file.Title,
+            Description = file.Description
+        };
+
+        _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
+    }
+
+    public void CancelSync()
+    {
+        _tagSyncCts?.Cancel();
     }
 }
 ```
@@ -3081,9 +3266,7 @@ namespace Tagium.Core.Services;
 
 public class VideoFrameExtractor
 {
-    private const int VideoEarlyCaptureSeconds = 5;
-    private const int VideoDurationThresholdSeconds = 10;
-    private const double VideoLateCaptureRatio = 0.1;
+    private const int DefaultCaptureSeconds = 3;
     private readonly ILogger<VideoFrameExtractor> _logger;
 
     public bool HasFFmpeg { get; }
@@ -3110,16 +3293,8 @@ public class VideoFrameExtractor
     {
         try
         {
-            _logger.LogDebug("Analyzing duration for video frame extraction: {Path}", sourcePath);
-            TimeSpan? duration = await AnalyzeDurationAsync(sourcePath);
-            if (duration is null)
-            {
-                _logger.LogWarning("Unable to read video length duration for: {Path}", sourcePath);
-                return null;
-            }
-
-            TimeSpan captureTime = CalculateCaptureTime(duration.Value);
-            _logger.LogInformation("Extracting snapshot frame for video {Path} at position {Position}", sourcePath, captureTime);
+            TimeSpan captureTime = TimeSpan.FromSeconds(DefaultCaptureSeconds);
+            _logger.LogInformation("Extracting snapshot frame for video {Path} at default position {Position}", sourcePath, captureTime);
             return await ExtractSnapshotAsync(sourcePath, captureTime);
         }
         catch (Exception ex)
@@ -3127,31 +3302,6 @@ public class VideoFrameExtractor
             _logger.LogError(ex, "Video processing error during frame extraction for file: {Path}", sourcePath);
             return null;
         }
-    }
-
-    private async Task<TimeSpan?> AnalyzeDurationAsync(string sourcePath)
-    {
-        try
-        {
-            IMediaAnalysis analysis = await FFProbe.AnalyseAsync(sourcePath);
-            return analysis.Duration;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "FFProbe duration analysis failed for file: {Path}", sourcePath);
-            return null;
-        }
-    }
-
-    private static TimeSpan CalculateCaptureTime(TimeSpan duration)
-    {
-        bool isLongVideo = duration.TotalSeconds > VideoDurationThresholdSeconds;
-
-        double seconds = isLongVideo
-            ? VideoEarlyCaptureSeconds
-            : duration.TotalSeconds * VideoLateCaptureRatio;
-
-        return TimeSpan.FromSeconds(seconds);
     }
 
     private async Task<string?> ExtractSnapshotAsync(string sourcePath, TimeSpan captureTime)
@@ -3707,16 +3857,13 @@ public interface IUndoCommand
 
 ```csharp
 using Tagium.Core.Data;
-using Tagium.Core.Models;
 
 namespace Tagium.Core.Services.Undo;
 
 public class TagAssignmentUndoCommand : IUndoCommand
 {
     private readonly FileTagRepository _fileTagRepo;
-    private readonly ExifToolService _exifTool;
-    private readonly FileRepository _fileRepo;
-    private readonly TagRepository _tagRepo;
+    private readonly TagMetadataSyncService _tagSyncService;
     private readonly Action _onChanged;
     private readonly Guid _tagId;
     private readonly List<Guid> _fileIds;
@@ -3724,18 +3871,14 @@ public class TagAssignmentUndoCommand : IUndoCommand
 
     public TagAssignmentUndoCommand(
         FileTagRepository fileTagRepo,
-        ExifToolService exifTool,
-        FileRepository fileRepo,
-        TagRepository tagRepo,
+        TagMetadataSyncService tagSyncService,
         Action onChanged,
         Guid tagId,
         IEnumerable<Guid> fileIds,
         bool wasAdding)
     {
         _fileTagRepo = fileTagRepo;
-        _exifTool = exifTool;
-        _fileRepo = fileRepo;
-        _tagRepo = tagRepo;
+        _tagSyncService = tagSyncService;
         _onChanged = onChanged;
         _tagId = tagId;
         _fileIds = fileIds.ToList();
@@ -3755,32 +3898,10 @@ public class TagAssignmentUndoCommand : IUndoCommand
                 _fileTagRepo.AddTagToFile(fileId, _tagId);
             }
 
-            _ = SyncMetadataToFileAsync(fileId);
+            _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
         }
 
         _onChanged();
-    }
-
-    private async Task SyncMetadataToFileAsync(Guid fileId)
-    {
-        FileEntry? file = _fileRepo.GetById(fileId);
-        if (file is null)
-        {
-            return;
-        }
-
-        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        List<Tag> tags = _tagRepo.GetTagsByIds(tagIds);
-
-        MediaMetadata metadata = new()
-        {
-            Tags = tags.Select(t => t.Name).ToList(),
-            Rating = file.Rating,
-            Title = file.Title,
-            Description = file.Description
-        };
-
-        _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
     }
 }
 ```
@@ -4122,6 +4243,10 @@ public class Program
                     @onclick="() => AppState.SwitchView(AppView.Files)">
                 <i class="fa-solid fa-images"></i> Files
             </button>
+            <button class="segment-btn @(AppState.CurrentView == AppView.Folders ? "active" : "")"
+                    @onclick="() => AppState.SwitchView(AppView.Folders)">
+                <i class="fa-solid fa-folder-tree"></i> Folders
+            </button>
             <button class="segment-btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
                     @onclick="() => AppState.SwitchView(AppView.Tags)">
                 <i class="fa-solid fa-tags"></i> Tags
@@ -4131,7 +4256,7 @@ public class Program
 
     <!-- Center Section: Dynamic query input -->
     <div class="toolbar-center">
-        @if (AppState.CurrentView == AppView.Files)
+        @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
             <div class="search-wrapper">
                 <SearchInput @ref="SearchInput" />
@@ -4141,7 +4266,7 @@ public class Program
 
     <!-- Right Section: Media grid controls & Settings triggers -->
     <div class="toolbar-right">
-        @if (AppState.CurrentView == AppView.Files)
+        @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
             <button class="btn-icon"
                     @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
@@ -4622,7 +4747,7 @@ public partial class FileGrid : IDisposable
 
     private void LoadFiles()
     {
-        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly, AppState.CurrentFolderPath);
         RebuildRows();
     }
 
@@ -4742,11 +4867,16 @@ public partial class FileGrid : IDisposable
         AppState.OnChange -= ReloadData;
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
-        Settings.SettingsChanged -= ReloadData;
+        Settings.SettingsChanged -= OnSettingsChanged;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 
         _objRef?.Dispose();
         _ = JS.InvokeVoidAsync("eval", "if (window.gridObserverInstance) { window.gridObserverInstance.disconnect(); delete window.gridObserverInstance; }");
+    }
+
+    private void OnSettingsChanged()
+    {
+        ReloadData();
     }
 }
 ```
@@ -4938,7 +5068,7 @@ public partial class FileListView : IDisposable
         AppState.OnChange += ReloadData;
         AppState.OnSelectionChange += RefreshSelection;
         Library.LibraryChanged += ReloadData;
-        Settings.SettingsChanged += ReloadData;
+        Settings.SettingsChanged += OnSettingsChanged;
         ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
@@ -4980,7 +5110,7 @@ public partial class FileListView : IDisposable
 
     private void LoadFiles()
     {
-        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly, AppState.CurrentFolderPath);
     }
 
     private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
@@ -5017,8 +5147,13 @@ public partial class FileListView : IDisposable
         AppState.OnChange -= ReloadData;
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
-        Settings.SettingsChanged -= ReloadData;
+        Settings.SettingsChanged -= OnSettingsChanged;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
+    }
+
+    private void OnSettingsChanged()
+    {
+        ReloadData();
     }
 }
 ```
@@ -5190,6 +5325,468 @@ public partial class FileListView : IDisposable
 
 ---
 
+### `Tagium.Photino.Blazor\Components\FolderBreadcrumbs.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Core.Services
+
+<div class="breadcrumbs-container">
+    @if (_segments.Count > 0)
+    {
+        @for (int i = 0; i < _segments.Count; i++)
+        {
+            var segment = _segments[i];
+            int index = i;
+
+            @if (index > 0)
+            {
+                <i class="fa-solid fa-chevron-right separator"></i>
+            }
+
+            <span class="breadcrumb-item @(index == _segments.Count - 1 ? "active" : "")"
+                  @onclick="() => NavigateToSegment(segment.Path)">
+                @segment.Name
+            </span>
+        }
+    }
+    else
+    {
+        <span class="breadcrumb-item active">Select a folder</span>
+    }
+</div>
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FolderBreadcrumbs.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Services;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class FolderBreadcrumbs : IDisposable
+{
+    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private LibraryService Library { get; set; } = default!;
+
+    private readonly List<BreadcrumbSegment> _segments = [];
+
+    protected override void OnInitialized()
+    {
+        AppState.OnChange += OnAppStateChanged;
+        UpdateSegments();
+    }
+
+    private void OnAppStateChanged()
+    {
+        UpdateSegments();
+        StateHasChanged();
+    }
+
+    private void UpdateSegments()
+    {
+        _segments.Clear();
+        string? currentPath = AppState.CurrentFolderPath;
+        if (string.IsNullOrEmpty(currentPath))
+        {
+            return;
+        }
+
+        var roots = Library.GetRoots().Where(r => r.IsEnabled).ToList();
+        var matchingRoot = roots.FirstOrDefault(r => currentPath.StartsWith(r.Path, StringComparison.OrdinalIgnoreCase));
+
+        if (matchingRoot == null)
+        {
+            string[] parts = currentPath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            string accum = "";
+            foreach (string part in parts)
+            {
+                accum = string.IsNullOrEmpty(accum) ? part : accum + Path.DirectorySeparatorChar + part;
+                _segments.Add(new BreadcrumbSegment { Name = part, Path = accum });
+            }
+            return;
+        }
+
+        _segments.Add(new BreadcrumbSegment
+        {
+            Name = Path.GetFileName(matchingRoot.Path) is string name && !string.IsNullOrEmpty(name) ? name : matchingRoot.Path,
+            Path = matchingRoot.Path
+        });
+
+        if (currentPath.Length > matchingRoot.Path.Length)
+        {
+            string rel = currentPath[(matchingRoot.Path.Length + 1)..];
+            string[] parts = rel.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            string accum = matchingRoot.Path;
+
+            foreach (string part in parts)
+            {
+                accum = accum + Path.DirectorySeparatorChar + part;
+                _segments.Add(new BreadcrumbSegment { Name = part, Path = accum });
+            }
+        }
+    }
+
+    private void NavigateToSegment(string path)
+    {
+        AppState.SetFolder(path);
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= OnAppStateChanged;
+    }
+
+    private class BreadcrumbSegment
+    {
+        public required string Name { get; set; }
+        public required string Path { get; set; }
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FolderBreadcrumbs.razor.css`
+
+```css
+.breadcrumbs-container {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-md);
+    background-color: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--font-size-sm);
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.breadcrumb-item {
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color var(--transition-fast);
+    font-weight: 500;
+}
+
+    .breadcrumb-item:hover {
+        color: var(--text-color);
+    }
+
+    .breadcrumb-item.active {
+        color: var(--text-color);
+        cursor: default;
+        font-weight: 600;
+    }
+
+.separator {
+    color: var(--border-color);
+    font-size: 0.8em;
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FolderSidebar.razor`
+
+```
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Models
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Core.Services
+
+<div class="sidebar-container">
+    <div class="sidebar-header">
+        <h4>Folders</h4>
+    </div>
+    <div class="folder-list">
+        @if (_rootNodes.Count == 0)
+        {
+            <div class="empty-state">
+                <p>No managed folders. Add one in settings.</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var node in _rootNodes)
+            {
+                @RenderNode(node, 0)
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private RenderFragment RenderNode(FolderNode node, int depth) => __builder =>
+    {
+        bool isSelected = AppState.CurrentFolderPath == node.Path;
+
+        <div class="folder-item @(isSelected ? "active" : "")"
+             style="--depth: @depth;"
+             @onclick="() => SelectFolder(node)">
+
+            <button class="expand-btn" @onclick="e => ToggleExpand(node)" @onclick:stopPropagation="true">
+                @if (node.IsExpanded)
+                {
+                    <i class="fa-solid fa-chevron-down"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-chevron-right"></i>
+                }
+            </button>
+
+            <i class="fa-solid fa-folder folder-icon"></i>
+            <span class="folder-name" title="@node.Path">@node.Name</span>
+        </div>
+
+        @if (node.IsExpanded && node.Children.Count > 0)
+        {
+            @foreach (var child in node.Children)
+            {
+                @RenderNode(child, depth + 1)
+            }
+        }
+    };
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FolderSidebar.razor.cs`
+
+```csharp
+using Microsoft.AspNetCore.Components;
+using Tagium.Core.Models;
+using Tagium.Core.Services;
+using Tagium.Photino.Blazor.Models;
+using Tagium.Photino.Blazor.Services;
+
+namespace Tagium.Photino.Blazor.Components;
+
+public partial class FolderSidebar : IDisposable
+{
+    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private LibraryService Library { get; set; } = default!;
+
+    private List<FolderNode> _rootNodes = [];
+
+    protected override void OnInitialized()
+    {
+        LoadRoots();
+        AppState.OnChange += OnAppStateChanged;
+        Library.LibraryChanged += OnLibraryChanged;
+    }
+
+    private void OnAppStateChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLibraryChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            LoadRoots();
+            StateHasChanged();
+        });
+    }
+
+    private void LoadRoots()
+    {
+        List<LibraryRoot> roots = Library.GetRoots().Where(r => r.IsEnabled).OrderBy(r => r.Path.Length).ToList();
+        List<LibraryRoot> pruned = new();
+
+        foreach (var root in roots)
+        {
+            bool isNested = pruned.Any(p =>
+                root.Path.StartsWith(p.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(root.Path, p.Path, StringComparison.OrdinalIgnoreCase));
+
+            if (!isNested)
+            {
+                pruned.Add(root);
+            }
+        }
+
+        List<FolderNode> newRootNodes = new();
+
+        foreach (var root in pruned)
+        {
+            var existing = _rootNodes.FirstOrDefault(n => string.Equals(n.Path, root.Path, StringComparison.OrdinalIgnoreCase));
+
+            newRootNodes.Add(new FolderNode
+            {
+                Path = root.Path,
+                Name = Path.GetFileName(root.Path) is string name && !string.IsNullOrEmpty(name) ? name : root.Path,
+                IsExpanded = existing?.IsExpanded ?? false,
+                Children = existing?.Children ?? [],
+                ChildrenLoaded = existing?.ChildrenLoaded ?? false
+            });
+        }
+
+        _rootNodes = newRootNodes;
+    }
+
+    private void SelectFolder(FolderNode node)
+    {
+        AppState.SetFolder(node.Path);
+    }
+
+    private void ToggleExpand(FolderNode node)
+    {
+        node.IsExpanded = !node.IsExpanded;
+
+        if (node.IsExpanded && !node.ChildrenLoaded)
+        {
+            LoadChildren(node);
+        }
+    }
+
+    private void LoadChildren(FolderNode node)
+    {
+        try
+        {
+            var subfolders = Library.GetSubfolders(node.Path);
+            node.Children = subfolders.Select(p => new FolderNode
+            {
+                Path = p,
+                Name = Path.GetFileName(p)
+            }).ToList();
+            node.ChildrenLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FolderSidebar] Failed to load subfolders for {node.Path}: {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= OnAppStateChanged;
+        Library.LibraryChanged -= OnLibraryChanged;
+    }
+}
+```
+
+---
+
+### `Tagium.Photino.Blazor\Components\FolderSidebar.razor.css`
+
+```css
+.sidebar-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--text-color);
+    background-color: var(--panel-bg);
+}
+
+.sidebar-header {
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+    .sidebar-header h4 {
+        margin: 0;
+        font-size: var(--font-size-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+.folder-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-xs) 0;
+}
+
+.folder-item {
+    display: flex;
+    align-items: center;
+    height: 24px; /* Locked to the sleeker, compact desktop height boundary */
+    line-height: 1.2; /* Bound line-height strictly to prevent vertical skewing */
+    cursor: pointer;
+    user-select: none;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    border-radius: var(--radius-sm);
+    margin: 0 var(--space-xs) 2px var(--space-xs); /* Vertical margin gap matching the legacy tag sidebar rules */
+    padding-left: calc(var(--depth) * 12px + var(--space-xs)); /* Dynamically computed inline indentation, kept isolated inside CSS */
+    box-sizing: border-box;
+}
+
+    .folder-item:hover {
+        background-color: var(--surface-hover);
+    }
+
+    .folder-item.active {
+        background-color: var(--primary-color);
+    }
+
+        /* 
+   Selection Override absolute guardrail:
+   When selected, all inner text and colored icons must transition 
+   to high-contrast primary text color immediately. 
+*/
+        .folder-item.active,
+        .folder-item.active * {
+            color: var(--text-on-primary) !important;
+        }
+
+.expand-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8em;
+    padding: 0;
+    margin-right: var(--space-2xs);
+    border-radius: 50%;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+    .expand-btn:hover {
+        background-color: var(--surface-bg);
+        color: var(--text-color);
+    }
+
+.folder-icon {
+    color: var(--folder-color); /* Strict yellow-gold system token alignment */
+    margin-right: var(--space-xs);
+    font-size: var(--font-size-sm);
+    flex-shrink: 0;
+    transition: color var(--transition-fast);
+}
+
+.folder-name {
+    font-size: var(--font-size-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.empty-state {
+    padding: var(--space-md);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Components\MainLayout.razor`
 
 ```
@@ -5252,8 +5849,8 @@ public partial class FileListView : IDisposable
     }
 
     /* 6. Lock the inspector panel width.
-                      Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
-                      and allows the splitter's JavaScript inline style modification to override it perfectly. */
+                          Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
+                          and allows the splitter's JavaScript inline style modification to override it perfectly. */
     .inspector-panel {
         width: 320px;
         height: 100% !important;
@@ -5324,7 +5921,14 @@ public partial class FileListView : IDisposable
 
 <div class="main-layout">
     <div class="sidebar-panel" id="sidebar-panel" style="width: @(SettingsManager.Current.LeftSidebarWidth)px;">
-        <TagSidebar />
+        @if (AppState.CurrentView == AppView.Folders)
+        {
+            <FolderSidebar />
+        }
+        else
+        {
+            <TagSidebar />
+        }
     </div>
 
     <div class="splitter" id="splitter-left"></div>
@@ -5333,9 +5937,13 @@ public partial class FileListView : IDisposable
         <AppToolbar @ref="AppToolbarRef" />
 
         <div class="view-container">
-            @if (AppState.CurrentView == AppView.Files)
+            @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
             {
                 <div style="display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;">
+                    @if (AppState.CurrentView == AppView.Folders)
+                    {
+                        <FolderBreadcrumbs />
+                    }
                     @if (SettingsManager.Current.FileViewMode == FileViewMode.Grid)
                     {
                         <FileGrid />
@@ -6284,6 +6892,23 @@ public partial class ToastContainer
 
 ---
 
+### `Tagium.Photino.Blazor\Models\FolderNote.cs`
+
+```csharp
+namespace Tagium.Photino.Blazor.Models;
+
+public class FolderNode
+{
+    public required string Path { get; set; }
+    public required string Name { get; set; }
+    public bool IsExpanded { get; set; }
+    public List<FolderNode> Children { get; set; } = [];
+    public bool ChildrenLoaded { get; set; }
+}
+```
+
+---
+
 ### `Tagium.Photino.Blazor\Models\Theme.cs`
 
 ```csharp
@@ -6305,7 +6930,7 @@ using Tagium.Core.Services;
 
 namespace Tagium.Photino.Blazor.Services;
 
-public enum AppView { Files, Tags }
+public enum AppView { Files, Folders, Tags }
 
 public class AppState
 {
@@ -6314,6 +6939,7 @@ public class AppState
     public AppView CurrentView { get; private set; } = AppView.Files;
     public string SearchText { get; private set; } = "";
     public bool IsMissingOnly { get; private set; }
+    public string? CurrentFolderPath { get; private set; }
     public HashSet<Guid> SelectedFileIds { get; private set; } = [];
 
     public event Action? OnChange;
@@ -6344,6 +6970,7 @@ public class AppState
     {
         SearchText = text;
         IsMissingOnly = false;
+        CurrentFolderPath = null;
         SelectedFileIds.Clear();
 
         if (CurrentView != AppView.Files)
@@ -6358,11 +6985,27 @@ public class AppState
     {
         IsMissingOnly = isMissing;
         SearchText = "";
+        CurrentFolderPath = null;
         SelectedFileIds.Clear();
 
         if (CurrentView != AppView.Files)
         {
             CurrentView = AppView.Files;
+        }
+
+        NotifyStateChanged();
+    }
+
+    public void SetFolder(string? path)
+    {
+        CurrentFolderPath = path;
+        SearchText = "";
+        IsMissingOnly = false;
+        SelectedFileIds.Clear();
+
+        if (CurrentView != AppView.Folders)
+        {
+            CurrentView = AppView.Folders;
         }
 
         NotifyStateChanged();
@@ -6426,6 +7069,9 @@ public class AppState
 
 ```csharp
 using NativeFileDialogs.Net;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Tagium.Photino.Blazor.Services;
 
@@ -6433,6 +7079,11 @@ public class FileDialogService
 {
     public static string[]? OpenFiles()
     {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return OpenFilesWindowsPowerShell();
+        }
+
         NfdStatus result = Nfd.OpenDialogMultiple(out string[] paths, null, null);
 
         return result == NfdStatus.Ok
@@ -6442,11 +7093,92 @@ public class FileDialogService
 
     public static string? PickFolder()
     {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return PickFolderWindowsPowerShell();
+        }
+
         NfdStatus result = Nfd.PickFolder(out string path, null);
 
         return result == NfdStatus.Ok
             ? path
             : null;
+    }
+
+    private static string? PickFolderWindowsPowerShell()
+    {
+        try
+        {
+            string script = "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select Library Folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }";
+
+            ProcessStartInfo startInfo = new("powershell.exe")
+            {
+                Arguments = $"-NoProfile -NonInteractive -Command \"{script}\"",
+                RedirectStandardOutput = true,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                StandardOutputEncoding = Encoding.UTF8
+            };
+
+            using Process? process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return null;
+            }
+
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+
+            return string.IsNullOrEmpty(output) ? null : output;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FileDialog] PowerShell folder picker fallback failed: {ex.Message}");
+            NfdStatus result = Nfd.PickFolder(out string path, null);
+            return result == NfdStatus.Ok ? path : null;
+        }
+    }
+
+    private static string[]? OpenFilesWindowsPowerShell()
+    {
+        try
+        {
+            string script = "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Multiselect = $true; if ($f.ShowDialog() -eq 'OK') { foreach ($file in $f.FileNames) { Write-Output $file } }";
+
+            ProcessStartInfo startInfo = new("powershell.exe")
+            {
+                Arguments = $"-NoProfile -NonInteractive -Command \"{script}\"",
+                RedirectStandardOutput = true,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                StandardOutputEncoding = Encoding.UTF8
+            };
+
+            using Process? process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return null;
+            }
+
+            List<string> files = [];
+            while (!process.StandardOutput.EndOfStream)
+            {
+                string? line = process.StandardOutput.ReadLine();
+                if (!string.IsNullOrEmpty(line))
+                {
+                    files.Add(line.Trim());
+                }
+            }
+            process.WaitForExit();
+
+            return files.Count > 0 ? [.. files] : null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FileDialog] PowerShell file picker fallback failed: {ex.Message}");
+            NfdStatus result = Nfd.OpenDialogMultiple(out string[] paths, null, null);
+            return result == NfdStatus.Ok ? paths : null;
+        }
     }
 }
 ```
@@ -6944,6 +7676,7 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<VideoFrameExtractor>();
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryScanService>();
+        _ = services.AddSingleton<TagMetadataSyncService>();
         _ = services.AddSingleton<LibraryService>();
         _ = services.AddSingleton<LibraryIntegrityService>();
         _ = services.AddSingleton<DataExportService>();
@@ -8157,7 +8890,6 @@ public partial class SettingsModal : IDisposable
         _ = InvokeAsync(StateHasChanged);
     }
 
-    // --- Library Folders Methods ---
     private void LoadRoots()
     {
         Roots = Library.GetRoots();
@@ -8171,9 +8903,27 @@ public partial class SettingsModal : IDisposable
             return;
         }
 
-        Library.AddRoot(folder);
+        AddRootResult result = Library.AddRootWithValidation(folder);
+
+        if (result.Status == AddRootStatus.Success)
+        {
+            Toast.Show(result.Message, ToastType.Success);
+        }
+        else if (result.Status == AddRootStatus.ConsolidatedChildren)
+        {
+            Toast.Show(result.Message, ToastType.Success);
+        }
+        else
+        {
+            Toast.Show(result.Message, ToastType.Error);
+        }
+
         LoadRoots();
-        _ = Task.Run(() => Library.ScanAsync());
+
+        if (result.Status is AddRootStatus.Success or AddRootStatus.ConsolidatedChildren)
+        {
+            _ = Task.Run(() => Library.ScanAsync());
+        }
     }
 
     private void ToggleRoot(LibraryRoot root)
@@ -8214,7 +8964,6 @@ public partial class SettingsModal : IDisposable
         return dateTime.ToString("g");
     }
 
-    // --- Appearance Methods ---
     private void UpdateTagSidebarStyle(TagSidebarDisplayMode mode)
     {
         Settings.Update(s => s.TagSidebarStyle = mode);
@@ -8246,7 +8995,6 @@ public partial class SettingsModal : IDisposable
         }
     }
 
-    // --- Maintenance (Data Management) Methods ---
     private async Task ScanIntegrity()
     {
         ScanResult = null;

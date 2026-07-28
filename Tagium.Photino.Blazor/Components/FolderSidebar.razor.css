@@ -27,6 +27,15 @@
     padding: var(--space-xs) 0;
 }
 
+    /* Customize scrollbars to blend cleanly into the sidebar panel */
+    .folder-list::-webkit-scrollbar-track {
+        background: var(--panel-bg);
+    }
+
+    .folder-list::-webkit-scrollbar-thumb {
+        border-color: var(--panel-bg);
+    }
+
 .folder-item {
     display: flex;
     align-items: center;

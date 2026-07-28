@@ -9,6 +9,9 @@
 @inject SettingsManager Settings
 
 <div class="sidebar-container">
+    <div class="sidebar-header">
+        <h4>Tags</h4>
+    </div>
     <div class="tag-list @GetDisplayModeClass()">
         <div class="tag-item system-item @(IsAllFilesActive ? "active" : "")"
              @onclick="() => SetSearch(string.Empty)">
@@ -30,7 +33,6 @@
 
             if (Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)
             {
-                // Legacy mode: colored circles
                 <div class="tag-item legacy @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
                     <TagIcon Tag="@tag" />
                     <span class="name">@tag.Name</span>
@@ -39,7 +41,6 @@
             }
             else
             {
-                // Modern mode: colored pills
                 string tagStyle = isActive
                 ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid;"
                 : $"border-color: {tag.ColorHex};";
