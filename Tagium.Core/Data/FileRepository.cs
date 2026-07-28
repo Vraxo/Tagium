@@ -42,8 +42,8 @@ public class FileRepository
                 F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM cache.Files F
-            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
-            LEFT JOIN Tags T ON FT.TagId = T.Id
+            LEFT JOIN cache.FileTags FT ON LOWER(REPLACE(F.Id, '-', '')) = LOWER(REPLACE(FT.FileId, '-', ''))
+            LEFT JOIN Tags T ON LOWER(REPLACE(FT.TagId, '-', '')) = LOWER(REPLACE(T.Id, '-', ''))
             {missingFilter}
             GROUP BY F.Id
             {orderBy}";
@@ -76,8 +76,8 @@ public class FileRepository
                 F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM cache.Files F
-            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
-            LEFT JOIN Tags T ON FT.TagId = T.Id
+            LEFT JOIN cache.FileTags FT ON LOWER(REPLACE(F.Id, '-', '')) = LOWER(REPLACE(FT.FileId, '-', ''))
+            LEFT JOIN Tags T ON LOWER(REPLACE(FT.TagId, '-', '')) = LOWER(REPLACE(T.Id, '-', ''))
             WHERE F.Path LIKE @Prefix
               AND INSTR(SUBSTR(F.Path, @PrefixLen), @Separator) = 0
               {missingFilter}
@@ -121,12 +121,12 @@ public class FileRepository
                 F.Rating, F.Title, F.Description,
                 GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
             FROM cache.Files F
-            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
-            LEFT JOIN Tags T ON FT.TagId = T.Id
-            WHERE F.Id = @Id
+            LEFT JOIN cache.FileTags FT ON LOWER(REPLACE(F.Id, '-', '')) = LOWER(REPLACE(FT.FileId, '-', ''))
+            LEFT JOIN Tags T ON LOWER(REPLACE(FT.TagId, '-', '')) = LOWER(REPLACE(T.Id, '-', ''))
+            WHERE LOWER(REPLACE(F.Id, '-', '')) = @Id
             GROUP BY F.Id";
 
-        FileEntryDto? dto = conn.QueryFirstOrDefault<FileEntryDto>(sql, new { Id = id });
+        FileEntryDto? dto = conn.QueryFirstOrDefault<FileEntryDto>(sql, new { Id = id.ToString("N").ToLowerInvariant() });
         if (dto != null && !string.IsNullOrEmpty(dto.TagData))
         {
             dto.Tags = ParseTagData(dto.TagData);
@@ -138,8 +138,8 @@ public class FileRepository
     {
         using SqliteConnection conn = _db.GetConnection();
         return conn.QueryFirstOrDefault<FileEntry>(
-            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id",
-            new { Id = id });
+            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE LOWER(REPLACE(Id, '-', '')) = @Id",
+            new { Id = id.ToString("N").ToLowerInvariant() });
     }
 
     public FileEntry? GetByHash(string hash)
@@ -199,22 +199,34 @@ public class FileRepository
             UPDATE cache.Files 
             SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime, 
                 Rating = @Rating, Title = @Title, Description = @Description 
-            WHERE Id = @Id";
-        conn.Execute(sql, file);
+            WHERE LOWER(REPLACE(Id, '-', '')) = @Id";
+        conn.Execute(sql, new
+        {
+            file.Path,
+            file.Name,
+            file.Hash,
+            file.IsMissing,
+            file.Size,
+            file.ModifiedTime,
+            file.Rating,
+            file.Title,
+            file.Description,
+            Id = file.Id.ToString("N").ToLowerInvariant()
+        });
     }
 
     public void Remove(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-        conn.Execute("DELETE FROM cache.Files WHERE Id = @Id", new { Id = id });
+        conn.Execute("DELETE FROM cache.Files WHERE LOWER(REPLACE(Id, '-', '')) = @Id", new { Id = id.ToString("N").ToLowerInvariant() });
     }
 
     public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
         using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
-        var parameters = fileIds.Select(id => new { Id = id, IsMissing = isMissing });
-        conn.Execute("UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id", parameters, trans);
+        var parameters = fileIds.Select(id => new { Id = id.ToString("N").ToLowerInvariant(), IsMissing = isMissing });
+        conn.Execute("UPDATE cache.Files SET IsMissing = @IsMissing WHERE LOWER(REPLACE(Id, '-', '')) = @Id", parameters, trans);
         trans.Commit();
     }
 
