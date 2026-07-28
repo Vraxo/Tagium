@@ -1,3 +1,4 @@
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
@@ -15,12 +16,9 @@ public class FileRepository
 
     public List<FileEntry> GetAll(SortBy sortBy, SortDirection direction)
     {
-        List<FileEntry> files = [];
         using SqliteConnection conn = _db.GetConnection();
-
         string orderBy = GetOrderByClause(sortBy, direction);
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $@"
+        string sql = $@"
             SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files F
             WHERE EXISTS (
                 SELECT 1 FROM LibraryRoots LR 
@@ -28,25 +26,17 @@ public class FileRepository
             )
             {orderBy}";
 
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            files.Add(ReadFile(reader));
-        }
-        return files;
+        return conn.Query<FileEntry>(sql).ToList();
     }
 
     public List<FileEntry> GetFilesWithTags(SortBy sortBy, SortDirection direction, bool includeMissing = false)
     {
-        List<FileEntry> files = [];
         using SqliteConnection conn = _db.GetConnection();
-
         string orderBy = GetOrderByClause(sortBy, direction);
         string rootFilter = $"EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))";
         string missingFilter = includeMissing ? $"WHERE {rootFilter}" : $"WHERE {rootFilter} AND F.IsMissing = 0";
 
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $@"
+        string sql = $@"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 F.Rating, F.Title, F.Description,
@@ -58,28 +48,21 @@ public class FileRepository
             GROUP BY F.Id
             {orderBy}";
 
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        while (reader.Read())
+        IEnumerable<FileEntryDto> dtos = conn.Query<FileEntryDto>(sql);
+        foreach (FileEntryDto dto in dtos)
         {
-            FileEntry file = ReadFile(reader);
-
-            if (!reader.IsDBNull(11))
+            if (!string.IsNullOrEmpty(dto.TagData))
             {
-                string tagData = reader.GetString(11);
-                file.Tags = ParseTagData(tagData);
+                dto.Tags = ParseTagData(dto.TagData);
             }
-
-            files.Add(file);
         }
-        return files;
+        return dtos.Cast<FileEntry>().ToList();
     }
 
     public FileEntry? GetFileWithTagsById(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 F.Rating, F.Title, F.Description,
@@ -90,81 +73,55 @@ public class FileRepository
             WHERE F.Id = @Id
             GROUP BY F.Id";
 
-        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        if (reader.Read())
+        FileEntryDto? dto = conn.QueryFirstOrDefault<FileEntryDto>(sql, new { Id = id });
+        if (dto != null && !string.IsNullOrEmpty(dto.TagData))
         {
-            FileEntry file = ReadFile(reader);
-            if (!reader.IsDBNull(11))
-            {
-                string tagData = reader.GetString(11);
-                file.Tags = ParseTagData(tagData);
-            }
-            return file;
+            dto.Tags = ParseTagData(dto.TagData);
         }
-        return null;
+        return dto;
     }
 
     public FileEntry? GetById(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        return reader.Read() ? ReadFile(reader) : null;
+        return conn.QueryFirstOrDefault<FileEntry>(
+            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id",
+            new { Id = id });
     }
 
     public FileEntry? GetByHash(string hash)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Hash = @Hash";
-        _ = cmd.Parameters.AddWithValue("@Hash", hash);
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        return reader.Read() ? ReadFile(reader) : null;
+        return conn.QueryFirstOrDefault<FileEntry>(
+            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Hash = @Hash",
+            new { Hash = hash });
     }
 
     public List<FileEntry> GetFilesUnderPath(string rootPath)
     {
-        List<FileEntry> files = [];
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
-        _ = cmd.Parameters.AddWithValue("@Path", rootPath);
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            files.Add(ReadFile(reader));
-        }
-        return files;
+        string sql = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+        return conn.Query<FileEntry>(sql, new { Path = rootPath }).ToList();
     }
 
     public bool Add(string path, string hash, long size, long modifiedTime)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime, Rating, Title, Description) 
             VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime, NULL, NULL, NULL)";
 
-        Guid newId = Guid.NewGuid();
-        _ = cmd.Parameters.AddWithValue("@Id", newId.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Path", path);
-        _ = cmd.Parameters.AddWithValue("@Name", Path.GetFileName(path));
-        _ = cmd.Parameters.AddWithValue("@Hash", hash);
-        _ = cmd.Parameters.AddWithValue("@Size", size);
-        _ = cmd.Parameters.AddWithValue("@ModifiedTime", modifiedTime);
-
         try
         {
-            _ = cmd.ExecuteNonQuery();
+            conn.Execute(sql, new
+            {
+                Id = Guid.NewGuid(),
+                Path = path,
+                Name = Path.GetFileName(path),
+                Hash = hash,
+                Size = size,
+                ModifiedTime = modifiedTime
+            });
             return true;
         }
         catch
@@ -176,102 +133,42 @@ public class FileRepository
     public void Restore(FileEntry entry)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description) 
             VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime, @Rating, @Title, @Description)";
-
-        _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Path", entry.Path);
-        _ = cmd.Parameters.AddWithValue("@Name", entry.Name);
-        _ = cmd.Parameters.AddWithValue("@Hash", (object?)entry.Hash ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@DateAdded", entry.DateAdded);
-        _ = cmd.Parameters.AddWithValue("@IsMissing", entry.IsMissing ? 1 : 0);
-        _ = cmd.Parameters.AddWithValue("@Size", entry.Size);
-        _ = cmd.Parameters.AddWithValue("@ModifiedTime", entry.ModifiedTime);
-        _ = cmd.Parameters.AddWithValue("@Rating", (object?)entry.Rating ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Title", (object?)entry.Title ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Description", (object?)entry.Description ?? DBNull.Value);
-
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute(sql, entry);
     }
 
     public void Update(FileEntry file)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             UPDATE cache.Files 
             SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime, 
                 Rating = @Rating, Title = @Title, Description = @Description 
             WHERE Id = @Id";
-
-        _ = cmd.Parameters.AddWithValue("@Id", file.Id.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Path", file.Path);
-        _ = cmd.Parameters.AddWithValue("@Name", file.Name);
-        _ = cmd.Parameters.AddWithValue("@Hash", (object?)file.Hash ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@IsMissing", file.IsMissing ? 1 : 0);
-        _ = cmd.Parameters.AddWithValue("@Size", file.Size);
-        _ = cmd.Parameters.AddWithValue("@ModifiedTime", file.ModifiedTime);
-        _ = cmd.Parameters.AddWithValue("@Rating", (object?)file.Rating ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Title", (object?)file.Title ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Description", (object?)file.Description ?? DBNull.Value);
-
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute(sql, file);
     }
 
     public void Remove(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM cache.Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("DELETE FROM cache.Files WHERE Id = @Id", new { Id = id });
     }
 
     public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
         using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
-
-        foreach (Guid id in fileIds)
-        {
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.Transaction = trans;
-            cmd.CommandText = "UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id";
-            _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
-            _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-            _ = cmd.ExecuteNonQuery();
-        }
+        var parameters = fileIds.Select(id => new { Id = id, IsMissing = isMissing });
+        conn.Execute("UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id", parameters, trans);
         trans.Commit();
     }
 
     public void RemoveMissingFiles()
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM cache.Files WHERE IsMissing = 1";
-        _ = cmd.ExecuteNonQuery();
-    }
-
-    private static FileEntry ReadFile(SqliteDataReader reader)
-    {
-        return new FileEntry
-        {
-            Id = Guid.Parse(reader.GetString(0)),
-            Path = reader.GetString(1),
-            Name = reader.GetString(2),
-            Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
-            DateAdded = reader.GetInt64(4),
-            IsMissing = reader.GetBoolean(5),
-            Size = reader.GetInt64(6),
-            ModifiedTime = reader.GetInt64(7),
-            Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
-            Title = reader.IsDBNull(9) ? null : reader.GetString(9),
-            Description = reader.IsDBNull(10) ? null : reader.GetString(10),
-            Tags = []
-        };
+        conn.Execute("DELETE FROM cache.Files WHERE IsMissing = 1");
     }
 
     private List<Tag> ParseTagData(string tagData)
@@ -310,5 +207,10 @@ public class FileRepository
 
         string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
         return $"ORDER BY {col} {dir}";
+    }
+
+    private class FileEntryDto : FileEntry
+    {
+        public string? TagData { get; set; }
     }
 }

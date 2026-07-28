@@ -1,14 +1,34 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using Dapper;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using System.Data;
 using Tagium.Core.Helpers;
 
 namespace Tagium.Core.Data;
+
+public class SqliteGuidTypeHandler : SqlMapper.TypeHandler<Guid>
+{
+    public override void SetValue(IDbDataParameter parameter, Guid value)
+    {
+        parameter.Value = value.ToString("N");
+    }
+
+    public override Guid Parse(object value)
+    {
+        return Guid.Parse((string)value);
+    }
+}
 
 public class DatabaseManager
 {
     public string LibraryDbPath { get; }
     public string CacheDbPath { get; }
     private readonly ILogger<DatabaseManager> _logger;
+
+    static DatabaseManager()
+    {
+        SqlMapper.AddTypeHandler(new SqliteGuidTypeHandler());
+    }
 
     public DatabaseManager(ILogger<DatabaseManager> logger)
     {
@@ -24,33 +44,14 @@ public class DatabaseManager
         SqliteConnection connection = new($"Data Source={LibraryDbPath}");
         connection.Open();
 
-        using (SqliteCommand cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;";
-            _ = cmd.ExecuteNonQuery();
-        }
+        connection.Execute("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 
-        bool isAttached = false;
-        using (SqliteCommand cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "PRAGMA database_list;";
-            using SqliteDataReader reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                string name = reader.GetString(1);
-                if (string.Equals(name, "cache", StringComparison.OrdinalIgnoreCase))
-                {
-                    isAttached = true;
-                    break;
-                }
-            }
-        }
+        IEnumerable<dynamic> dbs = connection.Query("PRAGMA database_list;");
+        bool isAttached = dbs.Any(d => string.Equals((string)d.name, "cache", StringComparison.OrdinalIgnoreCase));
 
         if (!isAttached)
         {
-            using SqliteCommand cmd = connection.CreateCommand();
-            cmd.CommandText = $"ATTACH DATABASE '{CacheDbPath}' AS cache;";
-            _ = cmd.ExecuteNonQuery();
+            connection.Execute($"ATTACH DATABASE '{CacheDbPath}' AS cache;");
         }
 
         return connection;
@@ -64,8 +65,7 @@ public class DatabaseManager
         {
             using SqliteConnection conn = new($"Data Source={LibraryDbPath}");
             conn.Open();
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.CommandText = @"
+            conn.Execute(@"
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS Tags (
                     Id TEXT PRIMARY KEY,
@@ -96,8 +96,7 @@ public class DatabaseManager
                     IsEnabled INTEGER NOT NULL DEFAULT 1,
                     LastScanTime INTEGER NULL
                 );
-            ";
-            _ = cmd.ExecuteNonQuery();
+            ");
         }
         catch (Exception ex)
         {
@@ -109,8 +108,7 @@ public class DatabaseManager
         {
             using SqliteConnection conn = new($"Data Source={CacheDbPath}");
             conn.Open();
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.CommandText = @"
+            conn.Execute(@"
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS Files (
                     Id TEXT PRIMARY KEY,
@@ -132,8 +130,7 @@ public class DatabaseManager
                     FOREIGN KEY(FileId) REFERENCES Files(Id) ON DELETE CASCADE,
                     PRIMARY KEY (FileId, TagId)
                 );
-            ";
-            _ = cmd.ExecuteNonQuery();
+            ");
         }
         catch (Exception ex)
         {
@@ -153,15 +150,13 @@ public class DatabaseManager
         {
             try
             {
-                using SqliteCommand cmd = conn.CreateCommand();
                 string colType = col switch
                 {
                     "Rating" => "INTEGER NULL",
                     "Title" or "Description" => "TEXT NULL",
                     _ => "INTEGER NOT NULL DEFAULT 0"
                 };
-                cmd.CommandText = $"ALTER TABLE cache.Files ADD COLUMN {col} {colType};";
-                _ = cmd.ExecuteNonQuery();
+                conn.Execute($"ALTER TABLE cache.Files ADD COLUMN {col} {colType};");
                 _logger.LogInformation("Successfully migrated column {Column} in cache.Files", col);
             }
             catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
@@ -176,9 +171,7 @@ public class DatabaseManager
 
         try
         {
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.CommandText = "ALTER TABLE Tags ADD COLUMN Category TEXT NULL;";
-            _ = cmd.ExecuteNonQuery();
+            conn.Execute("ALTER TABLE Tags ADD COLUMN Category TEXT NULL;");
             _logger.LogInformation("Successfully migrated column Category in Tags");
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 1)

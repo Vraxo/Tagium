@@ -17,6 +17,9 @@
 		<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
 		<PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
 		<PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+
+		<!-- Resolves CVE-2025-6965 by forcing the native SQLite binary dependency to update to a patched version -->
+		<PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
 	</ItemGroup>
 
 </Project>
@@ -4565,6 +4568,7 @@ public class Program
 		<Nullable>enable</Nullable>
 		<AssemblyName>Tagium</AssemblyName>
 		<UseWindowsForms>False</UseWindowsForms>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 	</PropertyGroup>
 
 	<ItemGroup>

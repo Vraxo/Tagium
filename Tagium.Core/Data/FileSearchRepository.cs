@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using Dapper;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Tagium.Core.Helpers;
 using Tagium.Core.Models;
@@ -30,37 +31,16 @@ public class FileSearchRepository
 
         CompiledQuery compiled = _compiler.Compile(searchText, sortBy, sortDirection);
 
-        using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = compiled.Sql;
-
+        DynamicParameters dynamicParams = new();
         foreach (var (name, value) in compiled.Parameters)
         {
-            _ = cmd.Parameters.AddWithValue(name, value);
+            dynamicParams.Add(name, value);
         }
 
-        _logger.LogDebug("Executing SQL Query: {Sql}", cmd.CommandText);
+        using SqliteConnection conn = _db.GetConnection();
+        _logger.LogDebug("Executing SQL Query: {Sql}", compiled.Sql);
 
-        List<FileEntry> files = [];
-        using SqliteDataReader reader = cmd.ExecuteReader();
-
-        while (reader.Read())
-        {
-            files.Add(new FileEntry
-            {
-                Id = Guid.Parse(reader.GetString(0)),
-                Path = reader.GetString(1),
-                Name = reader.GetString(2),
-                Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
-                DateAdded = reader.GetInt64(4),
-                IsMissing = reader.GetBoolean(5),
-                Size = reader.GetInt64(6),
-                ModifiedTime = reader.GetInt64(7),
-                Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
-                Title = reader.IsDBNull(9) ? null : reader.GetString(9),
-                Description = reader.IsDBNull(10) ? null : reader.GetString(10)
-            });
-        }
+        List<FileEntry> files = conn.Query<FileEntry>(compiled.Sql, dynamicParams).ToList();
 
         _logger.LogInformation("Database query execution completed, returned {Count} items", files.Count);
         return files;

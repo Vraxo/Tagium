@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using Dapper;
+using Microsoft.Data.Sqlite;
 using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
@@ -100,69 +101,23 @@ public class DatabaseMergeService
 
     private static List<Tag> LoadTags(SqliteConnection conn)
     {
-        List<Tag> list = [];
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
-        {
-            list.Add(new Tag
-            {
-                Id = Guid.Parse(r.GetString(0)),
-                Name = r.GetString(1),
-                ColorHex = r.GetString(2),
-                Emoji = r.IsDBNull(3) ? null : r.GetString(3)
-            });
-        }
-
-        return list;
+        return conn.Query<Tag>("SELECT Id, Name, ColorHex, Emoji FROM Tags").ToList();
     }
 
     private static List<FileEntry> LoadFiles(SqliteConnection conn)
     {
-        List<FileEntry> list = [];
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
-        {
-            list.Add(new()
-            {
-                Id = Guid.Parse(r.GetString(0)),
-                Path = r.GetString(1),
-                Name = r.GetString(2),
-                Hash = r.IsDBNull(3) ? null : r.GetString(3),
-                DateAdded = r.GetInt64(4),
-                IsMissing = r.GetBoolean(5),
-                Size = r.GetInt64(6),
-                ModifiedTime = r.GetInt64(7),
-                Rating = r.IsDBNull(8) ? null : r.GetInt32(8),
-                Title = r.IsDBNull(9) ? null : r.GetString(9),
-                Description = r.IsDBNull(10) ? null : r.GetString(10)
-            });
-        }
-
-        return list;
+        return conn.Query<FileEntry>("SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files").ToList();
     }
 
     private static Dictionary<Guid, List<Guid>> LoadFileTags(SqliteConnection conn)
     {
         Dictionary<Guid, List<Guid>> map = [];
+        IEnumerable<dynamic> rows = conn.Query("SELECT FileId, TagId FROM FileTags");
 
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
+        foreach (dynamic row in rows)
         {
-            Guid fid = Guid.Parse(r.GetString(0));
-            Guid tid = Guid.Parse(r.GetString(1));
+            Guid fid = Guid.Parse((string)row.FileId);
+            Guid tid = Guid.Parse((string)row.TagId);
 
             if (!map.TryGetValue(fid, out List<Guid>? value))
             {
