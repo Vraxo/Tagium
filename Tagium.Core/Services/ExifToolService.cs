@@ -33,7 +33,7 @@ public class ExifToolService : IDisposable
         {
             ProcessStartInfo startInfo = new(_commandName)
             {
-                Arguments = "-stay_open True -@ -",
+                Arguments = "-stay_open True -@ - -charset filename=utf8",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -61,7 +61,7 @@ public class ExifToolService : IDisposable
                 IsEnabled = !_exifToolProcess.HasExited;
                 if (IsEnabled)
                 {
-                    _logger.LogInformation("Persistent ExifTool daemon successfully started");
+                    _logger.LogInformation("Persistent ExifTool daemon successfully started with UTF-8 filename support");
                 }
             }
         }
