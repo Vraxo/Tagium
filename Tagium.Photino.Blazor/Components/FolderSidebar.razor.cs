@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Tagium.Core.Models;
 using Tagium.Core.Services;
 using Tagium.Photino.Blazor.Models;
 using Tagium.Photino.Blazor.Services;
@@ -35,10 +36,24 @@ public partial class FolderSidebar : IDisposable
 
     private void LoadRoots()
     {
-        var roots = Library.GetRoots().Where(r => r.IsEnabled).ToList();
-        List<FolderNode> newRootNodes = new();
+        List<LibraryRoot> roots = Library.GetRoots().Where(r => r.IsEnabled).OrderBy(r => r.Path.Length).ToList();
+        List<LibraryRoot> pruned = new();
 
         foreach (var root in roots)
+        {
+            bool isNested = pruned.Any(p =>
+                root.Path.StartsWith(p.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(root.Path, p.Path, StringComparison.OrdinalIgnoreCase));
+
+            if (!isNested)
+            {
+                pruned.Add(root);
+            }
+        }
+
+        List<FolderNode> newRootNodes = new();
+
+        foreach (var root in pruned)
         {
             var existing = _rootNodes.FirstOrDefault(n => string.Equals(n.Path, root.Path, StringComparison.OrdinalIgnoreCase));
 

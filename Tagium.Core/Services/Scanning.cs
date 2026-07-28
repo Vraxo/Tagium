@@ -116,7 +116,22 @@ public class LibraryScanService
     {
         using LogTiming timer = LogTiming.Start(_logger, "Candidate file discovery in active roots");
 
-        foreach (LibraryRoot root in roots)
+        List<LibraryRoot> activeRoots = roots.Where(r => r.IsEnabled).OrderBy(r => r.Path.Length).ToList();
+        List<LibraryRoot> pruned = new();
+
+        foreach (var root in activeRoots)
+        {
+            bool isNested = pruned.Any(p =>
+                root.Path.StartsWith(p.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(root.Path, p.Path, StringComparison.OrdinalIgnoreCase));
+
+            if (!isNested)
+            {
+                pruned.Add(root);
+            }
+        }
+
+        foreach (LibraryRoot root in pruned)
         {
             if (!Directory.Exists(root.Path))
             {

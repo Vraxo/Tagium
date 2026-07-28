@@ -48,7 +48,6 @@ public partial class SettingsModal : IDisposable
         _ = InvokeAsync(StateHasChanged);
     }
 
-    // --- Library Folders Methods ---
     private void LoadRoots()
     {
         Roots = Library.GetRoots();
@@ -62,9 +61,27 @@ public partial class SettingsModal : IDisposable
             return;
         }
 
-        Library.AddRoot(folder);
+        AddRootResult result = Library.AddRootWithValidation(folder);
+
+        if (result.Status == AddRootStatus.Success)
+        {
+            Toast.Show(result.Message, ToastType.Success);
+        }
+        else if (result.Status == AddRootStatus.ConsolidatedChildren)
+        {
+            Toast.Show(result.Message, ToastType.Success);
+        }
+        else
+        {
+            Toast.Show(result.Message, ToastType.Error);
+        }
+
         LoadRoots();
-        _ = Task.Run(() => Library.ScanAsync());
+
+        if (result.Status is AddRootStatus.Success or AddRootStatus.ConsolidatedChildren)
+        {
+            _ = Task.Run(() => Library.ScanAsync());
+        }
     }
 
     private void ToggleRoot(LibraryRoot root)
@@ -105,7 +122,6 @@ public partial class SettingsModal : IDisposable
         return dateTime.ToString("g");
     }
 
-    // --- Appearance Methods ---
     private void UpdateTagSidebarStyle(TagSidebarDisplayMode mode)
     {
         Settings.Update(s => s.TagSidebarStyle = mode);
@@ -137,7 +153,6 @@ public partial class SettingsModal : IDisposable
         }
     }
 
-    // --- Maintenance (Data Management) Methods ---
     private async Task ScanIntegrity()
     {
         ScanResult = null;
