@@ -20,6 +20,7 @@ public partial class FileGrid : IDisposable
     {
         AppState.OnChange += ReloadData;
         AppState.OnSelectionChange += RefreshSelection;
+        Settings.SettingsChanged += ReloadData;
         ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
@@ -150,6 +151,7 @@ public partial class FileGrid : IDisposable
     {
         AppState.OnChange -= ReloadData;
         AppState.OnSelectionChange -= RefreshSelection;
+        Settings.SettingsChanged -= ReloadData;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 
         _objRef?.Dispose();

@@ -1,6 +1,6 @@
 .grid-container {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--thumb-size), 1fr));
+    grid-template-columns: repeat(auto-fill, var(--thumb-size));
     gap: 16px;
     padding: 16px;
     align-content: flex-start;
@@ -19,7 +19,8 @@
     cursor: pointer;
     user-select: none;
     transition: border-color var(--transition-fast), background-color var(--transition-fast);
-    aspect-ratio: 1 / 1.2;
+    width: var(--thumb-size);
+    height: calc(var(--thumb-size) + 30px);
     box-sizing: border-box;
     overflow: hidden;
 }
