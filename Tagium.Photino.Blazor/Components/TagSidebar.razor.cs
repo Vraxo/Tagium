@@ -21,7 +21,7 @@ public partial class TagSidebar
 
     protected override void OnInitialized()
     {
-        Tags = Library.GetTags();
+        RefreshData();
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += RefreshData;
         Settings.SettingsChanged += StateHasChanged;
@@ -29,10 +29,14 @@ public partial class TagSidebar
 
     private void RefreshData()
     {
-        _ = InvokeAsync(() =>
+        _ = Task.Run(async () =>
         {
-            Tags = Library.GetTags();
-            StateHasChanged();
+            List<Tag> tags = Library.GetTags();
+            await InvokeAsync(() =>
+            {
+                Tags = tags;
+                StateHasChanged();
+            });
         });
     }
 

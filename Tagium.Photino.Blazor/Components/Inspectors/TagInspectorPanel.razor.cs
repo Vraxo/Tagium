@@ -29,83 +29,103 @@ public partial class TagInspectorPanel : IDisposable
 
     private void LoadTags()
     {
-        if (!_fileIdsList.Any())
+        List<Guid> ids = _fileIdsList.ToList();
+        if (!ids.Any())
         {
             _activeTags = [];
             _availableTags = [];
             return;
         }
 
-        List<Tag> allTags = Library.GetTags();
-
-        if (_fileIdsList.Count == 1)
+        _ = Task.Run(async () =>
         {
-            FileEntry? file = Library.GetFileWithTagsById(_fileIdsList[0]);
-            _activeTags = file?.Tags ?? [];
-        }
-        else
-        {
-            _activeTags = Library.GetCommonTags(_fileIdsList);
-        }
+            List<Tag> allTags = Library.GetTags();
+            List<Tag> active;
 
-        var activeIds = _activeTags.Select(t => t.Id).ToHashSet();
-        _availableTags = allTags.Where(t => !activeIds.Contains(t.Id)).ToList();
+            if (ids.Count == 1)
+            {
+                FileEntry? file = Library.GetFileWithTagsById(ids[0]);
+                active = file?.Tags ?? [];
+            }
+            else
+            {
+                active = Library.GetCommonTags(ids);
+            }
+
+            HashSet<Guid> activeIds = active.Select(t => t.Id).ToHashSet();
+            List<Tag> available = allTags.Where(t => !activeIds.Contains(t.Id)).ToList();
+
+            await InvokeAsync(() =>
+            {
+                _activeTags = active;
+                _availableTags = available;
+                StateHasChanged();
+            });
+        });
     }
 
     private void OnLibraryChanged()
     {
-        _ = InvokeAsync(() =>
-        {
-            LoadTags();
-            StateHasChanged();
-        });
+        LoadTags();
     }
 
     private void OnTagSelected(Guid tagId)
     {
-        if (_fileIdsList.Count == 1)
+        List<Guid> ids = _fileIdsList.ToList();
+        _ = Task.Run(() =>
         {
-            Library.AddTagToFile(_fileIdsList[0], tagId);
-        }
-        else
-        {
-            Library.AddTagToFiles(_fileIdsList, tagId);
-        }
+            if (ids.Count == 1)
+            {
+                Library.AddTagToFile(ids[0], tagId);
+            }
+            else
+            {
+                Library.AddTagToFiles(ids, tagId);
+            }
+        });
     }
 
     private void OnTagCreated(string tagName)
     {
-        string normalized = tagName.Trim();
-        if (string.IsNullOrWhiteSpace(normalized))
+        List<Guid> ids = _fileIdsList.ToList();
+        _ = Task.Run(() =>
         {
-            return;
-        }
+            string normalized = tagName.Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
 
-        Library.AddTag(normalized);
-        Guid? id = TagRepo.ResolveTagId(normalized);
-        if (id.HasValue)
-        {
-            if (_fileIdsList.Count == 1)
+            Library.AddTag(normalized);
+            Guid? id = TagRepo.ResolveTagId(normalized);
+            if (id.HasValue)
             {
-                Library.AddTagToFile(_fileIdsList[0], id.Value);
+                if (ids.Count == 1)
+                {
+                    Library.AddTagToFile(ids[0], id.Value);
+                }
+                else
+                {
+                    Library.AddTagToFiles(ids, id.Value);
+                }
             }
-            else
-            {
-                Library.AddTagToFiles(_fileIdsList, id.Value);
-            }
-        }
+        });
     }
 
     private void RemoveTag(Guid tagId)
     {
-        if (_fileIdsList.Count == 1)
+        List<Guid> ids = _fileIdsList.ToList();
+        _ = Task.Run(() =>
         {
-            Library.RemoveTagFromFile(_fileIdsList[0], tagId);
-        }
-        else
-        {
-            Library.RemoveTagFromFiles(_fileIdsList, tagId);
-        }
+            if (ids.Count == 1)
+            {
+                Library.RemoveTagFromFile(ids[0], tagId);
+            }
+            else
+            {
+                Library.RemoveTagFromFiles(ids, tagId);
+            }
+        });
     }
 
     public void Dispose()

@@ -39,22 +39,21 @@ public partial class TagManagerView
     protected override void OnInitialized()
     {
         RefreshTags();
-        Library.LibraryChanged += RefreshData;
+        Library.LibraryChanged += RefreshTags;
         Settings.SettingsChanged += StateHasChanged;
-    }
-
-    private void RefreshData()
-    {
-        _ = InvokeAsync(() =>
-        {
-            RefreshTags();
-            StateHasChanged();
-        });
     }
 
     private void RefreshTags()
     {
-        Tags = Library.GetTags(Settings.Current.TagSortBy, Settings.Current.TagSortDirection);
+        _ = Task.Run(async () =>
+        {
+            List<Tag> tags = Library.GetTags(Settings.Current.TagSortBy, Settings.Current.TagSortDirection);
+            await InvokeAsync(() =>
+            {
+                Tags = tags;
+                StateHasChanged();
+            });
+        });
     }
 
     private void HandleKeyUp(KeyboardEventArgs e)
@@ -132,7 +131,7 @@ public partial class TagManagerView
 
     public void Dispose()
     {
-        Library.LibraryChanged -= RefreshData;
+        Library.LibraryChanged -= RefreshTags;
         Settings.SettingsChanged -= StateHasChanged;
     }
 }

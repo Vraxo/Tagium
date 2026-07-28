@@ -29,17 +29,19 @@ public class AppState : IDisposable
     {
         _library = library;
         _library.LibraryChanged += OnLibraryChanged;
-        RefreshFiles();
+        _ = RefreshFilesAsync();
     }
 
     private void OnLibraryChanged()
     {
-        RefreshFiles();
+        _ = RefreshFilesAsync();
     }
 
-    public void RefreshFiles()
+    public async Task RefreshFilesAsync()
     {
-        _currentFiles = _library.GetFiles(SearchText, IsMissingOnly, CurrentFolderPath);
+        // Offload heavy query rendering to a background thread to prevent UI freezes
+        List<FileEntry> files = await Task.Run(() => _library.GetFiles(SearchText, IsMissingOnly, CurrentFolderPath));
+        _currentFiles = files;
 
         // Adjust page if it goes out of bounds after a filter or library change
         int total = TotalPages;
@@ -120,7 +122,7 @@ public class AppState : IDisposable
             CurrentView = AppView.Files;
         }
 
-        RefreshFiles();
+        _ = RefreshFilesAsync();
     }
 
     public void SetMissingOnly(bool isMissing)
@@ -136,7 +138,7 @@ public class AppState : IDisposable
             CurrentView = AppView.Files;
         }
 
-        RefreshFiles();
+        _ = RefreshFilesAsync();
     }
 
     public void SetFolder(string? path)
@@ -152,7 +154,7 @@ public class AppState : IDisposable
             CurrentView = AppView.Folders;
         }
 
-        RefreshFiles();
+        _ = RefreshFilesAsync();
     }
 
     public void SelectFile(Guid id, bool multiSelect, bool rangeSelect)

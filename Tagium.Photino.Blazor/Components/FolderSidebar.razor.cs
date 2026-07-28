@@ -17,7 +17,7 @@ public partial class FolderSidebar : IDisposable
     {
         LoadRoots();
         AppState.OnChange += OnAppStateChanged;
-        Library.LibraryChanged += OnLibraryChanged;
+        Library.LibraryChanged += LoadRoots;
     }
 
     private void OnAppStateChanged()
@@ -25,49 +25,47 @@ public partial class FolderSidebar : IDisposable
         _ = InvokeAsync(StateHasChanged);
     }
 
-    private void OnLibraryChanged()
-    {
-        _ = InvokeAsync(() =>
-        {
-            LoadRoots();
-            StateHasChanged();
-        });
-    }
-
     private void LoadRoots()
     {
-        List<LibraryRoot> roots = Library.GetRoots().Where(r => r.IsEnabled).OrderBy(r => r.Path.Length).ToList();
-        List<LibraryRoot> pruned = new();
-
-        foreach (var root in roots)
+        _ = Task.Run(async () =>
         {
-            bool isNested = pruned.Any(p =>
-                root.Path.StartsWith(p.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(root.Path, p.Path, StringComparison.OrdinalIgnoreCase));
+            List<LibraryRoot> roots = Library.GetRoots().Where(r => r.IsEnabled).OrderBy(r => r.Path.Length).ToList();
+            List<LibraryRoot> pruned = [];
 
-            if (!isNested)
+            foreach (LibraryRoot root in roots)
             {
-                pruned.Add(root);
+                bool isNested = pruned.Any(p =>
+                    root.Path.StartsWith(p.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(root.Path, p.Path, StringComparison.OrdinalIgnoreCase));
+
+                if (!isNested)
+                {
+                    pruned.Add(root);
+                }
             }
-        }
 
-        List<FolderNode> newRootNodes = new();
+            List<FolderNode> newRootNodes = [];
 
-        foreach (var root in pruned)
-        {
-            var existing = _rootNodes.FirstOrDefault(n => string.Equals(n.Path, root.Path, StringComparison.OrdinalIgnoreCase));
-
-            newRootNodes.Add(new FolderNode
+            foreach (LibraryRoot root in pruned)
             {
-                Path = root.Path,
-                Name = Path.GetFileName(root.Path) is string name && !string.IsNullOrEmpty(name) ? name : root.Path,
-                IsExpanded = existing?.IsExpanded ?? false,
-                Children = existing?.Children ?? [],
-                ChildrenLoaded = existing?.ChildrenLoaded ?? false
-            });
-        }
+                FolderNode? existing = _rootNodes.FirstOrDefault(n => string.Equals(n.Path, root.Path, StringComparison.OrdinalIgnoreCase));
 
-        _rootNodes = newRootNodes;
+                newRootNodes.Add(new FolderNode
+                {
+                    Path = root.Path,
+                    Name = Path.GetFileName(root.Path) is string name && !string.IsNullOrEmpty(name) ? name : root.Path,
+                    IsExpanded = existing?.IsExpanded ?? false,
+                    Children = existing?.Children ?? [],
+                    ChildrenLoaded = existing?.ChildrenLoaded ?? false
+                });
+            }
+
+            await InvokeAsync(() =>
+            {
+                _rootNodes = newRootNodes;
+                StateHasChanged();
+            });
+        });
     }
 
     private void SelectFolder(FolderNode node)
@@ -87,25 +85,33 @@ public partial class FolderSidebar : IDisposable
 
     private void LoadChildren(FolderNode node)
     {
-        try
+        _ = Task.Run(async () =>
         {
-            var subfolders = Library.GetSubfolders(node.Path);
-            node.Children = subfolders.Select(p => new FolderNode
+            try
             {
-                Path = p,
-                Name = Path.GetFileName(p)
-            }).ToList();
-            node.ChildrenLoaded = true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[FolderSidebar] Failed to load subfolders for {node.Path}: {ex.Message}");
-        }
+                List<string> subfolders = Library.GetSubfolders(node.Path);
+
+                await InvokeAsync(() =>
+                {
+                    node.Children = subfolders.Select(p => new FolderNode
+                    {
+                        Path = p,
+                        Name = Path.GetFileName(p)
+                    }).ToList();
+                    node.ChildrenLoaded = true;
+                    StateHasChanged();
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FolderSidebar] Failed to load subfolders for {node.Path}: {ex.Message}");
+            }
+        });
     }
 
     public void Dispose()
     {
         AppState.OnChange -= OnAppStateChanged;
-        Library.LibraryChanged -= OnLibraryChanged;
+        Library.LibraryChanged -= LoadRoots;
     }
 }
