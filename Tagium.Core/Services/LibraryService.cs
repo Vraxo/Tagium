@@ -18,12 +18,11 @@ public class LibraryService
     private readonly UndoService _undoService;
     private readonly LibraryRootRepository _rootRepo;
     private readonly LibraryScanService _scanService;
-    private readonly ExifToolService _exifTool;
-    private CancellationTokenSource? _tagSyncCts;
+    private readonly TagMetadataSyncService _tagSyncService;
 
-    public bool IsTagSyncRunning { get; private set; }
-    public int TagSyncProcessed { get; private set; }
-    public int TagSyncTotal { get; private set; }
+    public bool IsTagSyncRunning => _tagSyncService.IsTagSyncRunning;
+    public int TagSyncProcessed => _tagSyncService.TagSyncProcessed;
+    public int TagSyncTotal => _tagSyncService.TagSyncTotal;
 
     public event Action<int, int>? TagSyncProgress;
     public event Action? TagSyncCompleted;
@@ -39,7 +38,7 @@ public class LibraryService
         UndoService _undoService,
         LibraryRootRepository rootRepo,
         LibraryScanService scanService,
-        ExifToolService exifTool)
+        TagMetadataSyncService tagSyncService)
     {
         _fileRepo = fileRepo;
         _tagRepo = tagRepo;
@@ -50,10 +49,13 @@ public class LibraryService
         this._undoService = _undoService;
         _rootRepo = rootRepo;
         _scanService = scanService;
-        _exifTool = exifTool;
+        _tagSyncService = tagSyncService;
 
         _scanService.ScanCompleted += () => LibraryChanged?.Invoke();
         _scanService.FilesImported += () => LibraryChanged?.Invoke();
+
+        _tagSyncService.TagSyncProgress += (p, t) => TagSyncProgress?.Invoke(p, t);
+        _tagSyncService.TagSyncCompleted += () => TagSyncCompleted?.Invoke();
     }
 
     public void Refresh()
@@ -105,27 +107,7 @@ public class LibraryService
 
     public void AddTagToFile(Guid fileId, Guid tagId)
     {
-        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        bool alreadyHadTag = existingIds.Contains(tagId);
-
-        _fileTagRepo.AddTagToFile(fileId, tagId);
-
-        if (!alreadyHadTag)
-        {
-            _undoService.Push(new TagAssignmentUndoCommand(
-                _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
-                () => LibraryChanged?.Invoke(),
-                tagId,
-                [fileId],
-                wasAdding: true));
-
-            _ = SyncMetadataToFileAsync(fileId);
-        }
-
-        LibraryChanged?.Invoke();
+        AddTagToFiles([fileId], tagId);
     }
 
     public void AddTagToFiles(IEnumerable<Guid> fileIds, Guid tagId)
@@ -154,9 +136,7 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
+                _tagSyncService,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
@@ -164,7 +144,7 @@ public class LibraryService
 
             foreach (Guid fileId in modifiedFiles)
             {
-                _ = SyncMetadataToFileAsync(fileId);
+                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
             }
         }
 
@@ -173,27 +153,7 @@ public class LibraryService
 
     public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
-        List<Guid> existingIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        bool hadTag = existingIds.Contains(tagId);
-
-        _fileTagRepo.RemoveTagFromFile(fileId, tagId);
-
-        if (hadTag)
-        {
-            _undoService.Push(new TagAssignmentUndoCommand(
-                _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
-                () => LibraryChanged?.Invoke(),
-                tagId,
-                [fileId],
-                wasAdding: false));
-
-            _ = SyncMetadataToFileAsync(fileId);
-        }
-
-        LibraryChanged?.Invoke();
+        RemoveTagFromFiles([fileId], tagId);
     }
 
     public void RemoveTagFromFiles(IEnumerable<Guid> fileIds, Guid tagId)
@@ -221,9 +181,7 @@ public class LibraryService
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
-                _exifTool,
-                _fileRepo,
-                _tagRepo,
+                _tagSyncService,
                 () => LibraryChanged?.Invoke(),
                 tagId,
                 modifiedFiles,
@@ -231,7 +189,7 @@ public class LibraryService
 
             foreach (Guid fileId in modifiedFiles)
             {
-                _ = SyncMetadataToFileAsync(fileId);
+                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
             }
         }
 
@@ -381,56 +339,10 @@ public class LibraryService
         if (nameChanged)
         {
             List<Guid> fileIds = _fileTagRepo.GetFileIdsForTag(tag.Id);
-            QueueTagMetadataSync(fileIds);
+            _tagSyncService.QueueTagMetadataSync(fileIds);
         }
 
         LibraryChanged?.Invoke();
-    }
-
-    private void QueueTagMetadataSync(List<Guid> fileIds)
-    {
-        _tagSyncCts?.Cancel();
-        _tagSyncCts = new CancellationTokenSource();
-        CancellationToken token = _tagSyncCts.Token;
-
-        if (fileIds.Count == 0)
-        {
-            return;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            IsTagSyncRunning = true;
-            TagSyncProcessed = 0;
-            TagSyncTotal = fileIds.Count;
-
-            TagSyncProgress?.Invoke(TagSyncProcessed, TagSyncTotal);
-
-            try
-            {
-                foreach (Guid fileId in fileIds)
-                {
-                    if (token.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    await SyncMetadataToFileAsync(fileId);
-
-                    TagSyncProcessed++;
-                    TagSyncProgress?.Invoke(TagSyncProcessed, TagSyncTotal);
-                }
-            }
-            catch (Exception)
-            {
-                // Gracefully log/ignore
-            }
-            finally
-            {
-                IsTagSyncRunning = false;
-                TagSyncCompleted?.Invoke();
-            }
-        }, token);
     }
 
     public void DeleteTag(Guid id)
@@ -454,27 +366,5 @@ public class LibraryService
     public async Task ScanAsync()
     {
         await _scanService.ScanAllAsync();
-    }
-
-    private async Task SyncMetadataToFileAsync(Guid fileId)
-    {
-        FileEntry? file = _fileRepo.GetById(fileId);
-        if (file is null)
-        {
-            return;
-        }
-
-        List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);
-        List<Tag> tags = _tagRepo.GetTagsByIds(tagIds);
-
-        MediaMetadata metadata = new()
-        {
-            Tags = tags.Select(t => t.Name).ToList(),
-            Rating = file.Rating,
-            Title = file.Title,
-            Description = file.Description
-        };
-
-        _ = await Task.Run(() => _exifTool.WriteMetadataAsync(file.Path, metadata));
     }
 }

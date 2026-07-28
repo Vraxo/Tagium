@@ -5,9 +5,7 @@ namespace Tagium.Core.Services;
 
 public class VideoFrameExtractor
 {
-    private const int VideoEarlyCaptureSeconds = 5;
-    private const int VideoDurationThresholdSeconds = 10;
-    private const double VideoLateCaptureRatio = 0.1;
+    private const int DefaultCaptureSeconds = 3;
     private readonly ILogger<VideoFrameExtractor> _logger;
 
     public bool HasFFmpeg { get; }
@@ -34,16 +32,8 @@ public class VideoFrameExtractor
     {
         try
         {
-            _logger.LogDebug("Analyzing duration for video frame extraction: {Path}", sourcePath);
-            TimeSpan? duration = await AnalyzeDurationAsync(sourcePath);
-            if (duration is null)
-            {
-                _logger.LogWarning("Unable to read video length duration for: {Path}", sourcePath);
-                return null;
-            }
-
-            TimeSpan captureTime = CalculateCaptureTime(duration.Value);
-            _logger.LogInformation("Extracting snapshot frame for video {Path} at position {Position}", sourcePath, captureTime);
+            TimeSpan captureTime = TimeSpan.FromSeconds(DefaultCaptureSeconds);
+            _logger.LogInformation("Extracting snapshot frame for video {Path} at default position {Position}", sourcePath, captureTime);
             return await ExtractSnapshotAsync(sourcePath, captureTime);
         }
         catch (Exception ex)
@@ -51,31 +41,6 @@ public class VideoFrameExtractor
             _logger.LogError(ex, "Video processing error during frame extraction for file: {Path}", sourcePath);
             return null;
         }
-    }
-
-    private async Task<TimeSpan?> AnalyzeDurationAsync(string sourcePath)
-    {
-        try
-        {
-            IMediaAnalysis analysis = await FFProbe.AnalyseAsync(sourcePath);
-            return analysis.Duration;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "FFProbe duration analysis failed for file: {Path}", sourcePath);
-            return null;
-        }
-    }
-
-    private static TimeSpan CalculateCaptureTime(TimeSpan duration)
-    {
-        bool isLongVideo = duration.TotalSeconds > VideoDurationThresholdSeconds;
-
-        double seconds = isLongVideo
-            ? VideoEarlyCaptureSeconds
-            : duration.TotalSeconds * VideoLateCaptureRatio;
-
-        return TimeSpan.FromSeconds(seconds);
     }
 
     private async Task<string?> ExtractSnapshotAsync(string sourcePath, TimeSpan captureTime)

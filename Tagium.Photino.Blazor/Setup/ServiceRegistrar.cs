@@ -45,6 +45,7 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<VideoFrameExtractor>();
         _ = services.AddSingleton<ThumbnailService>();
         _ = services.AddSingleton<LibraryScanService>();
+        _ = services.AddSingleton<TagMetadataSyncService>();
         _ = services.AddSingleton<LibraryService>();
         _ = services.AddSingleton<LibraryIntegrityService>();
         _ = services.AddSingleton<DataExportService>();
