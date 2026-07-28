@@ -10,6 +10,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="Dapper" Version="2.1.35" />
 		<PackageReference Include="FFMpegCore" Version="5.4.0" />
 		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
 		<PackageReference Include="SkiaSharp" Version="4.150.1" />
@@ -30,17 +31,37 @@
 ### `Tagium.Core\Data\DatabaseManager.cs`
 
 ```csharp
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using System.Data;
 using Tagium.Core.Helpers;
 
 namespace Tagium.Core.Data;
+
+public class SqliteGuidTypeHandler : SqlMapper.TypeHandler<Guid>
+{
+    public override void SetValue(IDbDataParameter parameter, Guid value)
+    {
+        parameter.Value = value.ToString("N");
+    }
+
+    public override Guid Parse(object value)
+    {
+        return Guid.Parse((string)value);
+    }
+}
 
 public class DatabaseManager
 {
     public string LibraryDbPath { get; }
     public string CacheDbPath { get; }
     private readonly ILogger<DatabaseManager> _logger;
+
+    static DatabaseManager()
+    {
+        SqlMapper.AddTypeHandler(new SqliteGuidTypeHandler());
+    }
 
     public DatabaseManager(ILogger<DatabaseManager> logger)
     {
@@ -56,33 +77,14 @@ public class DatabaseManager
         SqliteConnection connection = new($"Data Source={LibraryDbPath}");
         connection.Open();
 
-        using (SqliteCommand cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;";
-            _ = cmd.ExecuteNonQuery();
-        }
+        connection.Execute("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 
-        bool isAttached = false;
-        using (SqliteCommand cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "PRAGMA database_list;";
-            using SqliteDataReader reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                string name = reader.GetString(1);
-                if (string.Equals(name, "cache", StringComparison.OrdinalIgnoreCase))
-                {
-                    isAttached = true;
-                    break;
-                }
-            }
-        }
+        IEnumerable<dynamic> dbs = connection.Query("PRAGMA database_list;");
+        bool isAttached = dbs.Any(d => string.Equals((string)d.name, "cache", StringComparison.OrdinalIgnoreCase));
 
         if (!isAttached)
         {
-            using SqliteCommand cmd = connection.CreateCommand();
-            cmd.CommandText = $"ATTACH DATABASE '{CacheDbPath}' AS cache;";
-            _ = cmd.ExecuteNonQuery();
+            connection.Execute($"ATTACH DATABASE '{CacheDbPath}' AS cache;");
         }
 
         return connection;
@@ -96,8 +98,7 @@ public class DatabaseManager
         {
             using SqliteConnection conn = new($"Data Source={LibraryDbPath}");
             conn.Open();
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.CommandText = @"
+            conn.Execute(@"
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS Tags (
                     Id TEXT PRIMARY KEY,
@@ -128,8 +129,7 @@ public class DatabaseManager
                     IsEnabled INTEGER NOT NULL DEFAULT 1,
                     LastScanTime INTEGER NULL
                 );
-            ";
-            _ = cmd.ExecuteNonQuery();
+            ");
         }
         catch (Exception ex)
         {
@@ -141,8 +141,7 @@ public class DatabaseManager
         {
             using SqliteConnection conn = new($"Data Source={CacheDbPath}");
             conn.Open();
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.CommandText = @"
+            conn.Execute(@"
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS Files (
                     Id TEXT PRIMARY KEY,
@@ -164,8 +163,7 @@ public class DatabaseManager
                     FOREIGN KEY(FileId) REFERENCES Files(Id) ON DELETE CASCADE,
                     PRIMARY KEY (FileId, TagId)
                 );
-            ";
-            _ = cmd.ExecuteNonQuery();
+            ");
         }
         catch (Exception ex)
         {
@@ -185,15 +183,13 @@ public class DatabaseManager
         {
             try
             {
-                using SqliteCommand cmd = conn.CreateCommand();
                 string colType = col switch
                 {
                     "Rating" => "INTEGER NULL",
                     "Title" or "Description" => "TEXT NULL",
                     _ => "INTEGER NOT NULL DEFAULT 0"
                 };
-                cmd.CommandText = $"ALTER TABLE cache.Files ADD COLUMN {col} {colType};";
-                _ = cmd.ExecuteNonQuery();
+                conn.Execute($"ALTER TABLE cache.Files ADD COLUMN {col} {colType};");
                 _logger.LogInformation("Successfully migrated column {Column} in cache.Files", col);
             }
             catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
@@ -208,9 +204,7 @@ public class DatabaseManager
 
         try
         {
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.CommandText = "ALTER TABLE Tags ADD COLUMN Category TEXT NULL;";
-            _ = cmd.ExecuteNonQuery();
+            conn.Execute("ALTER TABLE Tags ADD COLUMN Category TEXT NULL;");
             _logger.LogInformation("Successfully migrated column Category in Tags");
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
@@ -230,6 +224,7 @@ public class DatabaseManager
 ### `Tagium.Core\Data\FileRepository.cs`
 
 ```csharp
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
@@ -247,12 +242,9 @@ public class FileRepository
 
     public List<FileEntry> GetAll(SortBy sortBy, SortDirection direction)
     {
-        List<FileEntry> files = [];
         using SqliteConnection conn = _db.GetConnection();
-
         string orderBy = GetOrderByClause(sortBy, direction);
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $@"
+        string sql = $@"
             SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files F
             WHERE EXISTS (
                 SELECT 1 FROM LibraryRoots LR 
@@ -260,25 +252,17 @@ public class FileRepository
             )
             {orderBy}";
 
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            files.Add(ReadFile(reader));
-        }
-        return files;
+        return conn.Query<FileEntry>(sql).ToList();
     }
 
     public List<FileEntry> GetFilesWithTags(SortBy sortBy, SortDirection direction, bool includeMissing = false)
     {
-        List<FileEntry> files = [];
         using SqliteConnection conn = _db.GetConnection();
-
         string orderBy = GetOrderByClause(sortBy, direction);
         string rootFilter = $"EXISTS (SELECT 1 FROM LibraryRoots LR WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}'))";
         string missingFilter = includeMissing ? $"WHERE {rootFilter}" : $"WHERE {rootFilter} AND F.IsMissing = 0";
 
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $@"
+        string sql = $@"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 F.Rating, F.Title, F.Description,
@@ -290,28 +274,21 @@ public class FileRepository
             GROUP BY F.Id
             {orderBy}";
 
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        while (reader.Read())
+        IEnumerable<FileEntryDto> dtos = conn.Query<FileEntryDto>(sql);
+        foreach (FileEntryDto dto in dtos)
         {
-            FileEntry file = ReadFile(reader);
-
-            if (!reader.IsDBNull(11))
+            if (!string.IsNullOrEmpty(dto.TagData))
             {
-                string tagData = reader.GetString(11);
-                file.Tags = ParseTagData(tagData);
+                dto.Tags = ParseTagData(dto.TagData);
             }
-
-            files.Add(file);
         }
-        return files;
+        return dtos.Cast<FileEntry>().ToList();
     }
 
     public FileEntry? GetFileWithTagsById(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             SELECT 
                 F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
                 F.Rating, F.Title, F.Description,
@@ -322,81 +299,55 @@ public class FileRepository
             WHERE F.Id = @Id
             GROUP BY F.Id";
 
-        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        if (reader.Read())
+        FileEntryDto? dto = conn.QueryFirstOrDefault<FileEntryDto>(sql, new { Id = id });
+        if (dto != null && !string.IsNullOrEmpty(dto.TagData))
         {
-            FileEntry file = ReadFile(reader);
-            if (!reader.IsDBNull(11))
-            {
-                string tagData = reader.GetString(11);
-                file.Tags = ParseTagData(tagData);
-            }
-            return file;
+            dto.Tags = ParseTagData(dto.TagData);
         }
-        return null;
+        return dto;
     }
 
     public FileEntry? GetById(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        return reader.Read() ? ReadFile(reader) : null;
+        return conn.QueryFirstOrDefault<FileEntry>(
+            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Id = @Id",
+            new { Id = id });
     }
 
     public FileEntry? GetByHash(string hash)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Hash = @Hash";
-        _ = cmd.Parameters.AddWithValue("@Hash", hash);
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        return reader.Read() ? ReadFile(reader) : null;
+        return conn.QueryFirstOrDefault<FileEntry>(
+            "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Hash = @Hash",
+            new { Hash = hash });
     }
 
     public List<FileEntry> GetFilesUnderPath(string rootPath)
     {
-        List<FileEntry> files = [];
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
-        _ = cmd.Parameters.AddWithValue("@Path", rootPath);
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            files.Add(ReadFile(reader));
-        }
-        return files;
+        string sql = $"SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
+        return conn.Query<FileEntry>(sql, new { Path = rootPath }).ToList();
     }
 
     public bool Add(string path, string hash, long size, long modifiedTime)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime, Rating, Title, Description) 
             VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime, NULL, NULL, NULL)";
 
-        Guid newId = Guid.NewGuid();
-        _ = cmd.Parameters.AddWithValue("@Id", newId.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Path", path);
-        _ = cmd.Parameters.AddWithValue("@Name", Path.GetFileName(path));
-        _ = cmd.Parameters.AddWithValue("@Hash", hash);
-        _ = cmd.Parameters.AddWithValue("@Size", size);
-        _ = cmd.Parameters.AddWithValue("@ModifiedTime", modifiedTime);
-
         try
         {
-            _ = cmd.ExecuteNonQuery();
+            conn.Execute(sql, new
+            {
+                Id = Guid.NewGuid(),
+                Path = path,
+                Name = Path.GetFileName(path),
+                Hash = hash,
+                Size = size,
+                ModifiedTime = modifiedTime
+            });
             return true;
         }
         catch
@@ -408,102 +359,42 @@ public class FileRepository
     public void Restore(FileEntry entry)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description) 
             VALUES (@Id, @Path, @Name, @Hash, @DateAdded, @IsMissing, @Size, @ModifiedTime, @Rating, @Title, @Description)";
-
-        _ = cmd.Parameters.AddWithValue("@Id", entry.Id.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Path", entry.Path);
-        _ = cmd.Parameters.AddWithValue("@Name", entry.Name);
-        _ = cmd.Parameters.AddWithValue("@Hash", (object?)entry.Hash ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@DateAdded", entry.DateAdded);
-        _ = cmd.Parameters.AddWithValue("@IsMissing", entry.IsMissing ? 1 : 0);
-        _ = cmd.Parameters.AddWithValue("@Size", entry.Size);
-        _ = cmd.Parameters.AddWithValue("@ModifiedTime", entry.ModifiedTime);
-        _ = cmd.Parameters.AddWithValue("@Rating", (object?)entry.Rating ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Title", (object?)entry.Title ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Description", (object?)entry.Description ?? DBNull.Value);
-
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute(sql, entry);
     }
 
     public void Update(FileEntry file)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             UPDATE cache.Files 
             SET Path = @Path, Name = @Name, Hash = @Hash, IsMissing = @IsMissing, Size = @Size, ModifiedTime = @ModifiedTime, 
                 Rating = @Rating, Title = @Title, Description = @Description 
             WHERE Id = @Id";
-
-        _ = cmd.Parameters.AddWithValue("@Id", file.Id.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Path", file.Path);
-        _ = cmd.Parameters.AddWithValue("@Name", file.Name);
-        _ = cmd.Parameters.AddWithValue("@Hash", (object?)file.Hash ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@IsMissing", file.IsMissing ? 1 : 0);
-        _ = cmd.Parameters.AddWithValue("@Size", file.Size);
-        _ = cmd.Parameters.AddWithValue("@ModifiedTime", file.ModifiedTime);
-        _ = cmd.Parameters.AddWithValue("@Rating", (object?)file.Rating ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Title", (object?)file.Title ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Description", (object?)file.Description ?? DBNull.Value);
-
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute(sql, file);
     }
 
     public void Remove(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM cache.Files WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("DELETE FROM cache.Files WHERE Id = @Id", new { Id = id });
     }
 
     public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
         using SqliteConnection conn = _db.GetConnection();
         using SqliteTransaction trans = conn.BeginTransaction();
-
-        foreach (Guid id in fileIds)
-        {
-            using SqliteCommand cmd = conn.CreateCommand();
-            cmd.Transaction = trans;
-            cmd.CommandText = "UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id";
-            _ = cmd.Parameters.AddWithValue("@IsMissing", isMissing ? 1 : 0);
-            _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-            _ = cmd.ExecuteNonQuery();
-        }
+        var parameters = fileIds.Select(id => new { Id = id, IsMissing = isMissing });
+        conn.Execute("UPDATE cache.Files SET IsMissing = @IsMissing WHERE Id = @Id", parameters, trans);
         trans.Commit();
     }
 
     public void RemoveMissingFiles()
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM cache.Files WHERE IsMissing = 1";
-        _ = cmd.ExecuteNonQuery();
-    }
-
-    private static FileEntry ReadFile(SqliteDataReader reader)
-    {
-        return new FileEntry
-        {
-            Id = Guid.Parse(reader.GetString(0)),
-            Path = reader.GetString(1),
-            Name = reader.GetString(2),
-            Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
-            DateAdded = reader.GetInt64(4),
-            IsMissing = reader.GetBoolean(5),
-            Size = reader.GetInt64(6),
-            ModifiedTime = reader.GetInt64(7),
-            Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
-            Title = reader.IsDBNull(9) ? null : reader.GetString(9),
-            Description = reader.IsDBNull(10) ? null : reader.GetString(10),
-            Tags = []
-        };
+        conn.Execute("DELETE FROM cache.Files WHERE IsMissing = 1");
     }
 
     private List<Tag> ParseTagData(string tagData)
@@ -543,6 +434,11 @@ public class FileRepository
         string dir = direction == SortDirection.Desc ? "DESC" : "ASC";
         return $"ORDER BY {col} {dir}";
     }
+
+    private class FileEntryDto : FileEntry
+    {
+        public string? TagData { get; set; }
+    }
 }
 ```
 
@@ -551,6 +447,7 @@ public class FileRepository
 ### `Tagium.Core\Data\FileSearchRepository.cs`
 
 ```csharp
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Tagium.Core.Helpers;
@@ -583,37 +480,16 @@ public class FileSearchRepository
 
         CompiledQuery compiled = _compiler.Compile(searchText, sortBy, sortDirection);
 
-        using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = compiled.Sql;
-
+        DynamicParameters dynamicParams = new();
         foreach (var (name, value) in compiled.Parameters)
         {
-            _ = cmd.Parameters.AddWithValue(name, value);
+            dynamicParams.Add(name, value);
         }
 
-        _logger.LogDebug("Executing SQL Query: {Sql}", cmd.CommandText);
+        using SqliteConnection conn = _db.GetConnection();
+        _logger.LogDebug("Executing SQL Query: {Sql}", compiled.Sql);
 
-        List<FileEntry> files = [];
-        using SqliteDataReader reader = cmd.ExecuteReader();
-
-        while (reader.Read())
-        {
-            files.Add(new FileEntry
-            {
-                Id = Guid.Parse(reader.GetString(0)),
-                Path = reader.GetString(1),
-                Name = reader.GetString(2),
-                Hash = reader.IsDBNull(3) ? null : reader.GetString(3),
-                DateAdded = reader.GetInt64(4),
-                IsMissing = reader.GetBoolean(5),
-                Size = reader.GetInt64(6),
-                ModifiedTime = reader.GetInt64(7),
-                Rating = reader.IsDBNull(8) ? null : reader.GetInt32(8),
-                Title = reader.IsDBNull(9) ? null : reader.GetString(9),
-                Description = reader.IsDBNull(10) ? null : reader.GetString(10)
-            });
-        }
+        List<FileEntry> files = conn.Query<FileEntry>(compiled.Sql, dynamicParams).ToList();
 
         _logger.LogInformation("Database query execution completed, returned {Count} items", files.Count);
         return files;
@@ -626,6 +502,7 @@ public class FileSearchRepository
 ### `Tagium.Core\Data\FileTagRepository.cs`
 
 ```csharp
+using Dapper;
 using Microsoft.Data.Sqlite;
 
 namespace Tagium.Core.Data;
@@ -642,63 +519,25 @@ public class FileTagRepository
     public void AddTagToFile(Guid fileId, Guid tagId)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO cache.FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
-        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
-        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("INSERT OR IGNORE INTO cache.FileTags (FileId, TagId) VALUES (@FileId, @TagId)", new { FileId = fileId, TagId = tagId });
     }
 
     public void RemoveTagFromFile(Guid fileId, Guid tagId)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM cache.FileTags WHERE FileId = @FileId AND TagId = @TagId";
-        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
-        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("DELETE FROM cache.FileTags WHERE FileId = @FileId AND TagId = @TagId", new { FileId = fileId, TagId = tagId });
     }
 
     public List<Guid> GetTagIdsForFile(Guid fileId)
     {
-        List<Guid> ids = [];
-
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT TagId FROM cache.FileTags WHERE FileId = @FileId";
-        cmd.Parameters.AddWithValue("@FileId", fileId.ToString("N"));
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-
-        while (reader.Read())
-        {
-            ids.Add(Guid.Parse(reader.GetString(0)));
-        }
-
-        return ids;
+        return conn.Query<Guid>("SELECT TagId FROM cache.FileTags WHERE FileId = @FileId", new { FileId = fileId }).ToList();
     }
 
     public List<Guid> GetFileIdsForTag(Guid tagId)
     {
-        List<Guid> ids = [];
-
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT FileId FROM cache.FileTags WHERE TagId = @TagId";
-        cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-
-        while (reader.Read())
-        {
-            ids.Add(Guid.Parse(reader.GetString(0)));
-        }
-
-        return ids;
+        return conn.Query<Guid>("SELECT FileId FROM cache.FileTags WHERE TagId = @TagId", new { TagId = tagId }).ToList();
     }
 }
 ```
@@ -708,6 +547,7 @@ public class FileTagRepository
 ### `Tagium.Core\Data\LibraryRootRepository.cs`
 
 ```csharp
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Tagium.Core.Models;
 
@@ -724,41 +564,20 @@ public class LibraryRootRepository
 
     public List<LibraryRoot> GetAll()
     {
-        List<LibraryRoot> roots = [];
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, IsEnabled, LastScanTime FROM LibraryRoots ORDER BY Path ASC";
-
-        using SqliteDataReader reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            roots.Add(ReadRoot(reader));
-        }
-        return roots;
+        return conn.Query<LibraryRoot>("SELECT Id, Path, IsEnabled, LastScanTime FROM LibraryRoots ORDER BY Path ASC").ToList();
     }
 
     public void Add(string path)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO LibraryRoots (Id, Path, IsEnabled, LastScanTime) VALUES (@Id, @Path, 1, NULL)";
-        _ = cmd.Parameters.AddWithValue("@Id", Guid.NewGuid().ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Path", path);
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("INSERT OR IGNORE INTO LibraryRoots (Id, Path, IsEnabled, LastScanTime) VALUES (@Id, @Path, 1, NULL)", new { Id = Guid.NewGuid(), Path = path });
     }
 
     public void Update(LibraryRoot root)
     {
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "UPDATE LibraryRoots SET IsEnabled = @IsEnabled, LastScanTime = @LastScanTime WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", root.Id.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@IsEnabled", root.IsEnabled ? 1 : 0);
-        _ = cmd.Parameters.AddWithValue("@LastScanTime", (object?)root.LastScanTime ?? DBNull.Value);
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("UPDATE LibraryRoots SET IsEnabled = @IsEnabled, LastScanTime = @LastScanTime WHERE Id = @Id", root);
     }
 
     public void Delete(Guid id, string path)
@@ -768,22 +587,8 @@ public class LibraryRootRepository
 
         try
         {
-            using (SqliteCommand cmd = conn.CreateCommand())
-            {
-                cmd.Transaction = trans;
-                cmd.CommandText = "DELETE FROM LibraryRoots WHERE Id = @Id";
-                _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-                _ = cmd.ExecuteNonQuery();
-            }
-
-            using (SqliteCommand cmd = conn.CreateCommand())
-            {
-                cmd.Transaction = trans;
-                cmd.CommandText = $"DELETE FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'";
-                _ = cmd.Parameters.AddWithValue("@Path", path);
-                _ = cmd.ExecuteNonQuery();
-            }
-
+            conn.Execute("DELETE FROM LibraryRoots WHERE Id = @Id", new { Id = id }, trans);
+            conn.Execute($"DELETE FROM cache.Files WHERE Path = @Path OR SUBSTR(Path, 1, LENGTH(@Path) + 1) = @Path || '{Path.DirectorySeparatorChar}'", new { Path = path }, trans);
             trans.Commit();
         }
         catch
@@ -791,17 +596,6 @@ public class LibraryRootRepository
             trans.Rollback();
             throw;
         }
-    }
-
-    private static LibraryRoot ReadRoot(SqliteDataReader reader)
-    {
-        return new LibraryRoot
-        {
-            Id = Guid.Parse(reader.GetString(0)),
-            Path = reader.GetString(1),
-            IsEnabled = reader.GetBoolean(2),
-            LastScanTime = reader.IsDBNull(3) ? null : reader.GetInt64(3)
-        };
     }
 }
 ```
@@ -1086,6 +880,7 @@ public class SearchQueryCompiler
 ### `Tagium.Core\Data\TagRepository.cs`
 
 ```csharp
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Tagium.Core.Models;
 using Tagium.Core.Settings;
@@ -1103,26 +898,16 @@ public class TagRepository
 
     public List<Tag> GetAll(TagSortBy sortBy = TagSortBy.Name, SortDirection direction = SortDirection.Asc)
     {
-        List<Tag> tags = [];
         using SqliteConnection conn = _db.GetConnection();
-
         string orderBy = GetOrderByClause(sortBy, direction);
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = $@"
+        string sql = $@"
             SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount, T.Category
             FROM Tags T
             LEFT JOIN cache.FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id
             {orderBy}";
 
-        using SqliteDataReader reader = cmd.ExecuteReader();
-
-        while (reader.Read())
-        {
-            tags.Add(ReadTag(reader));
-        }
-
-        return tags;
+        return conn.Query<Tag>(sql).ToList();
     }
 
     private static string GetOrderByClause(TagSortBy sortBy, SortDirection direction)
@@ -1145,191 +930,92 @@ public class TagRepository
             return [];
         }
 
-        List<Tag> tags = [];
         using SqliteConnection conn = _db.GetConnection();
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) as FileCount, T.Category
             FROM Tags T
             LEFT JOIN cache.FileTags FT ON T.Id = FT.TagId
-            WHERE T.Id IN (" + string.Join(",", idList.Select(id => $"'{id:N}'")) + @")
+            WHERE T.Id IN @Ids
             GROUP BY T.Id";
 
-        using SqliteDataReader reader = cmd.ExecuteReader();
-
-        while (reader.Read())
-        {
-            tags.Add(ReadTag(reader));
-        }
-
-        return tags;
+        return conn.Query<Tag>(sql, new { Ids = idList }).ToList();
     }
 
     public void Add(string name, string colorHex, string? emoji, string? category = null)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO Tags (Id, Name, ColorHex, Emoji, Category) VALUES (@Id, @Name, @Color, @Emoji, @Category)";
-        _ = cmd.Parameters.AddWithValue("@Id", Guid.NewGuid().ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Name", name);
-        _ = cmd.Parameters.AddWithValue("@Color", colorHex);
-        _ = cmd.Parameters.AddWithValue("@Emoji", (object?)emoji ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Category", (object?)category ?? DBNull.Value);
-
-        try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore duplicates */ }
+        try
+        {
+            conn.Execute("INSERT INTO Tags (Id, Name, ColorHex, Emoji, Category) VALUES (@Id, @Name, @ColorHex, @Emoji, @Category)",
+                new { Id = Guid.NewGuid(), Name = name, ColorHex = colorHex, Emoji = emoji, Category = category });
+        }
+        catch { /* Ignore duplicates */ }
     }
 
     public void Update(Tag tag)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = @"
+        string sql = @"
             UPDATE Tags 
-            SET Name = @Name, ColorHex = @Color, Emoji = @Emoji, Category = @Category 
+            SET Name = @Name, ColorHex = @ColorHex, Emoji = @Emoji, Category = @Category 
             WHERE Id = @Id";
 
-        _ = cmd.Parameters.AddWithValue("@Id", tag.Id.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Name", tag.Name);
-        _ = cmd.Parameters.AddWithValue("@Color", tag.ColorHex);
-        _ = cmd.Parameters.AddWithValue("@Emoji", (object?)tag.Emoji ?? DBNull.Value);
-        _ = cmd.Parameters.AddWithValue("@Category", (object?)tag.Category ?? DBNull.Value);
-
-        try { _ = cmd.ExecuteNonQuery(); } catch { /* Ignore name collision */ }
+        try { conn.Execute(sql, tag); } catch { /* Ignore name collision */ }
     }
 
     public void Delete(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM Tags WHERE Id = @Id";
-        _ = cmd.Parameters.AddWithValue("@Id", id.ToString("N"));
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("DELETE FROM Tags WHERE Id = @Id", new { Id = id });
     }
 
     public void AddHierarchy(Guid parentId, Guid childId)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO TagHierarchy (ParentTagId, ChildTagId) VALUES (@Parent, @Child)";
-        _ = cmd.Parameters.AddWithValue("@Parent", parentId.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Child", childId.ToString("N"));
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("INSERT OR IGNORE INTO TagHierarchy (ParentTagId, ChildTagId) VALUES (@Parent, @Child)", new { Parent = parentId, Child = childId });
     }
 
     public void RemoveHierarchy(Guid parentId, Guid childId)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM TagHierarchy WHERE ParentTagId = @Parent AND ChildTagId = @Child";
-        _ = cmd.Parameters.AddWithValue("@Parent", parentId.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Child", childId.ToString("N"));
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("DELETE FROM TagHierarchy WHERE ParentTagId = @Parent AND ChildTagId = @Child", new { Parent = parentId, Child = childId });
     }
 
     public List<Guid> GetChildren(Guid parentId)
     {
-        List<Guid> list = [];
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT ChildTagId FROM TagHierarchy WHERE ParentTagId = @Parent";
-        _ = cmd.Parameters.AddWithValue("@Parent", parentId.ToString("N"));
-        using SqliteDataReader r = cmd.ExecuteReader();
-        while (r.Read())
-        {
-            list.Add(Guid.Parse(r.GetString(0)));
-        }
-        return list;
+        return conn.Query<Guid>("SELECT ChildTagId FROM TagHierarchy WHERE ParentTagId = @Parent", new { Parent = parentId }).ToList();
     }
 
     public List<Guid> GetParents(Guid childId)
     {
-        List<Guid> list = [];
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT ParentTagId FROM TagHierarchy WHERE ChildTagId = @Child";
-        _ = cmd.Parameters.AddWithValue("@Child", childId.ToString("N"));
-        using SqliteDataReader r = cmd.ExecuteReader();
-        while (r.Read())
-        {
-            list.Add(Guid.Parse(r.GetString(0)));
-        }
-        return list;
+        return conn.Query<Guid>("SELECT ParentTagId FROM TagHierarchy WHERE ChildTagId = @Child", new { Child = childId }).ToList();
     }
 
     public void AddAlias(Guid tagId, string alias)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT OR IGNORE INTO TagAliases (Id, TagId, Alias) VALUES (@Id, @TagId, @Alias)";
-        _ = cmd.Parameters.AddWithValue("@Id", Guid.NewGuid().ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Alias", alias);
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("INSERT OR IGNORE INTO TagAliases (Id, TagId, Alias) VALUES (@Id, @TagId, @Alias)", new { Id = Guid.NewGuid(), TagId = tagId, Alias = alias });
     }
 
     public void RemoveAlias(Guid tagId, string alias)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM TagAliases WHERE TagId = @TagId AND Alias = @Alias";
-        _ = cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
-        _ = cmd.Parameters.AddWithValue("@Alias", alias);
-        _ = cmd.ExecuteNonQuery();
+        conn.Execute("DELETE FROM TagAliases WHERE TagId = @TagId AND Alias = @Alias", new { TagId = tagId, Alias = alias });
     }
 
     public List<string> GetAliases(Guid tagId)
     {
-        List<string> list = [];
         using SqliteConnection conn = _db.GetConnection();
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Alias FROM TagAliases WHERE TagId = @TagId ORDER BY Alias ASC";
-        _ = cmd.Parameters.AddWithValue("@TagId", tagId.ToString("N"));
-        using SqliteDataReader r = cmd.ExecuteReader();
-        while (r.Read())
-        {
-            list.Add(r.GetString(0));
-        }
-        return list;
+        return conn.Query<string>("SELECT Alias FROM TagAliases WHERE TagId = @TagId ORDER BY Alias ASC", new { TagId = tagId }).ToList();
     }
 
     public Guid? ResolveTagId(string input)
     {
         using SqliteConnection conn = _db.GetConnection();
-        using (SqliteCommand cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = "SELECT Id FROM Tags WHERE Name = @Name";
-            _ = cmd.Parameters.AddWithValue("@Name", input);
-            string? id = (string?)cmd.ExecuteScalar();
-            if (id != null)
-            {
-                return Guid.Parse(id);
-            }
-        }
-        using (SqliteCommand cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = "SELECT TagId FROM TagAliases WHERE Alias = @Alias";
-            _ = cmd.Parameters.AddWithValue("@Alias", input);
-            string? id = (string?)cmd.ExecuteScalar();
-            if (id != null)
-            {
-                return Guid.Parse(id);
-            }
-        }
-        return null;
-    }
-
-    private static Tag ReadTag(SqliteDataReader reader)
-    {
-        return new Tag
-        {
-            Id = Guid.Parse(reader.GetString(0)),
-            Name = reader.GetString(1),
-            ColorHex = reader.GetString(2),
-            Emoji = reader.IsDBNull(3) ? null : reader.GetString(3),
-            FileCount = reader.GetInt32(4),
-            Category = reader.IsDBNull(5) ? null : reader.GetString(5)
-        };
+        return conn.QueryFirstOrDefault<Guid?>("SELECT Id FROM Tags WHERE Name = @Name", new { Name = input }) ??
+               conn.QueryFirstOrDefault<Guid?>("SELECT TagId FROM TagAliases WHERE Alias = @Alias", new { Alias = input });
     }
 }
 ```
@@ -3851,206 +3537,6 @@ public class FileExportData
     public int? Rating { get; set; }
     public string? Title { get; set; }
     public string? Description { get; set; }
-}
-```
-
----
-
-### `Tagium.Core\Services\DataMerge\DataMergeService.cs`
-
-```csharp
-using Microsoft.Data.Sqlite;
-using Tagium.Core.Data;
-using Tagium.Core.Models;
-using Tagium.Core.Settings;
-
-namespace Tagium.Core.Services.DataMerge;
-
-public class DatabaseMergeService
-{
-    private readonly FileRepository _targetFileRepo;
-    private readonly TagRepository _targetTagRepo;
-    private readonly FileTagRepository _targetFileTagRepo;
-
-    public DatabaseMergeService(
-        DatabaseManager targetDb,
-        FileRepository targetFileRepo,
-        TagRepository targetTagRepo,
-        FileTagRepository targetFileTagRepo)
-    {
-        _targetFileRepo = targetFileRepo;
-        _targetTagRepo = targetTagRepo;
-        _targetFileTagRepo = targetFileTagRepo;
-    }
-
-    public MergeResult Merge(string sourceDbPath)
-    {
-        MergeResult result = new();
-
-        string sourceConnString = $"Data Source={sourceDbPath}";
-        using SqliteConnection sourceConn = new(sourceConnString);
-        sourceConn.Open();
-
-        List<Tag> sourceTags = LoadTags(sourceConn);
-        List<FileEntry> sourceFiles = LoadFiles(sourceConn);
-        Dictionary<Guid, List<Guid>> sourceFileTagMap = LoadFileTags(sourceConn);
-
-        Dictionary<string, Tag> targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, FileEntry> targetFiles = _targetFileRepo.GetAll(SortBy.Path, SortDirection.Asc)
-            .Where(f => f.Hash is not null)
-            .ToDictionary(f => f.Hash!);
-
-        foreach (Tag sTag in sourceTags)
-        {
-            if (!targetTags.ContainsKey(sTag.Name))
-            {
-                _targetTagRepo.Add(sTag.Name, sTag.ColorHex, sTag.Emoji);
-                result.NewTags++;
-            }
-        }
-
-        targetTags = _targetTagRepo.GetAll().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
-
-        foreach (FileEntry sFile in sourceFiles)
-        {
-            if (sFile.Hash is null || targetFiles.ContainsKey(sFile.Hash))
-            {
-                continue;
-            }
-
-            _ = _targetFileRepo.Add(sFile.Path, sFile.Hash, sFile.Size, sFile.ModifiedTime);
-            result.NewFiles++;
-
-            FileEntry? added = _targetFileRepo.GetByHash(sFile.Hash);
-            if (added is null)
-            {
-                continue;
-            }
-
-            added.Rating = sFile.Rating;
-            added.Title = sFile.Title;
-            added.Description = sFile.Description;
-            _targetFileRepo.Update(added);
-
-            if (!sourceFileTagMap.TryGetValue(sFile.Id, out List<Guid>? sTagIds))
-            {
-                continue;
-            }
-
-            foreach (Guid sTagId in sTagIds)
-            {
-                Tag? sourceTag = sourceTags.FirstOrDefault(t => t.Id == sTagId);
-                if (sourceTag is null)
-                {
-                    continue;
-                }
-
-                Tag? targetTag = targetTags.GetValueOrDefault(sourceTag.Name);
-                if (targetTag is null)
-                {
-                    continue;
-                }
-
-                _targetFileTagRepo.AddTagToFile(added.Id, targetTag.Id);
-                result.NewAssociations++;
-            }
-        }
-
-        return result;
-    }
-
-    private static List<Tag> LoadTags(SqliteConnection conn)
-    {
-        List<Tag> list = [];
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Name, ColorHex, Emoji FROM Tags";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
-        {
-            list.Add(new Tag
-            {
-                Id = Guid.Parse(r.GetString(0)),
-                Name = r.GetString(1),
-                ColorHex = r.GetString(2),
-                Emoji = r.IsDBNull(3) ? null : r.GetString(3)
-            });
-        }
-
-        return list;
-    }
-
-    private static List<FileEntry> LoadFiles(SqliteConnection conn)
-    {
-        List<FileEntry> list = [];
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Path, Name, Hash, DateAdded, IsMissing, Size, ModifiedTime, Rating, Title, Description FROM Files";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
-        {
-            list.Add(new()
-            {
-                Id = Guid.Parse(r.GetString(0)),
-                Path = r.GetString(1),
-                Name = r.GetString(2),
-                Hash = r.IsDBNull(3) ? null : r.GetString(3),
-                DateAdded = r.GetInt64(4),
-                IsMissing = r.GetBoolean(5),
-                Size = r.GetInt64(6),
-                ModifiedTime = r.GetInt64(7),
-                Rating = r.IsDBNull(8) ? null : r.GetInt32(8),
-                Title = r.IsDBNull(9) ? null : r.GetString(9),
-                Description = r.IsDBNull(10) ? null : r.GetString(10)
-            });
-        }
-
-        return list;
-    }
-
-    private static Dictionary<Guid, List<Guid>> LoadFileTags(SqliteConnection conn)
-    {
-        Dictionary<Guid, List<Guid>> map = [];
-
-        using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT FileId, TagId FROM FileTags";
-
-        using SqliteDataReader r = cmd.ExecuteReader();
-
-        while (r.Read())
-        {
-            Guid fid = Guid.Parse(r.GetString(0));
-            Guid tid = Guid.Parse(r.GetString(1));
-
-            if (!map.TryGetValue(fid, out List<Guid>? value))
-            {
-                value = [];
-                map[fid] = value;
-            }
-
-            value.Add(tid);
-        }
-
-        return map;
-    }
-}
-```
-
----
-
-### `Tagium.Core\Services\DataMerge\MergeResult.cs`
-
-```csharp
-namespace Tagium.Core.Services.DataMerge;
-
-public class MergeResult()
-{
-    public int NewFiles { get; set; }
-    public int NewTags { get; set; }
-    public int NewAssociations { get; set; }
 }
 ```
 
@@ -7408,7 +6894,7 @@ public static class SchemeHandlers
 
 ---
 
-### `Tagium.Photino.Blazor\Setup\ServiceRegister.cs`
+### `Tagium.Photino.Blazor\Setup\ServiceRegistrar.cs`
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -7417,7 +6903,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Helpers;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
-using Tagium.Core.Services.DataMerge;
 using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
@@ -7462,7 +6947,6 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<LibraryService>();
         _ = services.AddSingleton<LibraryIntegrityService>();
         _ = services.AddSingleton<DataExportService>();
-        _ = services.AddSingleton<DatabaseMergeService>();
 
         // UI - Components
         _ = services.AddTransient<SearchInput>();
@@ -8579,7 +8063,7 @@ public partial class DuplicateFileModal
             <div class="settings-panel">
                 <div class="panel-header">
                     <h4>Maintenance & Database Tools</h4>
-                    <p>Integrity diagnostic scanning, data migration imports, and catalog backups.</p>
+                    <p>Integrity diagnostic scanning, data migration exports, and catalog backups.</p>
                 </div>
 
                 <div class="maintenance-group">
@@ -8604,31 +8088,13 @@ public partial class DuplicateFileModal
 
                 <div class="maintenance-group">
                     <h5>Export & Backups</h5>
+                    <p class="section-hint">Export catalog data to flat files, or backup and restore the local library configurations.</p>
                     <div class="btn-row">
                         <button class="btn" @onclick="ExportJson">Export JSON</button>
                         <button class="btn" @onclick="ExportCsv">Export CSV</button>
                         <button class="btn" @onclick="BackupDb">Backup DB</button>
+                        <button class="btn btn-danger" @onclick="RestoreDb">Restore DB...</button>
                     </div>
-                </div>
-
-                <hr />
-
-                <div class="maintenance-group">
-                    <h5>Database Merge & Restore</h5>
-                    <p class="section-hint">Combine indices from an alternate database file, or run a backup recovery.</p>
-                    <div class="btn-row">
-                        <button class="btn" @onclick="MergeDb">Merge Alternate...</button>
-                        <button class="btn btn-danger" @onclick="RestoreDb">Restore Backup...</button>
-                    </div>
-
-                    @if (MergeResult is not null)
-                    {
-                        <div class="result-box">
-                            New Files: @MergeResult.NewFiles <br />
-                            New Tags: @MergeResult.NewTags <br />
-                            Associations: @MergeResult.NewAssociations
-                        </div>
-                    }
                 </div>
             </div>
         }
@@ -8647,7 +8113,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services;
 using Tagium.Core.Services.DataExport;
-using Tagium.Core.Services.DataMerge;
 using Tagium.Core.Services.LibraryIntegrity;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Services;
@@ -8662,7 +8127,6 @@ public partial class SettingsModal : IDisposable
     [Inject] private SettingsManager Settings { get; set; } = default!;
     [Inject] private LibraryIntegrityService IntegrityService { get; set; } = default!;
     [Inject] private DataExportService ExportService { get; set; } = default!;
-    [Inject] private DatabaseMergeService MergeService { get; set; } = default!;
     [Inject] private DatabaseManager DbManager { get; set; } = default!;
     [Inject] private ToastService Toast { get; set; } = default!;
     [Inject] private ModalService ModalService { get; set; } = default!;
@@ -8674,7 +8138,6 @@ public partial class SettingsModal : IDisposable
 
     private List<LibraryRoot> Roots = [];
     private IntegrityScanResult? ScanResult;
-    private MergeResult? MergeResult;
 
     protected override void OnInitialized()
     {
@@ -8819,19 +8282,6 @@ public partial class SettingsModal : IDisposable
         string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
         File.Copy(source, dest, true);
         Toast.Show($"Library configuration backup saved to {dest}", ToastType.Success);
-    }
-
-    private void MergeDb()
-    {
-        string[]? files = FileDialogService.OpenFiles();
-        if (files is null || files.Length == 0)
-        {
-            return;
-        }
-
-        MergeResult = MergeService.Merge(files[0]);
-        Library.Refresh();
-        Toast.Show("Merge complete.", ToastType.Success);
     }
 
     private void RestoreDb()

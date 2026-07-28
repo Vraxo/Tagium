@@ -2,7 +2,6 @@ using Tagium.Core.Data;
 using Tagium.Core.Models;
 using Tagium.Core.Services.Undo;
 using Tagium.Core.Settings;
-using System.Threading;
 
 namespace Tagium.Core.Services;
 
@@ -20,15 +19,11 @@ public class LibraryService
     private readonly LibraryRootRepository _rootRepo;
     private readonly LibraryScanService _scanService;
     private readonly ExifToolService _exifTool;
-
-    private bool _tagSyncInProgress;
-    private int _tagSyncProcessed;
-    private int _tagSyncTotal;
     private CancellationTokenSource? _tagSyncCts;
 
-    public bool IsTagSyncRunning => _tagSyncInProgress;
-    public int TagSyncProcessed => _tagSyncProcessed;
-    public int TagSyncTotal => _tagSyncTotal;
+    public bool IsTagSyncRunning { get; private set; }
+    public int TagSyncProcessed { get; private set; }
+    public int TagSyncTotal { get; private set; }
 
     public event Action<int, int>? TagSyncProgress;
     public event Action? TagSyncCompleted;
@@ -71,7 +66,7 @@ public class LibraryService
         _undoService.Undo();
     }
 
-    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false)
+    public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false, string? folderPath = null)
     {
         SortBy sort = _settingsManager.Current.FileSortBy;
         SortDirection dir = _settingsManager.Current.FileSortDirection;
@@ -81,12 +76,21 @@ public class LibraryService
             return [.. _fileRepo.GetFilesWithTags(sort, dir, true)
                 .Where(f => f.IsMissing)];
         }
+        else if (!string.IsNullOrEmpty(folderPath))
+        {
+            return _fileRepo.GetFilesInFolderWithTags(folderPath, sort, dir);
+        }
         else
         {
             return string.IsNullOrWhiteSpace(searchText)
                 ? _fileRepo.GetFilesWithTags(sort, dir)
                 : _searchRepo.Search(searchText, sort, dir);
         }
+    }
+
+    public List<string> GetSubfolders(string parentFolder)
+    {
+        return _fileRepo.GetSubfolders(parentFolder);
     }
 
     public FileEntry? GetFileById(Guid id)
@@ -309,11 +313,11 @@ public class LibraryService
 
         _ = Task.Run(async () =>
         {
-            _tagSyncInProgress = true;
-            _tagSyncProcessed = 0;
-            _tagSyncTotal = fileIds.Count;
+            IsTagSyncRunning = true;
+            TagSyncProcessed = 0;
+            TagSyncTotal = fileIds.Count;
 
-            TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
+            TagSyncProgress?.Invoke(TagSyncProcessed, TagSyncTotal);
 
             try
             {
@@ -326,8 +330,8 @@ public class LibraryService
 
                     await SyncMetadataToFileAsync(fileId);
 
-                    _tagSyncProcessed++;
-                    TagSyncProgress?.Invoke(_tagSyncProcessed, _tagSyncTotal);
+                    TagSyncProcessed++;
+                    TagSyncProgress?.Invoke(TagSyncProcessed, TagSyncTotal);
                 }
             }
             catch (Exception)
@@ -336,7 +340,7 @@ public class LibraryService
             }
             finally
             {
-                _tagSyncInProgress = false;
+                IsTagSyncRunning = false;
                 TagSyncCompleted?.Invoke();
             }
         }, token);

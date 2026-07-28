@@ -13,6 +13,10 @@
                     @onclick="() => AppState.SwitchView(AppView.Files)">
                 <i class="fa-solid fa-images"></i> Files
             </button>
+            <button class="segment-btn @(AppState.CurrentView == AppView.Folders ? "active" : "")"
+                    @onclick="() => AppState.SwitchView(AppView.Folders)">
+                <i class="fa-solid fa-folder-tree"></i> Folders
+            </button>
             <button class="segment-btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
                     @onclick="() => AppState.SwitchView(AppView.Tags)">
                 <i class="fa-solid fa-tags"></i> Tags
@@ -22,7 +26,7 @@
 
     <!-- Center Section: Dynamic query input -->
     <div class="toolbar-center">
-        @if (AppState.CurrentView == AppView.Files)
+        @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
             <div class="search-wrapper">
                 <SearchInput @ref="SearchInput" />
@@ -32,7 +36,7 @@
 
     <!-- Right Section: Media grid controls & Settings triggers -->
     <div class="toolbar-right">
-        @if (AppState.CurrentView == AppView.Files)
+        @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
             <button class="btn-icon"
                     @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"

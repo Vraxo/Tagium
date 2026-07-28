@@ -1,0 +1,104 @@
+.sidebar-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--text-color);
+    background-color: var(--panel-bg);
+}
+
+.sidebar-header {
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+    .sidebar-header h4 {
+        margin: 0;
+        font-size: var(--font-size-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+.folder-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-xs) 0;
+}
+
+.folder-item {
+    display: flex;
+    align-items: center;
+    height: 24px; /* Locked to the sleeker, compact desktop height boundary */
+    line-height: 1.2; /* Bound line-height strictly to prevent vertical skewing */
+    cursor: pointer;
+    user-select: none;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    border-radius: var(--radius-sm);
+    margin: 0 var(--space-xs) 2px var(--space-xs); /* Vertical margin gap matching the legacy tag sidebar rules */
+    padding-left: calc(var(--depth) * 12px + var(--space-xs)); /* Dynamically computed inline indentation, kept isolated inside CSS */
+    box-sizing: border-box;
+}
+
+    .folder-item:hover {
+        background-color: var(--surface-hover);
+    }
+
+    .folder-item.active {
+        background-color: var(--primary-color);
+    }
+
+        /* 
+   Selection Override absolute guardrail:
+   When selected, all inner text and colored icons must transition 
+   to high-contrast primary text color immediately. 
+*/
+        .folder-item.active,
+        .folder-item.active * {
+            color: var(--text-on-primary) !important;
+        }
+
+.expand-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8em;
+    padding: 0;
+    margin-right: var(--space-2xs);
+    border-radius: 50%;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+    .expand-btn:hover {
+        background-color: var(--surface-bg);
+        color: var(--text-color);
+    }
+
+.folder-icon {
+    color: var(--folder-color); /* Strict yellow-gold system token alignment */
+    margin-right: var(--space-xs);
+    font-size: var(--font-size-sm);
+    flex-shrink: 0;
+    transition: color var(--transition-fast);
+}
+
+.folder-name {
+    font-size: var(--font-size-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.empty-state {
+    padding: var(--space-md);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}

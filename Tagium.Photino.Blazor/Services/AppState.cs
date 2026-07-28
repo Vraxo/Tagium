@@ -2,7 +2,7 @@
 
 namespace Tagium.Photino.Blazor.Services;
 
-public enum AppView { Files, Tags }
+public enum AppView { Files, Folders, Tags }
 
 public class AppState
 {
@@ -11,6 +11,7 @@ public class AppState
     public AppView CurrentView { get; private set; } = AppView.Files;
     public string SearchText { get; private set; } = "";
     public bool IsMissingOnly { get; private set; }
+    public string? CurrentFolderPath { get; private set; }
     public HashSet<Guid> SelectedFileIds { get; private set; } = [];
 
     public event Action? OnChange;
@@ -41,6 +42,7 @@ public class AppState
     {
         SearchText = text;
         IsMissingOnly = false;
+        CurrentFolderPath = null;
         SelectedFileIds.Clear();
 
         if (CurrentView != AppView.Files)
@@ -55,11 +57,27 @@ public class AppState
     {
         IsMissingOnly = isMissing;
         SearchText = "";
+        CurrentFolderPath = null;
         SelectedFileIds.Clear();
 
         if (CurrentView != AppView.Files)
         {
             CurrentView = AppView.Files;
+        }
+
+        NotifyStateChanged();
+    }
+
+    public void SetFolder(string? path)
+    {
+        CurrentFolderPath = path;
+        SearchText = "";
+        IsMissingOnly = false;
+        SelectedFileIds.Clear();
+
+        if (CurrentView != AppView.Folders)
+        {
+            CurrentView = AppView.Folders;
         }
 
         NotifyStateChanged();

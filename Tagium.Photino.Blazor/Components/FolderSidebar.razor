@@ -1,0 +1,59 @@
+@namespace Tagium.Photino.Blazor.Components
+@using Tagium.Photino.Blazor.Models
+@using Tagium.Photino.Blazor.Services
+@using Tagium.Core.Services
+
+<div class="sidebar-container">
+    <div class="sidebar-header">
+        <h4>Folders</h4>
+    </div>
+    <div class="folder-list">
+        @if (_rootNodes.Count == 0)
+        {
+            <div class="empty-state">
+                <p>No managed folders. Add one in settings.</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var node in _rootNodes)
+            {
+                @RenderNode(node, 0)
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private RenderFragment RenderNode(FolderNode node, int depth) => __builder =>
+    {
+        bool isSelected = AppState.CurrentFolderPath == node.Path;
+
+        <div class="folder-item @(isSelected ? "active" : "")"
+             style="--depth: @depth;"
+             @onclick="() => SelectFolder(node)">
+
+            <button class="expand-btn" @onclick="e => ToggleExpand(node)" @onclick:stopPropagation="true">
+                @if (node.IsExpanded)
+                {
+                    <i class="fa-solid fa-chevron-down"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-chevron-right"></i>
+                }
+            </button>
+
+            <i class="fa-solid fa-folder folder-icon"></i>
+            <span class="folder-name" title="@node.Path">@node.Name</span>
+        </div>
+
+        @if (node.IsExpanded && node.Children.Count > 0)
+        {
+            @foreach (var child in node.Children)
+            {
+                @RenderNode(child, depth + 1)
+            }
+        }
+    };
+}

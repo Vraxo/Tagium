@@ -108,7 +108,7 @@ public partial class FileGrid : IDisposable
 
     private void LoadFiles()
     {
-        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly);
+        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly, AppState.CurrentFolderPath);
         RebuildRows();
     }
 
@@ -228,10 +228,15 @@ public partial class FileGrid : IDisposable
         AppState.OnChange -= ReloadData;
         AppState.OnSelectionChange -= RefreshSelection;
         Library.LibraryChanged -= ReloadData;
-        Settings.SettingsChanged -= ReloadData;
+        Settings.SettingsChanged -= OnSettingsChanged;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 
         _objRef?.Dispose();
         _ = JS.InvokeVoidAsync("eval", "if (window.gridObserverInstance) { window.gridObserverInstance.disconnect(); delete window.gridObserverInstance; }");
+    }
+
+    private void OnSettingsChanged()
+    {
+        ReloadData();
     }
 }

@@ -57,8 +57,8 @@
     }
 
     /* 6. Lock the inspector panel width.
-                      Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
-                      and allows the splitter's JavaScript inline style modification to override it perfectly. */
+                          Note: We specify a default width of 320px WITHOUT !important. This acts as the baseline,
+                          and allows the splitter's JavaScript inline style modification to override it perfectly. */
     .inspector-panel {
         width: 320px;
         height: 100% !important;
@@ -129,7 +129,14 @@
 
 <div class="main-layout">
     <div class="sidebar-panel" id="sidebar-panel" style="width: @(SettingsManager.Current.LeftSidebarWidth)px;">
-        <TagSidebar />
+        @if (AppState.CurrentView == AppView.Folders)
+        {
+            <FolderSidebar />
+        }
+        else
+        {
+            <TagSidebar />
+        }
     </div>
 
     <div class="splitter" id="splitter-left"></div>
@@ -138,9 +145,13 @@
         <AppToolbar @ref="AppToolbarRef" />
 
         <div class="view-container">
-            @if (AppState.CurrentView == AppView.Files)
+            @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
             {
                 <div style="display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;">
+                    @if (AppState.CurrentView == AppView.Folders)
+                    {
+                        <FolderBreadcrumbs />
+                    }
                     @if (SettingsManager.Current.FileViewMode == FileViewMode.Grid)
                     {
                         <FileGrid />

@@ -59,6 +59,59 @@ public class FileRepository
         return dtos.Cast<FileEntry>().ToList();
     }
 
+    public List<FileEntry> GetFilesInFolderWithTags(string folder, SortBy sortBy, SortDirection direction, bool includeMissing = false)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        string separator = Path.DirectorySeparatorChar.ToString();
+        string parentWithSep = folder.EndsWith(separator) ? folder : folder + separator;
+        string prefix = parentWithSep + "%";
+        int prefixLen = parentWithSep.Length + 1;
+
+        string orderBy = GetOrderByClause(sortBy, direction);
+        string missingFilter = includeMissing ? "" : "AND F.IsMissing = 0";
+
+        string sql = $@"
+            SELECT 
+                F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime,
+                F.Rating, F.Title, F.Description,
+                GROUP_CONCAT(T.Id || ':' || T.Name || ':' || T.ColorHex || ':' || IFNULL(T.Emoji, ''), ';;') AS TagData
+            FROM cache.Files F
+            LEFT JOIN cache.FileTags FT ON F.Id = FT.FileId
+            LEFT JOIN Tags T ON FT.TagId = T.Id
+            WHERE F.Path LIKE @Prefix
+              AND INSTR(SUBSTR(F.Path, @PrefixLen), @Separator) = 0
+              {missingFilter}
+            GROUP BY F.Id
+            {orderBy}";
+
+        IEnumerable<FileEntryDto> dtos = conn.Query<FileEntryDto>(sql, new { Prefix = prefix, PrefixLen = prefixLen, Separator = separator });
+        foreach (FileEntryDto dto in dtos)
+        {
+            if (!string.IsNullOrEmpty(dto.TagData))
+            {
+                dto.Tags = ParseTagData(dto.TagData);
+            }
+        }
+        return dtos.Cast<FileEntry>().ToList();
+    }
+
+    public List<string> GetSubfolders(string parentFolder)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        string separator = Path.DirectorySeparatorChar.ToString();
+        string parentWithSep = parentFolder.EndsWith(separator) ? parentFolder : parentFolder + separator;
+        string prefix = parentWithSep + "%";
+
+        string sql = @"
+            SELECT DISTINCT 
+                SUBSTR(Path, 1, LENGTH(@ParentWithSep) + INSTR(SUBSTR(Path, LENGTH(@ParentWithSep) + 1), @Separator) - 1) AS Subfolder
+            FROM cache.Files
+            WHERE Path LIKE @Prefix
+              AND INSTR(SUBSTR(Path, LENGTH(@ParentWithSep) + 1), @Separator) > 0";
+
+        return conn.Query<string>(sql, new { ParentWithSep = parentWithSep, Separator = separator, Prefix = prefix }).ToList();
+    }
+
     public FileEntry? GetFileWithTagsById(Guid id)
     {
         using SqliteConnection conn = _db.GetConnection();
