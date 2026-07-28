@@ -21,12 +21,12 @@
             </tr>
         </thead>
         <tbody>
-            <Virtualize Items="Files" ItemSize="53" Context="file" SpacerElement="tr">
-                @{
-                    bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
-                    bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
-                    TriggerThumbnailIfMissing(file, hasThumb);
-                }
+            @foreach (var file in AppState.GetPagedFiles())
+            {
+                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+                TriggerThumbnailIfMissing(file, hasThumb);
+
                 <tr @key="file.Id"
                     class="file-row @(isSelected ? "selected" : "")"
                     data-id="@file.Id"
@@ -57,7 +57,7 @@
                     </td>
                     <td class="date-cell">@FormatDate(file.DateAdded)</td>
                 </tr>
-            </Virtualize>
+            }
         </tbody>
     </table>
 </div>

@@ -1,0 +1,43 @@
+@namespace Tagium.Photino.Blazor.Components.Shared
+@using Tagium.Photino.Blazor.Services
+
+@if (AppState.TotalPages > 1)
+{
+    <div class="pagination-bar">
+        <div class="pagination-info">
+            Showing @GetStartItemIndex() - @GetEndItemIndex() of @AppState.TotalFilesCount files
+        </div>
+
+        <div class="pagination-buttons">
+            <button class="page-btn ctrl-btn"
+                    disabled="@(AppState.CurrentPage == 1)"
+                    @onclick="() => GoToPage(AppState.CurrentPage - 1)"
+                    title="Previous Page">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+
+            @foreach (var item in GetPageItems())
+            {
+                var pageItem = item;
+                if (pageItem.PageNumber.HasValue)
+                {
+                    <button class="page-btn @(pageItem.IsActive ? "active" : "")"
+                            @onclick="() => GoToPage(pageItem.PageNumber.Value)">
+                        @pageItem.DisplayText
+                    </button>
+                }
+                else
+                {
+                    <span class="pagination-ellipsis">@pageItem.DisplayText</span>
+                }
+            }
+
+            <button class="page-btn ctrl-btn"
+                    disabled="@(AppState.CurrentPage == AppState.TotalPages)"
+                    @onclick="() => GoToPage(AppState.CurrentPage + 1)"
+                    title="Next Page">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+}

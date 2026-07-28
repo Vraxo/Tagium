@@ -5708,6 +5708,15 @@ public partial class FolderSidebar : IDisposable
     padding: var(--space-xs) 0;
 }
 
+    /* Customize scrollbars to blend cleanly into the sidebar panel */
+    .folder-list::-webkit-scrollbar-track {
+        background: var(--panel-bg);
+    }
+
+    .folder-list::-webkit-scrollbar-thumb {
+        border-color: var(--panel-bg);
+    }
+
 .folder-item {
     display: flex;
     align-items: center;
@@ -6502,6 +6511,9 @@ public partial class ModalHost
 @inject SettingsManager Settings
 
 <div class="sidebar-container">
+    <div class="sidebar-header">
+        <h4>Tags</h4>
+    </div>
     <div class="tag-list @GetDisplayModeClass()">
         <div class="tag-item system-item @(IsAllFilesActive ? "active" : "")"
              @onclick="() => SetSearch(string.Empty)">
@@ -6523,7 +6535,6 @@ public partial class ModalHost
 
             if (Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)
             {
-                // Legacy mode: colored circles
                 <div class="tag-item legacy @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
                     <TagIcon Tag="@tag" />
                     <span class="name">@tag.Name</span>
@@ -6532,7 +6543,6 @@ public partial class ModalHost
             }
             else
             {
-                // Modern mode: colored pills
                 string tagStyle = isActive
                 ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid;"
                 : $"border-color: {tag.ColorHex};";
@@ -6615,19 +6625,43 @@ public partial class TagSidebar
 ### `Tagium.Photino.Blazor\Components\TagSidebar.razor.css`
 
 ```css
-/* ::deep combinator pierces CSS isolation */
-::deep .sidebar-container {
+.sidebar-container {
     display: flex;
     flex-direction: column;
     height: 100%;
     color: var(--text-color);
+    background-color: var(--panel-bg);
 }
 
-::deep .tag-list {
+.sidebar-header {
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+    .sidebar-header h4 {
+        margin: 0;
+        font-size: var(--font-size-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+.tag-list {
     flex: 1;
     overflow-y: auto;
     padding: var(--space-xs);
 }
+
+    /* Customize scrollbars to blend cleanly into the sidebar panel */
+    .tag-list::-webkit-scrollbar-track {
+        background: var(--panel-bg);
+    }
+
+    .tag-list::-webkit-scrollbar-thumb {
+        border-color: var(--panel-bg);
+    }
 
 /* ====== Pill Mode (Modern) ====== */
 ::deep .tag-item.pill {

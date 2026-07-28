@@ -8,82 +8,38 @@
 @inject SettingsManager Settings
 @inject IJSRuntime JS
 
-<style>
-    #file-grid-container {
-        display: block !important;
-        width: 100% !important;
-        height: 100% !important;
-        overflow-y: auto !important;
-        box-sizing: border-box !important;
-        padding: 16px !important;
-        opacity: 1 !important;
-        transition: opacity 0.15s ease-in-out !important;
-    }
-
-        #file-grid-container.initializing {
-            opacity: 0 !important;
-            pointer-events: none !important;
-        }
-
-    .file-grid-row {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 16px !important;
-        /* Calculate exact width of active columns block plus gaps */
-        width: calc((var(--cols-count) * var(--thumb-size)) + ((var(--cols-count) - 1) * 16px)) !important;
-        height: calc(var(--thumb-size) + 30px) !important; /* Explicitly lock row height to prevent virtualizer math skewing */
-        box-sizing: border-box !important;
-        margin: 0 auto 16px auto !important; /* Center the row block horizontally */
-        contain: layout style paint !important; /* CSS containment for massive reflow savings */
-    }
-
-    .file-card {
-        width: var(--thumb-size) !important;
-        height: 100% !important; /* Let cards stretch to fill locked row height exactly */
-        flex-shrink: 0 !important;
-        flex-grow: 0 !important;
-        box-sizing: border-box !important;
-        contain: strict !important; /* Card has completely locked height and width! */
-    }
-</style>
-
 <div id="file-grid-container"
-     class="grid-container @(_isInitialized ? "" : "initializing")"
-     style="--thumb-size: @(Settings.Current.ThumbnailSize)px; --cols-count: @_columnsCount">
+     class="grid-container"
+     style="--thumb-size: @(Settings.Current.ThumbnailSize)px;">
 
-    <Virtualize Items="FileRows" ItemSize="@(Settings.Current.ThumbnailSize + 46)" Context="row">
-        <div @key="row" class="file-grid-row">
-            @foreach (var file in row)
-            {
-                bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
-                bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
-                TriggerThumbnailIfMissing(file, hasThumb);
+    @foreach (var file in AppState.GetPagedFiles())
+    {
+        bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+        bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
+        TriggerThumbnailIfMissing(file, hasThumb);
 
-                <div @key="file.Id"
-                     class="file-card @(isSelected ? "selected" : "")"
-                     data-id="@file.Id"
-                     @onclick="e => OnCardClick(e, file.Id)"
-                     @ondblclick="e => OnCardDoubleClick(e, file)"
-                     @onclick:stopPropagation="true">
+        <div @key="file.Id"
+             class="file-card @(isSelected ? "selected" : "")"
+             data-id="@file.Id"
+             @onclick="e => OnCardClick(e, file.Id)"
+             @ondblclick="e => OnCardDoubleClick(e, file)"
+             @onclick:stopPropagation="true">
 
-                    <div class="thumbnail @(hasThumb ? "" : "broken")">
-                        @if (hasThumb)
-                        {
-                            <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
-                        }
-                        else
-                        {
-                            <div class="placeholder-icon">
-                                <i class="fa-solid fa-image"></i>
-                            </div>
-                        }
+            <div class="thumbnail @(hasThumb ? "" : "broken")">
+                @if (hasThumb)
+                {
+                    <img src="tagium://thumbnail/@file.Id/@(file.Hash ?? "none")" alt="@file.Name" />
+                }
+                else
+                {
+                    <div class="placeholder-icon">
+                        <i class="fa-solid fa-image"></i>
                     </div>
-                    <div class="filename" title="@file.Name">
-                        @file.Name
-                    </div>
-                </div>
-            }
+                }
+            </div>
+            <div class="filename" title="@file.Name">
+                @file.Name
+            </div>
         </div>
-    </Virtualize>
+    }
 </div>

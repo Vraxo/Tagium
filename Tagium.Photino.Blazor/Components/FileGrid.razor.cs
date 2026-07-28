@@ -12,22 +12,14 @@ public partial class FileGrid : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private SystemLauncherService Launcher { get; set; } = default!;
 
-    private List<FileEntry> Files = [];
-    private List<List<FileEntry>> FileRows = [];
-    protected int _columnsCount = 5;
-    private bool _isInitialized = false;
     private DotNetObjectReference<FileGrid>? _objRef;
     private bool _isRenderPending = false;
     private readonly object _renderLock = new();
 
     protected override void OnInitialized()
     {
-        LoadFiles();
-
         AppState.OnChange += ReloadData;
         AppState.OnSelectionChange += RefreshSelection;
-        Library.LibraryChanged += ReloadData;
-        Settings.SettingsChanged += ReloadData;
         ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
@@ -40,43 +32,11 @@ public partial class FileGrid : IDisposable
 
         _objRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
-
-        await JS.InvokeVoidAsync("eval", @"
-            window.setupGridResizeObserver = (helper, containerId) => {
-                const el = document.getElementById(containerId);
-                if (!el) return;
-                let lastCols = -1;
-                let timeoutId = null;
-                const observer = new ResizeObserver(entries => {
-                    for (let entry of entries) {
-                        const width = entry.contentRect.width;
-                        const thumbSize = parseInt(el.style.getPropertyValue('--thumb-size')) || 120;
-                        const gap = 16;
-                        const cols = Math.floor((width + gap) / (thumbSize + gap)) || 1;
-                        if (cols !== lastCols) {
-                            clearTimeout(timeoutId);
-                            timeoutId = setTimeout(() => {
-                                lastCols = cols;
-                                helper.invokeMethodAsync('UpdateColumnsCount', cols);
-                            }, 150);
-                        }
-                    }
-                });
-                observer.observe(el);
-                window.gridObserverInstance = observer;
-            };
-        ");
-
-        await JS.InvokeVoidAsync("setupGridResizeObserver", _objRef, "file-grid-container");
     }
 
     private void ReloadData()
     {
-        _ = InvokeAsync(() =>
-        {
-            LoadFiles();
-            StateHasChanged();
-        });
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void RefreshSelection()
@@ -104,43 +64,6 @@ public partial class FileGrid : IDisposable
             }
             await InvokeAsync(StateHasChanged);
         });
-    }
-
-    private void LoadFiles()
-    {
-        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly, AppState.CurrentFolderPath);
-        RebuildRows();
-    }
-
-    private void RebuildRows()
-    {
-        FileRows = [];
-        if (Files == null || Files.Count == 0)
-        {
-            return;
-        }
-
-        int cols = _columnsCount > 0 ? _columnsCount : 1;
-        for (int i = 0; i < Files.Count; i += cols)
-        {
-            FileRows.Add(Files.GetRange(i, Math.Min(cols, Files.Count - i)));
-        }
-    }
-
-    [JSInvokable]
-    public void UpdateColumnsCount(int count)
-    {
-        _isInitialized = true;
-        if (_columnsCount != count)
-        {
-            _columnsCount = count;
-            RebuildRows();
-            StateHasChanged();
-        }
-        else
-        {
-            StateHasChanged();
-        }
     }
 
     private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
@@ -190,7 +113,7 @@ public partial class FileGrid : IDisposable
     [JSInvokable]
     public void SelectAll()
     {
-        AppState.SetSelection(Files.Select(f => f.Id));
+        AppState.SetSelection(AppState.GetPagedFiles().Select(f => f.Id));
     }
 
     [JSInvokable]
@@ -208,7 +131,7 @@ public partial class FileGrid : IDisposable
         }
 
         Guid id = AppState.SelectedFileIds.First();
-        FileEntry? file = Files.FirstOrDefault(f => f.Id == id);
+        FileEntry? file = AppState.GetPagedFiles().FirstOrDefault(f => f.Id == id);
 
         if (file is null || file.IsMissing)
         {
@@ -227,16 +150,8 @@ public partial class FileGrid : IDisposable
     {
         AppState.OnChange -= ReloadData;
         AppState.OnSelectionChange -= RefreshSelection;
-        Library.LibraryChanged -= ReloadData;
-        Settings.SettingsChanged -= OnSettingsChanged;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 
         _objRef?.Dispose();
-        _ = JS.InvokeVoidAsync("eval", "if (window.gridObserverInstance) { window.gridObserverInstance.disconnect(); delete window.gridObserverInstance; }");
-    }
-
-    private void OnSettingsChanged()
-    {
-        ReloadData();
     }
 }

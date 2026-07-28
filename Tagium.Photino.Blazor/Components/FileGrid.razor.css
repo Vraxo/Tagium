@@ -1,13 +1,13 @@
 .grid-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--thumb-size), 1fr));
+    gap: 16px;
+    padding: 16px;
     align-content: flex-start;
     height: 100%;
     overflow-y: auto;
-    padding: 10px;
-    position: relative;
     background-color: var(--bg-color);
+    box-sizing: border-box;
 }
 
 .file-card {
@@ -19,8 +19,9 @@
     cursor: pointer;
     user-select: none;
     transition: border-color var(--transition-fast), background-color var(--transition-fast);
-    width: var(--thumb-size);
-    height: calc(var(--thumb-size) + 30px);
+    aspect-ratio: 1 / 1.2;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
     .file-card:hover {
@@ -41,6 +42,7 @@
     align-items: center;
     justify-content: center;
     position: relative;
+    min-height: 0;
 }
 
     .thumbnail img {
@@ -70,12 +72,13 @@
 .filename {
     height: 30px;
     line-height: 30px;
-    padding: 0 5px;
-    font-size: 12px;
+    padding: 0 8px;
+    font-size: 11px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     background: var(--surface-bg);
     color: var(--text-color);
     border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
 }

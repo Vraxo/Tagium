@@ -11,28 +11,19 @@ public partial class FileListView : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private SystemLauncherService Launcher { get; set; } = default!;
 
-    private List<FileEntry> Files = [];
     private bool _isRenderPending = false;
     private readonly object _renderLock = new();
 
     protected override void OnInitialized()
     {
-        LoadFiles();
-
         AppState.OnChange += ReloadData;
         AppState.OnSelectionChange += RefreshSelection;
-        Library.LibraryChanged += ReloadData;
-        Settings.SettingsChanged += OnSettingsChanged;
         ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
     private void ReloadData()
     {
-        _ = InvokeAsync(() =>
-        {
-            LoadFiles();
-            StateHasChanged();
-        });
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void RefreshSelection()
@@ -60,11 +51,6 @@ public partial class FileListView : IDisposable
             }
             await InvokeAsync(StateHasChanged);
         });
-    }
-
-    private void LoadFiles()
-    {
-        Files = Library.GetFiles(AppState.SearchText, AppState.IsMissingOnly, AppState.CurrentFolderPath);
     }
 
     private void TriggerThumbnailIfMissing(FileEntry file, bool hasThumb)
@@ -100,13 +86,6 @@ public partial class FileListView : IDisposable
     {
         AppState.OnChange -= ReloadData;
         AppState.OnSelectionChange -= RefreshSelection;
-        Library.LibraryChanged -= ReloadData;
-        Settings.SettingsChanged -= OnSettingsChanged;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
-    }
-
-    private void OnSettingsChanged()
-    {
-        ReloadData();
     }
 }
