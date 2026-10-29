@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Local coalesce files
+/coalesce-run.bat
+/coalesce.md
+/coalesce.toml
