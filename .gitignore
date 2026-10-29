@@ -15,6 +15,6 @@ publish/
 *.pubxml
 
 # Local coalesce files
-/coalesce-run.bat
-/coalesce.md
-/coalesce.toml
+coalesce-run.bat
+coalesce.md
+coalesce.toml
