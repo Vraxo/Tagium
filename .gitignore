@@ -1,7 +1,5 @@
 # .NET build and publish output
 /artifacts/
-[Bb]in/
-[Oo]bj/
 publish/
 
 # Visual Studio local settings
