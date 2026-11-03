@@ -147,6 +147,25 @@ hr {
     margin: var(--space-sm) 0;
 }
 
+.menu-action {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    width: 100%;
+    padding: var(--space-2xs) var(--space-xs);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-color);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    text-align: left;
+}
+
+.menu-action:hover {
+    background: var(--surface-bg);
+}
+
 @keyframes fadeIn {
     from {
         opacity: 0;

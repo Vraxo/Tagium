@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using Tagium.Core.Files;
 using Tagium.Core.Metadata;
@@ -23,6 +23,7 @@ public class LibraryScanService
     public event Action<int, int>? ScanProgress;
     public event Action? ScanCompleted;
     public event Action? FilesImported;
+    public event Action<IReadOnlyList<FileEntry>>? DuplicatesDetected;
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -89,6 +90,13 @@ public class LibraryScanService
             _logger.LogInformation("Processing {Count} candidate files...", ProgressTotal);
             await ProcessCandidateFilesAsync(context, uiTimer, cancellationToken);
             await ResolveMissingAndImportNewAsync(context, uiTimer, cancellationToken);
+
+            if (context.Duplicates.Count > 0)
+            {
+                List<FileEntry> distinct = context.Duplicates.DistinctBy(d => d.Id).ToList();
+                _logger.LogInformation("Detected {Count} imported files that duplicate existing library entries", distinct.Count);
+                DuplicatesDetected?.Invoke(distinct);
+            }
 
             FinalizeMissingFiles(context);
             UpdateRootsLastScanTime(roots);
@@ -367,6 +375,14 @@ public class LibraryScanService
                 string? hash = await _fileHasher.ComputeSha256Async(path);
                 if (hash is not null)
                 {
+                    FileEntry? existingWithSameHash = _fileRepo.GetByHash(hash);
+                    if (existingWithSameHash is not null &&
+                        !string.Equals(existingWithSameHash.Path, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation("Imported file {Path} duplicates existing entry {ExistingPath}", path, existingWithSameHash.Path);
+                        context.Duplicates.Add(existingWithSameHash);
+                    }
+
                     _logger.LogInformation("Importing untracked file: {Path}", path);
                     _ = _fileRepo.Add(path, hash, size, modifiedTime);
                     context.HasChanges = true;

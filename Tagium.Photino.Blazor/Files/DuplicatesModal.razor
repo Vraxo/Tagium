@@ -1,0 +1,38 @@
+@namespace Tagium.Photino.Blazor.Files
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="duplicates-modal">
+    @if (_groups.Count == 0)
+    {
+        <p>No duplicate files found. Every file in the library has a unique content hash.</p>
+    }
+    else
+    {
+        <p>@_groups.Count duplicate group(s), @TotalDuplicateFiles file(s) total:</p>
+
+        <div class="duplicate-groups">
+            @foreach (var group in _groups)
+            {
+                <div class="duplicate-group">
+                    <div class="group-header">
+                        <span class="group-count">@group.Count files</span>
+                        <span class="group-hash" title="@group[0].Hash">hash @ShortHash(group[0])…</span>
+                        <span class="group-size">@FormatSize(group[0].Size)</span>
+                    </div>
+                    @foreach (var file in group)
+                    {
+                        <div class="duplicate-file">
+                            <span class="file-path" title="@file.Path">@file.Path</span>
+                            <button class="btn btn-small" @onclick="() => ShowFile(file)">Show</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <div class="footer">
+        <button class="btn btn-primary" @onclick="Close">Close</button>
+    </div>
+</div>
