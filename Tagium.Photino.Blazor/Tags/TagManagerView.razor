@@ -1,0 +1,68 @@
+﻿@namespace Tagium.Photino.Blazor.Tags
+@inject LibraryService Library
+@inject SettingsManager Settings
+
+<div class="tag-manager-view">
+    <div class="header-row">
+        <h3>Manage Tags</h3>
+        <div class="add-row">
+            <input type="text" @bind="NewTagName" placeholder="New tag name..." @onkeyup="HandleKeyUp" />
+            <button class="btn-primary" @onclick="AddTag">Add</button>
+        </div>
+    </div>
+
+    <div class="sort-controls">
+        <select @onchange="OnSortByChange" value="@Settings.Current.TagSortBy">
+            <option value="@TagSortBy.Name">Name</option>
+            <option value="@TagSortBy.FileCount">File Count</option>
+        </select>
+        <select @onchange="OnSortDirChange" value="@Settings.Current.TagSortDirection">
+            <option value="@SortDirection.Asc">Asc</option>
+            <option value="@SortDirection.Desc">Desc</option>
+        </select>
+    </div>
+
+    <div class="tag-list">
+        @foreach (var tag in Tags)
+        {
+            <div class="tag-row">
+                <!-- Color Picker -->
+                <div class="color-picker-wrapper">
+                    <button class="color-circle"
+                            style="background-color: @tag.ColorHex"
+                            @onclick="() => ToggleColorPicker(tag.Id)"></button>
+
+                    @if (ActiveColorPickerId == tag.Id)
+                    {
+                        <div class="color-popup" @onclick:stopPropagation="true">
+                            <div class="color-grid">
+                                @foreach (var color in Palette)
+                                {
+                                    <div class="swatch"
+                                         style="background-color: @color"
+                                         @onclick="() => UpdateTagColor(tag, color)"></div>
+                                }
+                            </div>
+                            <div class="overlay" @onclick="() => ActiveColorPickerId = null"></div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Emoji Input -->
+                <input type="text" class="emoji-input"
+                       value="@tag.Emoji"
+                       @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
+                       maxlength="2" />
+
+                <!-- Name Input -->
+                <input type="text" class="name-input"
+                       value="@tag.Name"
+                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))" />
+
+                <span class="count">@tag.FileCount files</span>
+
+                <button class="btn-icon delete" @onclick="() => DeleteTag(tag.Id)" title="Delete">&times;</button>
+            </div>
+        }
+    </div>
+</div>

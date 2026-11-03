@@ -1,0 +1,40 @@
+@namespace Tagium.Photino.Blazor.Files
+@inject LibraryService Library
+@inject SystemLauncherService Launcher
+@inject FileDialogService FileDialog
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="inspector-container">
+    <div class="inspector-content">
+        @if (HasRenderError)
+        {
+            <div class="state-message error">
+                <p>⚠️ Display Error</p>
+                <button class="btn" @onclick="LoadInspectorDataAsync">Retry</button>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.None)
+        {
+            <div class="state-message">
+                <i class="fa-solid fa-hand-pointer icon"></i>
+                <p>Select files to inspect</p>
+            </div>
+        }
+        else if (SelectionMode == InspectorMode.Single && SelectedFile is not null)
+        {
+            <SingleFileInspector @key="SelectionKey"
+                                 File="SelectedFile" />
+        }
+        else if (SelectionMode == InspectorMode.Multi)
+        {
+            <MultiFileInspector @key="SelectionKey" />
+        }
+        else
+        {
+            <div class="state-message">
+                <p>Loading...</p>
+            </div>
+        }
+    </div>
+</div>

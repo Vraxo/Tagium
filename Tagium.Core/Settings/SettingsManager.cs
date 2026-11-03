@@ -1,6 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
-using Tagium.Core.Helpers;
+using Tagium.Core;
 
 namespace Tagium.Core.Settings;
 

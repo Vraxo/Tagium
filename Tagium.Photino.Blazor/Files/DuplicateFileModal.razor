@@ -1,0 +1,15 @@
+@namespace Tagium.Photino.Blazor.Files
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="duplicate-modal">
+    <p>A file with the same content already exists in your library:</p>
+
+    <div class="file-path">@ExistingFile.Path</div>
+
+    <div class="footer">
+        <button class="btn btn-primary" @onclick="ShowExisting">Show Existing File</button>
+        <button class="btn" @onclick="Close">Close</button>
+    </div>
+</div>
+

@@ -1,0 +1,14 @@
+@namespace Tagium.Photino.Blazor.Files
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <select @onchange="OnSortByChange" value="@Settings.Current.FileSortBy" aria-label="Sort by">
+        <option value="@SortBy.DateAdded">Date</option>
+        <option value="@SortBy.Name">Name</option>
+        <option value="@SortBy.Path">Path</option>
+    </select>
+    <select @onchange="OnSortDirChange" value="@Settings.Current.FileSortDirection" aria-label="Sort direction">
+        <option value="@SortDirection.Asc">Asc</option>
+        <option value="@SortDirection.Desc">Desc</option>
+    </select>
+</div>

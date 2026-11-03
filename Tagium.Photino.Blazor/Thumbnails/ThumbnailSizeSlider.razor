@@ -1,0 +1,11 @@
+@namespace Tagium.Photino.Blazor.Thumbnails
+@inject SettingsManager Settings
+
+<div class="control-group">
+    <input type="range" min="64" max="256" step="16"
+           value="@Settings.Current.ThumbnailSize"
+           @oninput="OnInput"
+           @onchange="OnCommit"
+           aria-label="Thumbnail size" />
+</div>
+
