@@ -1,5 +1,7 @@
 # 🏷️ Tagium
 
+[![CI](https://github.com/Vraxo/Tagium/actions/workflows/ci.yml/badge.svg)](https://github.com/Vraxo/Tagium/actions/workflows/ci.yml)
+
 Desktop media library and file tagger for Windows, built with [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0), [Photino.Blazor](https://www.tryphotino.io/), and SQLite.
 
 ## ✨ Features
