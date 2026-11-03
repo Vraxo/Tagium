@@ -11,18 +11,30 @@ public partial class SingleFileInspector
 
     private Guid[] _fileIds = [];
 
-    private bool IsImage => CheckExtension([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
-    private bool IsVideo => CheckExtension([".mp4", ".webm", ".mov", ".mkv"]);
+    private MediaKind Kind => SupportedFormats.GetKind(Path.GetExtension(File.Path));
+    private bool IsImage => Kind == MediaKind.Image;
+    private bool IsVideo => Kind == MediaKind.Video;
+
+    private string TypeLabel
+    {
+        get
+        {
+            string ext = Path.GetExtension(File.Path);
+            string kindWord = Kind switch
+            {
+                MediaKind.Image => "image",
+                MediaKind.Video => "video",
+                _ => "file"
+            };
+            return ext.Length == 0 ? kindWord : $"{ext.TrimStart('.').ToUpperInvariant()} {kindWord}";
+        }
+    }
+
+    private static string ShortHash(string hash) => hash.Length <= 12 ? hash : hash[..12];
 
     protected override void OnParametersSet()
     {
         _fileIds = [File.Id];
-    }
-
-    private bool CheckExtension(string[] exts)
-    {
-        string ext = Path.GetExtension(File.Path);
-        return exts.Contains(ext, StringComparer.OrdinalIgnoreCase);
     }
 
     private void OpenFile()

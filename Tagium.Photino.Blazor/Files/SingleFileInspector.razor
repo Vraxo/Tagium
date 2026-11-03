@@ -23,6 +23,49 @@
         }
     </div>
 
+    <div class="details-section">
+        <h4 class="details-heading">Details</h4>
+        <dl class="details-list">
+            <div class="detail-row">
+                <dt>Type</dt>
+                <dd>@TypeLabel</dd>
+            </div>
+            <div class="detail-row">
+                <dt>Size</dt>
+                <dd>@FormatHelpers.FormatSize(File.Size)</dd>
+            </div>
+            <div class="detail-row">
+                <dt>Added</dt>
+                <dd>@FormatHelpers.FormatUnix(File.DateAdded)</dd>
+            </div>
+            <div class="detail-row">
+                <dt>Modified</dt>
+                <dd>@FormatHelpers.FormatUnix(File.ModifiedTime)</dd>
+            </div>
+            @if (!string.IsNullOrEmpty(File.Hash))
+            {
+                <div class="detail-row">
+                    <dt>Hash</dt>
+                    <dd class="hash-cell" title="@File.Hash">@ShortHash(File.Hash)</dd>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(File.Title))
+            {
+                <div class="detail-row">
+                    <dt>Title</dt>
+                    <dd>@File.Title</dd>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(File.Description))
+            {
+                <div class="detail-row">
+                    <dt>Description</dt>
+                    <dd class="desc-cell">@File.Description</dd>
+                </div>
+            }
+        </dl>
+    </div>
+
     <RatingStars FileIds="_fileIds" />
 
     <TagInspectorPanel FileIds="_fileIds" />
