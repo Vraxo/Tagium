@@ -23,6 +23,7 @@ public class LibraryScanService
     public event Action<int, int>? ScanProgress;
     public event Action? ScanCompleted;
     public event Action? FilesImported;
+    public event Action<IReadOnlyList<FileEntry>>? DuplicatesDetected;
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -89,6 +90,13 @@ public class LibraryScanService
             _logger.LogInformation("Processing {Count} candidate files...", ProgressTotal);
             await ProcessCandidateFilesAsync(context, uiTimer, cancellationToken);
             await ResolveMissingAndImportNewAsync(context, uiTimer, cancellationToken);
+
+            if (context.Duplicates.Count > 0)
+            {
+                List<FileEntry> distinct = context.Duplicates.DistinctBy(d => d.Id).ToList();
+                _logger.LogInformation("Detected {Count} imported files that duplicate existing library entries", distinct.Count);
+                DuplicatesDetected?.Invoke(distinct);
+            }
 
             FinalizeMissingFiles(context);
             UpdateRootsLastScanTime(roots);
