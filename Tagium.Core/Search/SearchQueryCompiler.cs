@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
+using System.Globalization;
 using System.Text;
 using Tagium.Core.Settings;
 
@@ -76,10 +77,30 @@ public class SearchQueryCompiler
                 {
                     BuildCategoryClause(key, val, isNegated, query, parameters, ref paramCounter);
                 }
+                else if (string.Equals(key, "tag", StringComparison.OrdinalIgnoreCase))
+                {
+                    BuildTagClause(val, isNegated, query, parameters, ref paramCounter);
+                }
+                else if (string.Equals(key, "missing", StringComparison.OrdinalIgnoreCase))
+                {
+                    BuildMissingClause(val, isNegated, query);
+                }
+                else if (string.Equals(key, "has", StringComparison.OrdinalIgnoreCase))
+                {
+                    BuildHasClause(val, rawToken, isNegated, query, parameters, ref paramCounter);
+                }
+                else if (string.Equals(key, "added", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "modified", StringComparison.OrdinalIgnoreCase))
+                {
+                    BuildDateClause(key, val, isNegated, query, parameters, ref paramCounter);
+                }
                 else
                 {
                     BuildTagSearchClause(rawToken, isNegated, query, parameters, ref paramCounter);
                 }
+            }
+            else if (string.Equals(rawToken, "untagged", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildUntaggedClause(isNegated, query);
             }
             else
             {
@@ -163,6 +184,129 @@ public class SearchQueryCompiler
         else
         {
             query.AppendLine($"AND ({subQuery})");
+        }
+    }
+
+    private void BuildTagClause(string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        string paramName = $"@p{paramCounter++}";
+        parameters.Add((paramName, $"%{val}%"));
+
+        string subQuery = $@"
+            EXISTS (
+                SELECT 1 FROM cache.FileTags FT
+                JOIN Tags T ON FT.TagId = T.Id
+                LEFT JOIN TagAliases TA ON T.Id = TA.TagId
+                WHERE FT.FileId = F.Id AND (T.Name LIKE {paramName} OR TA.Alias LIKE {paramName})
+            )";
+
+        if (isNegated)
+        {
+            query.AppendLine($"AND NOT ({subQuery})");
+        }
+        else
+        {
+            query.AppendLine($"AND ({subQuery})");
+        }
+    }
+
+    private void BuildUntaggedClause(bool isNegated, StringBuilder query)
+    {
+        const string hasTags = "EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)";
+
+        if (isNegated)
+        {
+            query.AppendLine($"AND {hasTags}");
+        }
+        else
+        {
+            query.AppendLine($"AND NOT {hasTags}");
+        }
+    }
+
+    private void BuildMissingClause(string val, bool isNegated, StringBuilder query)
+    {
+        bool? missing = val.Trim().ToLowerInvariant() switch
+        {
+            "true" or "yes" or "1" => true,
+            "false" or "no" or "0" => false,
+            _ => null
+        };
+
+        if (missing is null)
+        {
+            _logger.LogWarning("Skipped invalid missing search filter value: {Value}", val);
+            return;
+        }
+
+        if (isNegated)
+        {
+            missing = !missing.Value;
+        }
+
+        query.AppendLine(missing.Value ? "AND F.IsMissing = 1" : "AND F.IsMissing = 0");
+    }
+
+    private void BuildHasClause(string field, string rawToken, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        string f = field.Trim().ToLowerInvariant();
+
+        string? positive = f switch
+        {
+            "rating" => "F.Rating IS NOT NULL",
+            "title" => "F.Title IS NOT NULL AND F.Title <> ''",
+            "description" => "F.Description IS NOT NULL AND F.Description <> ''",
+            "tags" => "EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)",
+            _ => null
+        };
+
+        if (positive is null)
+        {
+            // Unknown field: fall back to a plain text search on the raw token
+            BuildTagSearchClause(rawToken, isNegated, query, parameters, ref paramCounter);
+            return;
+        }
+
+        string negative = f switch
+        {
+            "rating" => "F.Rating IS NULL",
+            "title" => "F.Title IS NULL OR F.Title = ''",
+            "description" => "F.Description IS NULL OR F.Description = ''",
+            _ => "NOT EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)"
+        };
+
+        query.AppendLine(isNegated ? $"AND ({negative})" : $"AND ({positive})");
+    }
+
+    private void BuildDateClause(string key, string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        (string op, string rest) = SplitOperator(val);
+
+        if (!DateTime.TryParse(rest, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime date))
+        {
+            _logger.LogWarning("Skipped invalid {Key} search filter value: {Value}", key, val);
+            return;
+        }
+
+        // A bare date means "on or after" that day
+        if (op == "=")
+        {
+            op = ">=";
+        }
+
+        string column = string.Equals(key, "added", StringComparison.OrdinalIgnoreCase) ? "F.DateAdded" : "F.ModifiedTime";
+        long timestamp = new DateTimeOffset(date).ToUnixTimeSeconds();
+
+        string paramName = $"@p{paramCounter++}";
+        parameters.Add((paramName, timestamp));
+
+        if (isNegated)
+        {
+            query.AppendLine($"AND NOT ({column} {op} {paramName})");
+        }
+        else
+        {
+            query.AppendLine($"AND {column} {op} {paramName}");
         }
     }
 

@@ -221,4 +221,149 @@ public class SearchQueryCompilerTests
         query.Parameters.Select(p => p.Name).Should().Equal("@p0", "@p1", "@p2", "@p3", "@p4", "@p5", "@p6");
         query.Parameters.Select(p => p.Value).Should().Equal("%landscape%", "%draft%", "%.webp", 4, 1048576L, "artist", "%moe%");
     }
+
+    [Fact]
+    public void Compile_TagFilter_MatchesOnlyTagNamesAndAliases()
+    {
+        CompiledQuery query = Compile("tag:landscape");
+
+        query.Parameters.Should().ContainSingle();
+        query.Parameters[0].Value.Should().Be("%landscape%");
+        query.Sql.Should().Contain("T.Name LIKE @p0 OR TA.Alias LIKE @p0");
+        query.Sql.Should().NotContain("F.Name LIKE @p0");
+        query.Sql.Should().NotContain("F.Path LIKE @p0");
+    }
+
+    [Fact]
+    public void Compile_NegatedTagFilter_ExcludesTagMatches()
+    {
+        CompiledQuery query = Compile("-tag:draft");
+
+        query.Parameters.Should().ContainSingle();
+        query.Parameters[0].Value.Should().Be("%draft%");
+        query.Sql.Should().Contain("AND NOT (");
+        query.Sql.Should().Contain("T.Name LIKE @p0 OR TA.Alias LIKE @p0");
+    }
+
+    [Fact]
+    public void Compile_UntaggedKeyword_RequiresNoTags()
+    {
+        CompiledQuery query = Compile("untagged");
+
+        query.Parameters.Should().BeEmpty();
+        query.Sql.Should().Contain("AND NOT EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)");
+    }
+
+    [Fact]
+    public void Compile_NegatedUntaggedKeyword_RequiresAtLeastOneTag()
+    {
+        CompiledQuery query = Compile("-untagged");
+
+        query.Parameters.Should().BeEmpty();
+        query.Sql.Should().Contain("AND EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)");
+    }
+
+    [Theory]
+    [InlineData("missing:true", "AND F.IsMissing = 1")]
+    [InlineData("missing:yes", "AND F.IsMissing = 1")]
+    [InlineData("missing:1", "AND F.IsMissing = 1")]
+    [InlineData("missing:false", "AND F.IsMissing = 0")]
+    [InlineData("missing:no", "AND F.IsMissing = 0")]
+    [InlineData("missing:0", "AND F.IsMissing = 0")]
+    [InlineData("-missing:true", "AND F.IsMissing = 0")]
+    [InlineData("-missing:false", "AND F.IsMissing = 1")]
+    public void Compile_MissingFilter_MapsBooleanValues(string searchText, string expectedClause)
+    {
+        CompiledQuery query = Compile(searchText);
+
+        query.Parameters.Should().BeEmpty();
+        query.Sql.Should().Contain(expectedClause);
+    }
+
+    [Fact]
+    public void Compile_InvalidMissingFilter_IsSkipped()
+    {
+        CompiledQuery query = Compile("missing:maybe");
+
+        query.Parameters.Should().BeEmpty();
+        query.Sql.Should().NotContain("F.IsMissing =");
+    }
+
+    [Theory]
+    [InlineData("has:rating", false, "AND (F.Rating IS NOT NULL)")]
+    [InlineData("has:rating", true, "AND (F.Rating IS NULL)")]
+    [InlineData("has:title", false, "AND (F.Title IS NOT NULL AND F.Title <> '')")]
+    [InlineData("has:title", true, "AND (F.Title IS NULL OR F.Title = '')")]
+    [InlineData("has:description", false, "AND (F.Description IS NOT NULL AND F.Description <> '')")]
+    [InlineData("has:tags", false, "AND (EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id))")]
+    [InlineData("has:tags", true, "AND (NOT EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id))")]
+    public void Compile_HasFilter_ChecksFieldPresence(string searchText, bool negate, string expectedClause)
+    {
+        CompiledQuery query = Compile(negate ? "-" + searchText : searchText);
+
+        query.Parameters.Should().BeEmpty();
+        query.Sql.Should().Contain(expectedClause);
+    }
+
+    [Fact]
+    public void Compile_UnknownHasField_FallsBackToTagSearchOnRawToken()
+    {
+        CompiledQuery query = Compile("has:bogus");
+
+        query.Parameters.Should().ContainSingle();
+        query.Parameters[0].Value.Should().Be("%has:bogus%");
+        query.Sql.Should().Contain("F.Name LIKE @p0");
+    }
+
+    [Theory]
+    [InlineData("added:>=2026-01-01", "F.DateAdded", ">=", 1767225600L)]
+    [InlineData("added:2026-06-15", "F.DateAdded", ">=", 1781481600L)]
+    [InlineData("modified:<2025-12-31", "F.ModifiedTime", "<", 1767139200L)]
+    [InlineData("added:>2026-01-01", "F.DateAdded", ">", 1767225600L)]
+    public void Compile_DateFilter_ConvertsDatesToUnixTimestamps(string searchText, string column, string expectedOperator, long expectedTimestamp)
+    {
+        CompiledQuery query = Compile(searchText);
+
+        query.Parameters.Should().ContainSingle();
+        query.Parameters[0].Value.Should().Be(expectedTimestamp);
+        query.Sql.Should().Contain($"AND {column} {expectedOperator} @p0");
+    }
+
+    [Fact]
+    public void Compile_BareDate_MeansOnOrAfter()
+    {
+        CompiledQuery query = Compile("added:2026-01-01");
+
+        query.Sql.Should().Contain("AND F.DateAdded >= @p0");
+        query.Sql.Should().NotContain("F.DateAdded = @p0");
+    }
+
+    [Fact]
+    public void Compile_NegatedDateFilter_WrapsInNot()
+    {
+        CompiledQuery query = Compile("-added:>2026-01-01");
+
+        query.Parameters.Should().ContainSingle();
+        query.Parameters[0].Value.Should().Be(1767225600L);
+        query.Sql.Should().Contain("AND NOT (F.DateAdded > @p0)");
+    }
+
+    [Fact]
+    public void Compile_InvalidDateFilter_IsSkipped()
+    {
+        CompiledQuery query = Compile("added:notadate");
+
+        query.Parameters.Should().BeEmpty();
+        query.Sql.Should().NotContain("F.DateAdded >=");
+        query.Sql.Should().NotContain("F.DateAdded <");
+    }
+
+    [Fact]
+    public void Compile_NewFilters_KeepSequentialParameterNumbering()
+    {
+        CompiledQuery query = Compile("tag:art untagged missing:true has:rating added:>=2026-01-01 foo");
+
+        query.Parameters.Select(p => p.Name).Should().Equal("@p0", "@p1", "@p2");
+        query.Parameters.Select(p => p.Value).Should().Equal("%art%", 1767225600L, "%foo%");
+    }
 }

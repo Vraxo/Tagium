@@ -60,10 +60,15 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | Filter | Matches | Example |
 | :--- | :--- | :--- |
 | `<term>` | File name, path, tag name, or tag alias | `landscape` |
-| `-<token>` | Excludes files matching `<token>` | `-draft -ext:gif` |
+| `-<token>` | Excludes files matching `<token>` (works with every filter below) | `-draft -ext:gif` |
 | `ext:<ext>` | File extension (`extension:` also supported) | `ext:webp` |
 | `size:<op><val>` | File size (`=`, `>`, `<`, `>=`, `<=` with `b`, `kb`, `mb`, `gb`) | `size:>10mb` |
 | `rating:<op><n>` | Imported file rating (`=`, `>`, `<`, `>=`, `<=`) | `rating:>=4` |
+| `tag:<val>` | Has a tag or alias matching `<val>` (tag names/aliases only, not file names) | `tag:landscape` |
+| `untagged` | Files with no tags (`-untagged` = has at least one tag) | `untagged` |
+| `missing:<bool>` | Missing flag (`true`/`false`/`yes`/`no`/`1`/`0`) | `missing:true` |
+| `has:<field>` | Field is present: `rating`, `title`, `description`, or `tags` | `has:rating` |
+| `added:<op><date>` / `modified:<op><date>` | Date added/modified in ISO format (`=`, `>`, `<`, `>=`, `<=`; a bare date means on/after) | `added:>=2026-01-01` |
 | `<category>:<val>` | Tag in category (`artist`, `character`, `series`, `location`, `person`, `franchise`, `species`, `year`, `meta`) | `artist:moebius` |
 
 ## ⌨️ Shortcuts
