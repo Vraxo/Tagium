@@ -11,6 +11,8 @@ public partial class DuplicatesModal
 
     private List<List<FileEntry>> _groups = [];
 
+    private int TotalDuplicateFiles => _groups.Sum(g => g.Count);
+
     protected override void OnInitialized()
     {
         _ = Task.Run(async () =>
