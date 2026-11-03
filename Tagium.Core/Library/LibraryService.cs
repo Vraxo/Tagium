@@ -30,6 +30,7 @@ public class LibraryService
     public event Action<int, int>? TagSyncProgress;
     public event Action? TagSyncCompleted;
     public event Action? LibraryChanged;
+    public event Action<IReadOnlyList<FileEntry>>? DuplicatesDetected;
 
     public LibraryService(
         FileRepository fileRepo,

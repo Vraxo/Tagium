@@ -1,5 +1,6 @@
-﻿using Tagium.Core.Files;
+using Tagium.Core.Files;
 using Tagium.Core.Library;
+using Tagium.Photino.Blazor.Files;
 
 namespace Tagium.Photino.Blazor;
 
@@ -8,6 +9,7 @@ public enum AppView { Files, Folders, Tags }
 public class AppState : IDisposable
 {
     private readonly LibraryService _library;
+    private readonly ModalService _modalService;
     private List<FileEntry> _currentFiles = [];
 
     public AppView CurrentView { get; private set; } = AppView.Files;
@@ -25,16 +27,39 @@ public class AppState : IDisposable
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
-    public AppState(LibraryService library)
+    public AppState(LibraryService library, ModalService modalService)
     {
         _library = library;
+        _modalService = modalService;
         _library.LibraryChanged += OnLibraryChanged;
+        _library.DuplicatesDetected += OnDuplicatesDetected;
         _ = RefreshFilesAsync();
     }
 
     private void OnLibraryChanged()
     {
         _ = RefreshFilesAsync();
+    }
+
+    private void OnDuplicatesDetected(IReadOnlyList<FileEntry> duplicates)
+    {
+        if (duplicates.Count == 1)
+        {
+            _modalService.Show("Duplicate File", builder =>
+            {
+                builder.OpenComponent<DuplicateFileModal>(0);
+                builder.AddAttribute(1, nameof(DuplicateFileModal.ExistingFile), duplicates[0]);
+                builder.CloseComponent();
+            });
+        }
+        else
+        {
+            _modalService.Show("Duplicate Files", builder =>
+            {
+                builder.OpenComponent<DuplicatesModal>(0);
+                builder.CloseComponent();
+            });
+        }
     }
 
     public async Task RefreshFilesAsync()
@@ -210,5 +235,6 @@ public class AppState : IDisposable
     public void Dispose()
     {
         _library.LibraryChanged -= OnLibraryChanged;
+        _library.DuplicatesDetected -= OnDuplicatesDetected;
     }
 }

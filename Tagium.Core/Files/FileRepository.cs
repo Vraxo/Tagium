@@ -151,6 +151,23 @@ public class FileRepository
             new { Hash = hash });
     }
 
+    public List<List<FileEntry>> GetDuplicateGroups()
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        string sql = $@"
+            SELECT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime, F.Rating, F.Title, F.Description
+            FROM cache.Files F
+            WHERE F.Hash IS NOT NULL AND F.Hash <> '' AND F.IsMissing = 0
+              AND EXISTS (
+                  SELECT 1 FROM LibraryRoots LR
+                  WHERE LR.IsEnabled = 1 AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}')
+              )
+            ORDER BY F.Hash, F.Path";
+
+        List<FileEntry> files = conn.Query<FileEntry>(sql).ToList();
+        return DuplicateGrouper.Group(files);
+    }
+
     public List<FileEntry> GetFilesUnderPath(string rootPath)
     {
         using SqliteConnection conn = _db.GetConnection();

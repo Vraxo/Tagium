@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor;
 using Tagium.Photino.Blazor.Search;
@@ -41,6 +41,16 @@ public partial class AppToolbar
         ModalService.Show("Settings", builder =>
         {
             builder.OpenComponent<SettingsModal>(0);
+            builder.CloseComponent();
+        });
+    }
+
+    private void ShowDuplicates()
+    {
+        CloseMenu();
+        ModalService.Show("Duplicate Files", builder =>
+        {
+            builder.OpenComponent<DuplicatesModal>(0);
             builder.CloseComponent();
         });
     }
