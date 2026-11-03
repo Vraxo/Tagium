@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # NuGet packages across all projects in the repo (csproj files are scanned from the root)
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      time: '09:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    reviewers:
+      - Vraxo
+    # Bundle all minor/patch updates into a single PR; major updates stay separate
+    groups:
+      nuget-minor-patch:
+        dependency-type: all
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions used by the CI workflow
+  - package-ecosystem: github-actions
+    directory: /.github/workflows
+    schedule:
+      interval: weekly
+      time: '09:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    reviewers:
+      - Vraxo
