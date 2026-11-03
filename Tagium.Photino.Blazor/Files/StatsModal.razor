@@ -1,0 +1,83 @@
+@namespace Tagium.Photino.Blazor.Files
+@inject ModalService ModalService
+
+<div class="stats-modal">
+    @if (_stats is null)
+    {
+        <p>Loading statistics…</p>
+    }
+    else
+    {
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-value">@_stats.Files.TotalFiles</span>
+                <span class="stat-label">Total files</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@_stats.Files.PresentFiles</span>
+                <span class="stat-label">Present</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@_stats.Files.MissingFiles</span>
+                <span class="stat-label">Missing</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@FormatSize(_stats.Files.TotalSizeBytes)</span>
+                <span class="stat-label">Total size</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@_stats.Files.HashedFiles</span>
+                <span class="stat-label">Content-hashed</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@_stats.Files.DuplicateGroups</span>
+                <span class="stat-label">Duplicate groups (@_stats.Files.DuplicateFiles files)</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@_stats.TagCount</span>
+                <span class="stat-label">Tags</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">@_stats.RootCount</span>
+                <span class="stat-label">Library roots</span>
+            </div>
+        </div>
+
+        <h3 class="stats-heading">Files by extension</h3>
+        @if (_stats.Extensions.Count == 0)
+        {
+            <p>No files indexed yet. Add a library folder and run a scan.</p>
+        }
+        else
+        {
+            <div class="stats-table-wrapper">
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>Extension</th>
+                            <th>Type</th>
+                            <th class="num">Files</th>
+                            <th class="num">Size</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var ext in _stats.Extensions)
+                        {
+                            <tr>
+                                <td>@(ext.Extension.Length == 0 ? "(none)" : ext.Extension)</td>
+                                <td>@KindLabel(ext.Extension)</td>
+                                <td class="num">@ext.FileCount</td>
+                                <td class="num">@FormatSize(ext.SizeBytes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    <div class="footer">
+        <button class="btn btn-secondary" @onclick="Refresh">Refresh</button>
+        <button class="btn btn-primary" @onclick="Close">Close</button>
+    </div>
+</div>

@@ -55,4 +55,14 @@ public partial class AppToolbar
             builder.CloseComponent();
         });
     }
+
+    private void ShowStats()
+    {
+        CloseMenu();
+        ModalService.Show("Library Statistics", builder =>
+        {
+            builder.OpenComponent<StatsModal>(0);
+            builder.CloseComponent();
+        });
+    }
 }

@@ -168,6 +168,66 @@ public class FileRepository
         return DuplicateGrouper.Group(files);
     }
 
+    public FileStats GetFileStats()
+    {
+        using SqliteConnection conn = _db.GetConnection();
+
+        FileStatsCounters counters = conn.QuerySingle<FileStatsCounters>(@"
+            SELECT COUNT(*) AS TotalFiles,
+                   SUM(CASE WHEN IsMissing = 1 THEN 1 ELSE 0 END) AS MissingFiles,
+                   SUM(CASE WHEN IsMissing = 0 THEN Size ELSE 0 END) AS TotalSizeBytes,
+                   SUM(CASE WHEN IsMissing = 0 AND Hash IS NOT NULL AND Hash <> '' THEN 1 ELSE 0 END) AS HashedFiles
+            FROM cache.Files");
+
+        (long groups, long files) duplicates = conn.QuerySingle<(long, long)>(@"
+            SELECT COUNT(*), COALESCE(SUM(c), 0)
+            FROM (SELECT COUNT(*) AS c FROM cache.Files
+                  WHERE IsMissing = 0 AND Hash IS NOT NULL AND Hash <> ''
+                  GROUP BY Hash HAVING COUNT(*) > 1)");
+
+        return new FileStats(
+            counters.TotalFiles,
+            counters.MissingFiles,
+            counters.TotalSizeBytes ?? 0,
+            counters.HashedFiles ?? 0,
+            duplicates.Item1,
+            duplicates.Item2);
+    }
+
+    public List<ExtensionStat> GetExtensionStats()
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        string sql = @"
+            SELECT LOWER(CASE WHEN instr(F.Name, '.') > 0 AND substr(F.Name, 1, 1) <> '.'
+                              THEN substr(F.Name, length(rtrim(F.Name, replace(F.Name, '.', ''))) + 1)
+                              ELSE '' END) AS Extension,
+                   COUNT(*) AS FileCount,
+                   SUM(F.Size) AS SizeBytes
+            FROM cache.Files F
+            WHERE F.IsMissing = 0
+            GROUP BY Extension
+            ORDER BY FileCount DESC, Extension ASC";
+
+        return conn.Query<ExtensionStatDto>(sql)
+            .Select(d => new ExtensionStat(d.Extension, d.FileCount, d.SizeBytes ?? 0))
+            .ToList();
+    }
+
+    private sealed class FileStatsCounters
+    {
+        public long TotalFiles { get; set; }
+        public long MissingFiles { get; set; }
+        public long? TotalSizeBytes { get; set; }
+        public long? HashedFiles { get; set; }
+    }
+
+    private sealed class ExtensionStatDto
+    {
+        public string Extension { get; set; } = "";
+        public long FileCount { get; set; }
+        public long? SizeBytes { get; set; }
+    }
+
     public List<FileEntry> GetFilesUnderPath(string rootPath)
     {
         using SqliteConnection conn = _db.GetConnection();
