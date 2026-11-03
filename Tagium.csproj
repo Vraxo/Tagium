@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AssemblyName>Tagium</AssemblyName>
+		<UseWindowsForms>False</UseWindowsForms>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+	</PropertyGroup>
+
+	<!--
+		One project, one set of feature folders. Source files are compiled from
+		wherever their feature lives; no Compile/Content globs need to know about
+		individual features.
+	-->
+	<ItemGroup>
+		<PackageReference Include="Dapper" Version="2.1.35" />
+		<PackageReference Include="FFMpegCore" Version="5.4.0" />
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+		<PackageReference Include="SkiaSharp" Version="4.150.1" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+		<PackageReference Include="NativeFileDialogs.Net" Version="1.3.0.1" />
+		<!-- Downgraded to 3.2.3 to restore RegisterFileDropHandler support -->
+		<PackageReference Include="Photino.Blazor" Version="4.0.13" />
+		<PackageReference Include="Serilog" Version="4.4.0" />
+		<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+		<PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+		<PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+
+		<!-- Resolves CVE-2025-6965 by forcing the native SQLite binary dependency to update to a patched version -->
+		<PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
+	</ItemGroup>
+
+	<!--
+		Photino.Blazor serves static files from a build-time "wwwroot" web root.
+		Each asset stays in its feature folder and is linked into the path that
+		AppShell/index.html expects, so there is no technical wwwroot/ bucket in
+		the source tree. Linked Content items are also picked up by the static
+		web assets pipeline (Link is the SDK-supported way to do this).
+	-->
+	<ItemGroup>
+		<Content Include="AppShell/index.html" Link="wwwroot/index.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="AppShell/app.css" Link="wwwroot/css/app.css" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="AppShell/fonts/AppleColorEmoji.ttf" Link="wwwroot/fonts/AppleColorEmoji.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="AppShell/vendor/**/*" Link="wwwroot/vendor/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="AppShell/shortcuts.js" Link="wwwroot/js/shortcuts.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="Library/dragdrop.js" Link="wwwroot/js/dragdrop.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="FileBrowser/grid.js" Link="wwwroot/js/grid.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="Settings/layout.js" Link="wwwroot/js/layout.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="Settings/zoom.js" Link="wwwroot/js/zoom.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+			JSON files are already Content items by SDK default, so re-link them with
+			Update instead of Include (which would create duplicate items). Add a line
+			when shipping a new theme.
+		-->
+		<Content Update="Settings/themes/classic-light.json" Link="wwwroot/themes/classic-light.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Update="Settings/themes/monokai-pro.json" Link="wwwroot/themes/monokai-pro.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Update="Settings/themes/nordic-frost.json" Link="wwwroot/themes/nordic-frost.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<!-- IDE launch profile metadata, not a runtime asset. -->
+		<Content Update="AppShell/launchSettings.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Build artifacts live under artifacts/ (UseArtifactsOutput); never glob them as source. -->
+		<Compile Remove="artifacts/**" />
+		<Content Remove="artifacts/**" />
+		<None Remove="artifacts/**" />
+	</ItemGroup>
+
+</Project>
