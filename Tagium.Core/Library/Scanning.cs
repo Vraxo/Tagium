@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using Tagium.Core.Files;
 using Tagium.Core.Metadata;
@@ -367,6 +367,14 @@ public class LibraryScanService
                 string? hash = await _fileHasher.ComputeSha256Async(path);
                 if (hash is not null)
                 {
+                    FileEntry? existingWithSameHash = _fileRepo.GetByHash(hash);
+                    if (existingWithSameHash is not null &&
+                        !string.Equals(existingWithSameHash.Path, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation("Imported file {Path} duplicates existing entry {ExistingPath}", path, existingWithSameHash.Path);
+                        context.Duplicates.Add(existingWithSameHash);
+                    }
+
                     _logger.LogInformation("Importing untracked file: {Path}", path);
                     _ = _fileRepo.Add(path, hash, size, modifiedTime);
                     context.HasChanges = true;
