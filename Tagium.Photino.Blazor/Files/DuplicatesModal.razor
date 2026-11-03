@@ -9,7 +9,7 @@
     }
     else
     {
-        <p>@_groups.Count duplicate group(s), @_groups.Sum(g => g.Count) file(s) total:</p>
+        <p>@_groups.Count duplicate group(s), @TotalDuplicateFiles file(s) total:</p>
 
         <div class="duplicate-groups">
             @foreach (var group in _groups)
@@ -17,7 +17,7 @@
                 <div class="duplicate-group">
                     <div class="group-header">
                         <span class="group-count">@group.Count files</span>
-                        <span class="group-hash" title="@group[0].Hash">hash @group[0].Hash?.Substring(0, Math.Min(12, group[0].Hash?.Length ?? 0))…</span>
+                        <span class="group-hash" title="@group[0].Hash">hash @ShortHash(group[0])…</span>
                         <span class="group-size">@FormatSize(group[0].Size)</span>
                     </div>
                     @foreach (var file in group)
