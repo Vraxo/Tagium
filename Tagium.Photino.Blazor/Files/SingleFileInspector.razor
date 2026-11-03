@@ -1,0 +1,32 @@
+@namespace Tagium.Photino.Blazor.Files
+
+<div class="single-file-inspector">
+    <div class="inspector-file-header">
+        <h3 class="file-name">@File.Name</h3>
+        <p class="file-path">@File.Path</p>
+    </div>
+
+    <div class="inspector-preview">
+        @if (IsImage)
+        {
+            <img src="tagium://preview/@File.Id" alt="@File.Name" class="preview-media" />
+        }
+        else if (IsVideo)
+        {
+            <video src="tagium://preview/@File.Id" controls class="preview-media"></video>
+        }
+        else
+        {
+            <div class="generic-file-preview">
+                <i class="fa-solid fa-file"></i>
+            </div>
+        }
+    </div>
+
+    <TagInspectorPanel FileIds="_fileIds" />
+
+    <div class="inspector-actions">
+        <button class="btn btn-secondary" @onclick="OpenFile">Open File</button>
+        <button class="btn btn-secondary" @onclick="ShowInExplorer">Show in Explorer</button>
+    </div>
+</div>

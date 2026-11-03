@@ -1,0 +1,11 @@
+@namespace Tagium.Photino.Blazor.Search
+@inject AppState AppState
+@implements IDisposable
+
+<input type="text"
+       class="search-input"
+       placeholder="Search files..."
+       value="@_value"
+       @oninput="OnInput"
+       @ref="_inputElement"
+       aria-label="Search files" />
