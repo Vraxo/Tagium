@@ -1,5 +1,6 @@
 using Tagium.Core;
 using Tagium.Core.Files;
+using Tagium.Core.Maintenance;
 using Tagium.Core.Metadata;
 using Tagium.Core.Search;
 using Tagium.Core.Settings;
@@ -253,6 +254,17 @@ public class LibraryService
     public List<List<FileEntry>> GetDuplicateGroups()
     {
         return _fileRepo.GetDuplicateGroups();
+    }
+
+    public LibraryStats GetStats()
+    {
+        FileStats fileStats = _fileRepo.GetFileStats();
+        List<ExtensionStat> extensions = _fileRepo.GetExtensionStats();
+        return new LibraryStats(
+            fileStats,
+            extensions,
+            _tagRepo.GetCount(),
+            _rootRepo.GetAll().Count);
     }
 
     public List<Tag> GetTags()

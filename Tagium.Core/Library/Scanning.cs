@@ -25,11 +25,7 @@ public class LibraryScanService
     public event Action? FilesImported;
     public event Action<IReadOnlyList<FileEntry>>? DuplicatesDetected;
 
-    private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp",
-        ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm"
-    };
+    private static readonly HashSet<string> SupportedExtensions = SupportedFormats.All;
 
     public LibraryScanService(
         LibraryRootRepository rootRepo,

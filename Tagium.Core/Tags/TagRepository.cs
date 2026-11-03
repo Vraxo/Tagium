@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Tagium.Core;
 using Tagium.Core.Settings;
@@ -12,6 +12,12 @@ public class TagRepository
     public TagRepository(DatabaseManager db)
     {
         _db = db;
+    }
+
+    public long GetCount()
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        return conn.ExecuteScalar<long>("SELECT COUNT(*) FROM Tags");
     }
 
     public List<Tag> GetAll(TagSortBy sortBy = TagSortBy.Name, SortDirection direction = SortDirection.Asc)
