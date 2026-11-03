@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor;
+using Tagium.Photino.Blazor.Files;
 using Tagium.Photino.Blazor.Search;
 using Tagium.Photino.Blazor.Settings;
 

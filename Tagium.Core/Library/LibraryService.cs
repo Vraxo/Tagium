@@ -57,6 +57,7 @@ public class LibraryService
 
         _scanService.ScanCompleted += () => LibraryChanged?.Invoke();
         _scanService.FilesImported += () => LibraryChanged?.Invoke();
+        _scanService.DuplicatesDetected += dups => DuplicatesDetected?.Invoke(dups);
 
         _tagSyncService.TagSyncProgress += (p, t) => TagSyncProgress?.Invoke(p, t);
         _tagSyncService.TagSyncCompleted += () => TagSyncCompleted?.Invoke();
@@ -247,6 +248,11 @@ public class LibraryService
         }
 
         LibraryChanged?.Invoke();
+    }
+
+    public List<List<FileEntry>> GetDuplicateGroups()
+    {
+        return _fileRepo.GetDuplicateGroups();
     }
 
     public List<Tag> GetTags()
