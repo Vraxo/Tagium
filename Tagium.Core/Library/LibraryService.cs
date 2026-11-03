@@ -199,6 +199,55 @@ public class LibraryService
         LibraryChanged?.Invoke();
     }
 
+    public void SetRating(Guid fileId, int? rating)
+    {
+        SetRatings([fileId], rating);
+    }
+
+    public void SetRatings(IEnumerable<Guid> fileIds, int? rating)
+    {
+        if (rating is not null && (rating < 1 || rating > 5))
+        {
+            return;
+        }
+
+        List<Guid> ids = [.. fileIds];
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<Guid, int?> previousRatings = [];
+
+        foreach (Guid id in ids)
+        {
+            FileEntry? file = _fileRepo.GetById(id);
+            if (file is null || file.Rating == rating)
+            {
+                continue;
+            }
+
+            previousRatings[id] = file.Rating;
+            _fileRepo.SetRating(id, rating);
+        }
+
+        if (previousRatings.Count != 0)
+        {
+            _undoService.Push(new RatingUndoCommand(
+                _fileRepo,
+                _tagSyncService,
+                () => LibraryChanged?.Invoke(),
+                previousRatings));
+
+            foreach (Guid fileId in previousRatings.Keys)
+            {
+                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
+            }
+        }
+
+        LibraryChanged?.Invoke();
+    }
+
     public List<Tag> GetTags()
     {
         return _tagRepo.GetAll();
