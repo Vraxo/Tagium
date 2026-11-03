@@ -403,6 +403,9 @@ public class SearchQueryCompiler
         {
             SortBy.Name => "F.Name",
             SortBy.DateAdded => "F.DateAdded",
+            SortBy.Size => "F.Size",
+            SortBy.ModifiedTime => "F.ModifiedTime",
+            SortBy.Rating => "F.Rating",
             _ => "F.Path"
         };
 
