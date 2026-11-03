@@ -38,6 +38,17 @@ public partial class DuplicatesModal
         ModalService.Close();
     }
 
+    private static string ShortHash(FileEntry file)
+    {
+        string? hash = file.Hash;
+        if (string.IsNullOrEmpty(hash))
+        {
+            return "";
+        }
+
+        return hash.Length <= 12 ? hash : hash[..12];
+    }
+
     private static string FormatSize(long bytes)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
