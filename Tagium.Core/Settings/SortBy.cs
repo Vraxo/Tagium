@@ -1,8 +1,11 @@
-﻿namespace Tagium.Core.Settings;
+namespace Tagium.Core.Settings;
 
 public enum SortBy
 {
     Path,
     Name,
-    DateAdded
+    DateAdded,
+    Size,
+    ModifiedTime,
+    Rating
 }

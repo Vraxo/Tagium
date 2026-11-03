@@ -206,6 +206,12 @@ public class SearchQueryCompilerTests
     [InlineData(SortBy.Name, SortDirection.Desc, "ORDER BY F.Name DESC, F.Path ASC")]
     [InlineData(SortBy.DateAdded, SortDirection.Asc, "ORDER BY F.DateAdded ASC, F.Path ASC")]
     [InlineData(SortBy.DateAdded, SortDirection.Desc, "ORDER BY F.DateAdded DESC, F.Path ASC")]
+    [InlineData(SortBy.Size, SortDirection.Asc, "ORDER BY F.Size ASC, F.Path ASC")]
+    [InlineData(SortBy.Size, SortDirection.Desc, "ORDER BY F.Size DESC, F.Path ASC")]
+    [InlineData(SortBy.ModifiedTime, SortDirection.Asc, "ORDER BY F.ModifiedTime ASC, F.Path ASC")]
+    [InlineData(SortBy.ModifiedTime, SortDirection.Desc, "ORDER BY F.ModifiedTime DESC, F.Path ASC")]
+    [InlineData(SortBy.Rating, SortDirection.Asc, "ORDER BY F.Rating ASC, F.Path ASC")]
+    [InlineData(SortBy.Rating, SortDirection.Desc, "ORDER BY F.Rating DESC, F.Path ASC")]
     public void Compile_AppliesRequestedSortOrdering(SortBy sortBy, SortDirection direction, string expectedOrderBy)
     {
         CompiledQuery query = _compiler.Compile("", sortBy, direction);
