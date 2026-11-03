@@ -1,10 +1,12 @@
 name: CI
 
+# Only run once per change: pull_request covers branch pushes for branches with an
+# open PR (testing the merge ref against main), and push covers main after merges.
+# Pushes to branches without a PR intentionally run nothing — open a PR to get CI.
 on:
   push:
     branches:
       - main
-      - 'arena/**'
   pull_request:
     branches:
       - main
@@ -13,9 +15,10 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded runs on the same ref so queued duplicate builds don't waste runner time
+# Cancel superseded runs: all runs for the same PR share one group, so a new push
+# to a PR branch cancels its queued/stale runs instead of wasting runner time
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
