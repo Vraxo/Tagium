@@ -1,9 +1,11 @@
-﻿@namespace Tagium.Photino.Blazor.Files
+@namespace Tagium.Photino.Blazor.Files
 
 <div class="multi-file-inspector">
     <div class="inspector-multi-header">
         <h3 class="multi-title">@AppState.SelectedFileIds.Count Files Selected</h3>
     </div>
+
+    <RatingStars FileIds="AppState.SelectedFileIds" />
 
     <TagInspectorPanel FileIds="AppState.SelectedFileIds" />
 </div>

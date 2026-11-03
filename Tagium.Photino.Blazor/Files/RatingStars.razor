@@ -1,0 +1,27 @@
+@namespace Tagium.Photino.Blazor.Files
+
+<div class="rating-stars">
+    <h4 class="section-title">Rating</h4>
+    <div class="stars">
+        @for (int i = 1; i <= 5; i++)
+        {
+            int star = i;
+            <button type="button"
+                    class="star @(star <= CurrentRating ? "filled" : "")"
+                    title="@(star == CurrentRating ? "Clear rating" : $"Rate {star} of 5")"
+                    @onclick="() => SetRating(star)">
+                <i class="fa-solid fa-star"></i>
+            </button>
+        }
+        @if (CurrentRating > 0)
+        {
+            <button type="button" class="star-clear" title="Clear rating" @onclick="ClearRating">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        }
+        else if (MixedRatings)
+        {
+            <span class="rating-mixed">mixed</span>
+        }
+    </div>
+</div>

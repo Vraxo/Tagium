@@ -222,6 +222,13 @@ public class FileRepository
         conn.Execute("DELETE FROM cache.Files WHERE LOWER(REPLACE(Id, '-', '')) = @Id", new { Id = id.ToString("N").ToLowerInvariant() });
     }
 
+    public void SetRating(Guid id, int? rating)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        conn.Execute("UPDATE cache.Files SET Rating = @Rating WHERE LOWER(REPLACE(Id, '-', '')) = @Id",
+            new { Rating = rating, Id = id.ToString("N").ToLowerInvariant() });
+    }
+
     public void SetMissingStatus(IEnumerable<Guid> fileIds, bool isMissing)
     {
         using SqliteConnection conn = _db.GetConnection();
