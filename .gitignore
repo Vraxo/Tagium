@@ -2,6 +2,9 @@
 /artifacts/
 publish/
 
+# TRX test results (written by CI / dotnet test --logger trx)
+/TestResults/
+
 # Visual Studio local settings
 .vs/
 *.suo
