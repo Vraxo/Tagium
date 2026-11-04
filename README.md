@@ -13,6 +13,7 @@ Desktop media library and file tagger for Windows, built with [.NET 10](https://
 - Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes
 - Read embedded metadata (`Subject`, `Keywords`, `Title`, `Description`, `Rating`) on scan and sync tag updates back to files via ExifTool
 - Rate files with a 1–5 star rating from the inspector (single or multi-select), searchable with `rating:` and undoable; ratings sync back to files via ExifTool
+- Inspect read-only file details in the inspector: type, size, added/modified dates, content hash, and embedded metadata (title, description)
 - Find duplicate files by content hash (View Options → Find Duplicates); scans also flag newly imported files that duplicate existing entries
 - See library statistics — file counts, total size, missing/duplicate counts, tags, and a per-extension breakdown — from View Options → Library Statistics
 - Generate cached image and video thumbnails in the background
