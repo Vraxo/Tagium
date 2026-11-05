@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Tagium.Core.Files;
+using Tagium.Photino.Blazor;
 
 namespace Tagium.Photino.Blazor.Files;
 
