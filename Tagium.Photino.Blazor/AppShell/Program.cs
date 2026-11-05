@@ -33,6 +33,10 @@ public class Program
 
             PhotinoBlazorApp app = appBuilder.Build();
 
+            // Serve video previews over loopback HTTP so WebView can seek with byte ranges.
+            using LocalVideoServer videoServer = app.Services.GetRequiredService<LocalVideoServer>();
+            videoServer.Start();
+
             // Pass ServiceProvider to static SchemeHandler
             SchemeHandlers.ServiceProvider = app.Services;
 

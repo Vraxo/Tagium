@@ -1,13 +1,17 @@
 using Microsoft.AspNetCore.Components;
 using Tagium.Core.Files;
+using Tagium.Photino.Blazor;
 
 namespace Tagium.Photino.Blazor.Files;
 
 public partial class SingleFileInspector
 {
     [Inject] private SystemLauncherService Launcher { get; set; } = default!;
+    [Inject] private LocalVideoServer VideoServer { get; set; } = default!;
 
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
+
+    private string VideoPreviewUrl => VideoServer.GetVideoUrl(File.Id);
 
     private Guid[] _fileIds = [];
 

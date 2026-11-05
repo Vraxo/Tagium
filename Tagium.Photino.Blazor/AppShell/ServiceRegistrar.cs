@@ -65,5 +65,6 @@ public static class ServiceRegistrar
         _ = services.AddSingleton<ToastService>();
         _ = services.AddSingleton<KeyboardShortcutService>();
         _ = services.AddSingleton<ThemeService>();
+        _ = services.AddSingleton<LocalVideoServer>();
     }
 }
