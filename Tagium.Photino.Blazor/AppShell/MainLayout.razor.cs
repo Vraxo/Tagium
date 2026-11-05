@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
+using Tagium.Core;
 using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Core.Settings;
@@ -20,6 +22,7 @@ public partial class MainLayout : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ThemeService ThemeService { get; set; } = default!;
+    [Inject] private ILogger<MainLayout> Logger { get; set; } = default!;
 
     private bool _showZoomToast = false;
     private int _lastActiveZoom = 100;
@@ -38,10 +41,6 @@ public partial class MainLayout : IDisposable
         ScanService.ScanCompleted += ShowScanStatus;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
-
-        // Queue automatic background pre-generation of all missing thumbnails on startup
-        List<FileEntry> allFiles = Library.GetFiles(null, false);
-        ThumbnailService.QueueBackgroundGeneration(allFiles);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -50,6 +49,9 @@ public partial class MainLayout : IDisposable
         {
             return;
         }
+
+        // Let the window paint first; the queue reuses AppState's already-backgrounded initial load.
+        QueueThumbnailPreGenerationInBackground();
 
         _objRef = DotNetObjectReference.Create(this);
 
@@ -230,10 +232,41 @@ public partial class MainLayout : IDisposable
             Toast.Show("Library scan complete.", ToastType.Success);
             Library.Refresh();
             StateHasChanged();
+        });
 
-            // Automatically queue background pre-generation of newly cataloged files
-            List<FileEntry> allFiles = Library.GetFiles(null, false);
-            ThumbnailService.QueueBackgroundGeneration(allFiles);
+        // Automatically queue newly cataloged files without blocking the renderer.
+        QueueThumbnailPreGenerationInBackground(refreshLibrary: true);
+    }
+
+    private void QueueThumbnailPreGenerationInBackground(bool refreshLibrary = false)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                string timingMessage = refreshLibrary
+                    ? "Loading library files for thumbnail pre-generation"
+                    : "Waiting for initial library load before thumbnail pre-generation";
+                using LogTiming timer = LogTiming.Start(Logger, timingMessage);
+
+                IReadOnlyList<FileEntry> allFiles;
+                if (refreshLibrary)
+                {
+                    allFiles = Library.GetFiles(null, false);
+                }
+                else
+                {
+                    await AppState.InitialLoadTask.ConfigureAwait(false);
+                    allFiles = AppState.InitialFiles;
+                }
+
+                Logger.LogInformation("Loaded {Count} files for background thumbnail pre-generation", allFiles.Count);
+                ThumbnailService.QueueBackgroundGeneration(allFiles);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to queue background thumbnail pre-generation");
+            }
         });
     }
 

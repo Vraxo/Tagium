@@ -27,13 +27,16 @@ public class AppState : IDisposable
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
+    public Task InitialLoadTask { get; }
+    public IReadOnlyList<FileEntry> InitialFiles { get; private set; } = [];
+
     public AppState(LibraryService library, ModalService modalService)
     {
         _library = library;
         _modalService = modalService;
         _library.LibraryChanged += OnLibraryChanged;
         _library.DuplicatesDetected += OnDuplicatesDetected;
-        _ = RefreshFilesAsync();
+        InitialLoadTask = LoadInitialFilesAsync();
     }
 
     private void OnLibraryChanged()
@@ -62,13 +65,26 @@ public class AppState : IDisposable
         }
     }
 
+    private async Task LoadInitialFilesAsync()
+    {
+        // Offload the initial library query to a background thread so the first render is not blocked.
+        List<FileEntry> files = await Task.Run(() => _library.GetFiles(SearchText, IsMissingOnly, CurrentFolderPath));
+        InitialFiles = files;
+        ApplyLoadedFiles(files);
+    }
+
     public async Task RefreshFilesAsync()
     {
-        // Offload heavy query rendering to a background thread to prevent UI freezes
+        // Offload heavy query rendering to a background thread to prevent UI freezes.
         List<FileEntry> files = await Task.Run(() => _library.GetFiles(SearchText, IsMissingOnly, CurrentFolderPath));
+        ApplyLoadedFiles(files);
+    }
+
+    private void ApplyLoadedFiles(List<FileEntry> files)
+    {
         _currentFiles = files;
 
-        // Adjust page if it goes out of bounds after a filter or library change
+        // Adjust page if it goes out of bounds after a filter or library change.
         int total = TotalPages;
         if (CurrentPage < 1)
         {
