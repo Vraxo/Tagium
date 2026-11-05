@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using Tagium.Core.Files;
+using Tagium.Core.Maintenance;
 using Tagium.Core.Metadata;
 using Tagium.Core.Tags;
 
@@ -14,6 +15,7 @@ public class LibraryScanService
     private readonly FileTagRepository _fileTagRepo;
     private readonly ExifToolService _exifTool;
     private readonly FileHasher _fileHasher;
+    private readonly LibraryIntegrityService _integrityService;
     private readonly ILogger<LibraryScanService> _logger;
 
     public bool IsScanning { get; private set; }
@@ -34,6 +36,7 @@ public class LibraryScanService
         FileTagRepository fileTagRepo,
         ExifToolService exifTool,
         FileHasher fileHasher,
+        LibraryIntegrityService integrityService,
         ILogger<LibraryScanService> logger)
     {
         _rootRepo = rootRepo;
@@ -42,6 +45,7 @@ public class LibraryScanService
         _fileTagRepo = fileTagRepo;
         _exifTool = exifTool;
         _fileHasher = fileHasher;
+        _integrityService = integrityService;
         _logger = logger;
     }
 
@@ -94,14 +98,7 @@ public class LibraryScanService
                 DuplicatesDetected?.Invoke(distinct);
             }
 
-            FinalizeMissingFiles(context);
             UpdateRootsLastScanTime(roots);
-
-            if (context.HasChanges)
-            {
-                _logger.LogInformation("Library content changes detected. Triggering files imported event");
-                FilesImported?.Invoke();
-            }
         }
         catch (Exception ex)
         {
@@ -109,6 +106,37 @@ public class LibraryScanService
         }
         finally
         {
+            // Reconcile every catalog record even if candidate scanning failed or was partial.
+            try
+            {
+                IntegrityScanResult integrityResult = await _integrityService.ScanAsync();
+                if (integrityResult.NewlyMissing > 0 || integrityResult.NewlyFound > 0)
+                {
+                    context.HasChanges = true;
+                    _logger.LogInformation(
+                        "Reconciled file availability after scan: {Missing} newly missing, {Found} returned",
+                        integrityResult.NewlyMissing,
+                        integrityResult.NewlyFound);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to reconcile file availability after scan");
+            }
+
+            if (context.HasChanges)
+            {
+                _logger.LogInformation("Library content changes detected. Triggering files imported event");
+                try
+                {
+                    FilesImported?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to notify listeners about library changes");
+                }
+            }
+
             IsScanning = false;
             ScanProgress?.Invoke(ProgressTotal, ProgressTotal);
             _logger.LogInformation("Library scan completed. Resetting state");
@@ -443,21 +471,6 @@ public class LibraryScanService
                     _fileTagRepo.AddTagToFile(newEntry.Id, refreshedId.Value);
                 }
             }
-        }
-    }
-
-    private void FinalizeMissingFiles(ScanContext context)
-    {
-        List<Guid> finalMissingIds = context.DbFilesMap.Values
-            .Where(e => !context.VerifiedPaths.Contains(e.Path) && !e.IsMissing)
-            .Select(e => e.Id)
-            .ToList();
-
-        if (finalMissingIds.Count > 0)
-        {
-            _logger.LogInformation("Setting missing status for {Count} cataloged files", finalMissingIds.Count);
-            _fileRepo.SetMissingStatus(finalMissingIds, true);
-            context.HasChanges = true;
         }
     }
 
