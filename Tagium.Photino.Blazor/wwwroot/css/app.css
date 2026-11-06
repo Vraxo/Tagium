@@ -30,6 +30,7 @@
     --toolbar-icon-size: 28px;
     --font-size-xs: 11px;
     --font-size-sm: 12px;
+    --font-size-lg: 16px;
     /* Border Radii */
     --radius-sm: 4px;
     --radius-md: 6px;
@@ -37,8 +38,8 @@
     /* Transitions */
     --transition-fast: 0.1s ease-in-out;
     --transition-normal: 0.15s ease-in-out;
-    /* Breakpoints */
-    --breakpoint-sm: 700px;
+    /* Breakpoints are literal @media values: custom properties are not allowed there.
+       Shell collapses at 900px (MainLayout), tag manager at 760px (TagManagerView). */
 }
 
 :root[data-corner-style="sharp"] {

@@ -21,6 +21,9 @@
     flex: 0 0 8px;
     width: 8px;
     height: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    /* A neutral mid-tone ring keeps light tag colours off light panels (Classic Light)
+       and dark tag colours off dark panels, without growing the dot. */
+    box-sizing: border-box;
+    border: 1px solid var(--text-muted);
     border-radius: 50%;
 }
