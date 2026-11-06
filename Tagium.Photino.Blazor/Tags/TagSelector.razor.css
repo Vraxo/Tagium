@@ -36,6 +36,16 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
+.tag-dropdown-section-label {
+    padding: var(--space-2xs) var(--space-sm);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    user-select: none;
+}
+
 .tag-dropdown-item {
     display: flex;
     align-items: center;

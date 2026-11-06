@@ -1,6 +1,7 @@
-﻿using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using Tagium.Core.Settings;
 using Tagium.Core.Tags;
 
 namespace Tagium.Photino.Blazor.Tags;
@@ -9,13 +10,17 @@ public partial class TagSelector
 {
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private TagRepository TagRepo { get; set; } = default!;
+    [Inject] private SettingsManager Settings { get; set; } = default!;
 
     [Parameter, EditorRequired] public List<Tag> AvailableTags { get; set; } = [];
     [Parameter, EditorRequired] public EventCallback<Guid> OnTagSelected { get; set; }
     [Parameter] public EventCallback<string> OnTagCreated { get; set; }
 
+    private const int RecentTagLimit = 5;
+
     private List<Tag> _filteredTags = [];
     private List<Tag> _oldAvailableTags = [];
+    private int _recentTagCount;
     private int _activeIndex = 0;
     private bool _isOpen;
 
@@ -52,9 +57,29 @@ public partial class TagSelector
 
     private void UpdateFilter()
     {
-        _filteredTags = string.IsNullOrWhiteSpace(_searchText)
-            ? AvailableTags
-            : AvailableTags.Where(t => t.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            _filteredTags = AvailableTags
+                .Where(t => t.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            _recentTagCount = 0;
+        }
+        else
+        {
+            Dictionary<Guid, Tag> availableById = AvailableTags.ToDictionary(tag => tag.Id);
+            List<Guid> recentIds = (Settings.Current.RecentTagIds ?? [])
+                .Where(availableById.ContainsKey)
+                .Distinct()
+                .Take(RecentTagLimit)
+                .ToList();
+            List<Tag> recentTags = recentIds.Select(id => availableById[id]).ToList();
+            HashSet<Guid> recentIdSet = recentIds.ToHashSet();
+
+            _recentTagCount = recentTags.Count;
+            _filteredTags = recentTags
+                .Concat(AvailableTags.Where(tag => !recentIdSet.Contains(tag.Id)))
+                .ToList();
+        }
 
         _activeIndex = 0;
     }
@@ -133,14 +158,40 @@ public partial class TagSelector
 
     private async Task SelectTag(Guid id)
     {
-        _searchText = "";
         await OnTagSelected.InvokeAsync(id);
+        RecordRecentTag(id);
+        SearchText = "";
+        UpdateFilter();
     }
 
     private async Task CreateAndSelectTag()
     {
         string textToCreate = _searchText.Trim();
-        _searchText = "";
+        SearchText = "";
         await OnTagCreated.InvokeAsync(textToCreate);
+
+        Guid? createdTagId = TagRepo.ResolveTagId(textToCreate);
+        if (createdTagId.HasValue)
+        {
+            RecordRecentTag(createdTagId.Value);
+            UpdateFilter();
+        }
+    }
+
+    private void RecordRecentTag(Guid tagId)
+    {
+        Settings.Update(settings =>
+        {
+            settings.RecentTagIds ??= [];
+            settings.RecentTagIds.RemoveAll(id => id == tagId);
+            settings.RecentTagIds.Insert(0, tagId);
+
+            if (settings.RecentTagIds.Count > RecentTagLimit)
+            {
+                settings.RecentTagIds.RemoveRange(
+                    RecentTagLimit,
+                    settings.RecentTagIds.Count - RecentTagLimit);
+            }
+        });
     }
 }

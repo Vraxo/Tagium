@@ -14,10 +14,21 @@
     @if (_isOpen && (_filteredTags.Count > 0 || ShowCreateOption))
     {
         <div class="tag-selector-dropdown">
+            @if (_recentTagCount > 0)
+            {
+                <div class="tag-dropdown-section-label">Recently used</div>
+            }
+
             @for (int i = 0; i < _filteredTags.Count; i++)
             {
                 var tag = _filteredTags[i];
                 int index = i;
+
+                if (_recentTagCount > 0 && i == _recentTagCount)
+                {
+                    <div class="tag-dropdown-section-label">All tags</div>
+                }
+
                 <div class="tag-dropdown-item @(_activeIndex == index ? "active" : "")"
                      @onmousedown="() => SelectTag(tag.Id)"
                      @onmousedown:preventDefault="true"
