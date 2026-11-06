@@ -1,12 +1,59 @@
-﻿@namespace Tagium.Photino.Blazor.Tags
+@namespace Tagium.Photino.Blazor.Tags
 @inject LibraryService Library
 @inject AppState AppState
 @inject SettingsManager Settings
 
 <div class="sidebar-container">
     <div class="sidebar-header">
-        <h4>Tags</h4>
+        <div class="sidebar-header-row">
+            <h4>Tags</h4>
+            <button @ref="_tagSearchToggle"
+                    type="button"
+                    class="tag-search-toggle @(IsTagSearchOpen ? "active" : "")"
+                    aria-label="@GetTagSearchButtonLabel()"
+                    title="@GetTagSearchButtonLabel()"
+                    aria-expanded="@(IsTagSearchOpen ? "true" : "false")"
+                    aria-controls="tag-sidebar-filter"
+                    @onclick="ToggleTagSearch">
+                @if (IsTagSearchOpen)
+                {
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                }
+            </button>
+        </div>
+
+        @if (IsTagSearchOpen)
+        {
+            <div class="tag-search-container">
+                <i class="fa-solid fa-magnifying-glass tag-search-icon" aria-hidden="true"></i>
+                <input @ref="_tagSearchInput"
+                       id="tag-sidebar-filter"
+                       class="tag-search-input"
+                       type="search"
+                       placeholder="Filter tags..."
+                       aria-label="Filter tags by name"
+                       autocomplete="off"
+                       @bind="TagFilter"
+                       @bind:event="oninput"
+                       @onkeydown="HandleTagSearchKeyDown" />
+                @if (!string.IsNullOrWhiteSpace(TagFilter))
+                {
+                    <button type="button"
+                            class="tag-search-clear"
+                            aria-label="Clear tag filter"
+                            title="Clear filter"
+                            @onclick="ClearTagFilter">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                }
+            </div>
+        }
     </div>
+
     <div class="tag-list @GetDisplayModeClass()">
         <div class="tag-item system-item @(IsAllFilesActive ? "active" : "")"
              @onclick="() => SetSearch(string.Empty)">
@@ -20,7 +67,7 @@
 
         <hr />
 
-        @foreach (var tag in Tags)
+        @foreach (var tag in FilteredTags)
         {
             bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase)
             && !AppState.IsMissingOnly
@@ -51,6 +98,11 @@
                     <span class="count">@tag.FileCount</span>
                 </div>
             }
+        }
+
+        @if (HasNoTagSearchResults)
+        {
+            <div class="tag-filter-empty" role="status">No matching tags.</div>
         }
     </div>
 </div>

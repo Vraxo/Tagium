@@ -1,4 +1,4 @@
-﻿.sidebar-container {
+.sidebar-container {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -10,6 +10,106 @@
     padding: var(--space-sm) var(--space-md);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+}
+
+.sidebar-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 26px;
+}
+
+.tag-search-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.tag-search-toggle:hover,
+.tag-search-toggle.active {
+    background: var(--surface-bg);
+    border-color: var(--border-color);
+    color: var(--text-color);
+}
+
+.tag-search-toggle:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
+.tag-search-container {
+    position: relative;
+    margin-top: var(--space-xs);
+}
+
+.tag-search-icon {
+    position: absolute;
+    top: 50%;
+    left: 9px;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    pointer-events: none;
+}
+
+.tag-search-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 6px 30px 6px 28px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    outline: none;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-size: var(--font-size-sm);
+    appearance: none;
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.tag-search-input:focus {
+    border-color: var(--primary-color);
+    background: var(--surface-bg);
+}
+
+.tag-search-input::placeholder {
+    color: var(--text-muted);
+}
+
+.tag-search-clear {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.tag-search-clear:hover {
+    background: var(--surface-bg);
+    color: var(--text-color);
+}
+
+.tag-search-clear:focus-visible {
+    outline: 2px solid var(--primary-color);
 }
 
     .sidebar-header h4 {
@@ -25,6 +125,13 @@
     flex: 1;
     overflow-y: auto;
     padding: var(--space-xs);
+}
+
+.tag-filter-empty {
+    padding: var(--space-xs) var(--space-sm);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    text-align: center;
 }
 
     /* Customize scrollbars to blend cleanly into the sidebar panel */
