@@ -69,10 +69,10 @@ public partial class TagInspectorPanel : IDisposable
         LoadTags();
     }
 
-    private void OnTagSelected(Guid tagId)
+    private async Task OnTagSelected(Guid tagId)
     {
         List<Guid> ids = _fileIdsList.ToList();
-        _ = Task.Run(() =>
+        await Task.Run(() =>
         {
             if (ids.Count == 1)
             {
@@ -85,17 +85,17 @@ public partial class TagInspectorPanel : IDisposable
         });
     }
 
-    private void OnTagCreated(string tagName)
+    private async Task OnTagCreated(string tagName)
     {
         List<Guid> ids = _fileIdsList.ToList();
-        _ = Task.Run(() =>
+        string normalized = tagName.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
         {
-            string normalized = tagName.Trim();
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                return;
-            }
+            return;
+        }
 
+        await Task.Run(() =>
+        {
             Library.AddTag(normalized);
             Guid? id = TagRepo.ResolveTagId(normalized);
             if (id.HasValue)
