@@ -16,8 +16,6 @@ public partial class TagSelector
     [Parameter, EditorRequired] public EventCallback<Guid> OnTagSelected { get; set; }
     [Parameter] public EventCallback<string> OnTagCreated { get; set; }
 
-    private const int RecentTagLimit = 5;
-
     private List<Tag> _filteredTags = [];
     private List<Tag> _oldAvailableTags = [];
     private int _recentTagCount;
@@ -70,7 +68,7 @@ public partial class TagSelector
             List<Guid> recentIds = (Settings.Current.RecentTagIds ?? [])
                 .Where(availableById.ContainsKey)
                 .Distinct()
-                .Take(RecentTagLimit)
+                .Take(SettingsManager.MaxRecentTags)
                 .ToList();
             List<Tag> recentTags = recentIds.Select(id => availableById[id]).ToList();
             HashSet<Guid> recentIdSet = recentIds.ToHashSet();
@@ -159,7 +157,7 @@ public partial class TagSelector
     private async Task SelectTag(Guid id)
     {
         await OnTagSelected.InvokeAsync(id);
-        RecordRecentTag(id);
+        Settings.RecordRecentTag(id);
         SearchText = "";
         UpdateFilter();
     }
@@ -173,25 +171,9 @@ public partial class TagSelector
         Guid? createdTagId = TagRepo.ResolveTagId(textToCreate);
         if (createdTagId.HasValue)
         {
-            RecordRecentTag(createdTagId.Value);
+            Settings.RecordRecentTag(createdTagId.Value);
             UpdateFilter();
         }
     }
 
-    private void RecordRecentTag(Guid tagId)
-    {
-        Settings.Update(settings =>
-        {
-            settings.RecentTagIds ??= [];
-            settings.RecentTagIds.RemoveAll(id => id == tagId);
-            settings.RecentTagIds.Insert(0, tagId);
-
-            if (settings.RecentTagIds.Count > RecentTagLimit)
-            {
-                settings.RecentTagIds.RemoveRange(
-                    RecentTagLimit,
-                    settings.RecentTagIds.Count - RecentTagLimit);
-            }
-        });
-    }
 }
