@@ -23,8 +23,8 @@
     }
 
     .toast {
-        background: #333;
-        color: white;
+        background: var(--panel-bg);
+        color: var(--text-color);
         padding: 10px 20px;
         border-radius: var(--radius-sm);
         box-shadow: 0 4px 12px rgba(0,0,0,0.5);
@@ -33,6 +33,7 @@
         pointer-events: auto;
         cursor: pointer;
         animation: slideIn 0.3s ease-out;
+        border: 1px solid var(--border-color);
         border-left: 4px solid transparent;
         opacity: 0.95;
     }
@@ -42,15 +43,15 @@
         }
 
         .toast.info {
-            border-left-color: #42a5f5;
+            border-left-color: var(--primary-color);
         }
 
         .toast.success {
-            border-left-color: #66bb6a;
+            border-left-color: var(--success-color);
         }
 
         .toast.error {
-            border-left-color: #ef5350;
+            border-left-color: var(--danger-color);
         }
 
     @@keyframes slideIn {

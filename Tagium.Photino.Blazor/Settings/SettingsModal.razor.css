@@ -1,4 +1,4 @@
-.settings-modal-layout {
+﻿.settings-modal-layout {
     display: flex;
     height: 380px;
     box-sizing: border-box;
@@ -49,26 +49,10 @@
         border-color: var(--border-color);
     }
 
-    /* Tab Icon Semantic Color Rules */
+    /* Tab icons inherit the label colour (muted -> text -> primary when active), so the
+       whole settings sidebar reads as one surface instead of three accent domains. */
     .tab-btn i {
         transition: color var(--transition-fast);
-    }
-
-        .tab-btn i.fa-folder-open {
-            color: var(--folder-color);
-        }
-
-        .tab-btn i.fa-palette {
-            color: var(--appearance-color);
-        }
-
-        .tab-btn i.fa-database {
-            color: var(--primary-color);
-        }
-
-    /* Force standard highlighted text-color synchronization when tab is active */
-    .tab-btn.active i {
-        color: var(--primary-color) !important;
     }
 
 /* Panels shared styles */
@@ -419,7 +403,7 @@ input:checked + .slider {
 .btn-danger {
     background-color: var(--danger-color);
     border-color: var(--danger-hover);
-    color: white;
+    color: var(--text-on-danger);
 }
 
     .btn-danger:hover {

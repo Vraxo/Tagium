@@ -1,4 +1,4 @@
-.sidebar-container {
+﻿.sidebar-container {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -163,9 +163,8 @@
         background: var(--surface-bg);
     }
 
-    ::deep .tag-item.pill.active {
-        color: white;
-    }
+    /* Active pills are filled with the tag colour; the readable ink is applied inline
+       by TagColorContrast so both light and dark tag colours stay legible. */
 
     ::deep .tag-item.pill .count {
         font-size: 0.8em;
@@ -201,6 +200,12 @@
         font-size: 0.8em;
         color: var(--text-muted);
         margin-left: auto;
+    }
+
+    /* Selection override: the muted counter has to follow the active fill, otherwise
+       it stays grey-on-accent and drops to ~2:1 contrast. */
+    ::deep .tag-item.legacy.active .count {
+        color: var(--text-on-primary);
     }
 
 /* ====== Shared Styles ====== */

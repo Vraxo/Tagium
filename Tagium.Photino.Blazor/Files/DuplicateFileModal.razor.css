@@ -1,43 +1,49 @@
 .duplicate-modal p {
-        color: #eee;
-        margin-top: 0;
+    color: var(--text-color);
+    margin-top: 0;
+}
+
+.file-path {
+    background: var(--bg-color);
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-family: monospace;
+    word-break: break-all;
+    margin: 15px 0;
+    color: var(--text-muted);
+}
+
+.footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.btn {
+    padding: 6px 15px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    background: var(--surface-bg);
+    color: var(--text-color);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+    .btn:hover {
+        background: var(--surface-hover);
+        border-color: var(--text-muted);
     }
 
-    .file-path {
-        background: #222;
-        padding: 10px;
-        border: 1px solid #444;
-        border-radius: var(--radius-sm);
-        font-family: monospace;
-        word-break: break-all;
-        margin: 15px 0;
-        color: #aaa;
+.btn-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    /* Dark-on-accent ink keeps the label readable on every theme accent. */
+    color: var(--text-on-primary);
+}
+
+    .btn-primary:hover {
+        background: var(--primary-hover);
+        border-color: var(--primary-hover);
     }
-
-    .footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-        margin-top: 20px;
-    }
-
-    .btn {
-        padding: 6px 15px;
-        border-radius: var(--radius-sm);
-        border: none;
-        cursor: pointer;
-        background: #444;
-        color: white;
-    }
-
-        .btn:hover {
-            background: #555;
-        }
-
-    .btn-primary {
-        background: #42a5f5;
-    }
-
-        .btn-primary:hover {
-            background: #1e88e5;
-        }

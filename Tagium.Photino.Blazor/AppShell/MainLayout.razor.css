@@ -93,7 +93,7 @@
     .error-boundary-fallback .btn {
         background: var(--primary-color);
         border: none;
-        color: white;
+        color: var(--text-on-primary);
         padding: var(--space-xs) var(--space-sm);
         border-radius: var(--radius-sm);
         cursor: pointer;

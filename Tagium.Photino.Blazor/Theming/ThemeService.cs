@@ -101,12 +101,33 @@ public class ThemeService
                 if (!File.Exists(destPath))
                 {
                     File.Copy(file, destPath, true);
+                    continue;
+                }
+
+                // Refresh bundled themes when the shipped revision is newer (palette or token fixes),
+                // while themes the user created themselves are never touched.
+                if (ReadThemeVersion(file) > ReadThemeVersion(destPath))
+                {
+                    File.Copy(file, destPath, true);
                 }
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[ThemeService] Error syncing default themes from shipping folder: {ex.Message}");
+        }
+    }
+
+    private static int ReadThemeVersion(string filePath)
+    {
+        try
+        {
+            Theme? theme = JsonSerializer.Deserialize<Theme>(File.ReadAllText(filePath), _jsonOptions);
+            return theme?.Version ?? 0;
+        }
+        catch
+        {
+            return 0;
         }
     }
 }

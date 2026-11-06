@@ -84,7 +84,7 @@
             else
             {
                 string tagStyle = isActive
-                ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid;"
+                ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid; color: {TagColorContrast.GetTextColor(tag.ColorHex)};"
                 : $"border-color: {tag.ColorHex};";
 
                 <div class="tag-item pill @(isActive ? "active" : "")"

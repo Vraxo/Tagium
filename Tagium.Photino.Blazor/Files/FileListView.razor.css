@@ -43,7 +43,7 @@
         }
 
         .file-list tbody tr.selected {
-            background: rgba(66, 165, 245, 0.15);
+            background: var(--primary-tint);
             border-left: 3px solid var(--primary-color);
         }
 
