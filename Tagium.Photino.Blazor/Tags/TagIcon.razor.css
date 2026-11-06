@@ -1,18 +1,26 @@
-.tag-emoji {
-        display: inline-block;
-        width: 1.2em;
-        text-align: center;
-        margin-right: 6px;
-        line-height: 1;
-        font-size: 1.1em;
-    }
+.tag-icon-slot {
+    display: inline-flex;
+    flex: 0 0 1.2em;
+    align-items: center;
+    justify-content: center;
+    width: 1.2em;
+    height: 1.2em;
+    margin-right: 6px;
+}
 
-    .tag-color {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 8px;
-        flex-shrink: 0;
-        border: 1px solid rgba(255,255,255,0.1);
-    }
+.tag-emoji {
+    display: block;
+    width: 100%;
+    line-height: 1;
+    font-size: 1.1em;
+    text-align: center;
+}
+
+.tag-color {
+    display: block;
+    flex: 0 0 8px;
+    width: 8px;
+    height: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+}

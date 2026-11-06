@@ -1,14 +1,16 @@
-﻿@namespace Tagium.Photino.Blazor.Tags
+@namespace Tagium.Photino.Blazor.Tags
 
 @if (ShowIcon)
 {
-    @if (!string.IsNullOrWhiteSpace(Tag.Emoji))
-    {
-        <span class="tag-emoji">@Tag.Emoji</span>
-    }
-    else
-    {
-        <span class="tag-color" style="background-color: @Tag.ColorHex"></span>
-    }
+    <span class="tag-icon-slot" aria-hidden="true">
+        @if (!string.IsNullOrWhiteSpace(Tag.Emoji))
+        {
+            <span class="tag-emoji">@Tag.Emoji</span>
+        }
+        else if (ShowColor)
+        {
+            <span class="tag-color" style="background-color: @Tag.ColorHex"></span>
+        }
+    </span>
 }
 
