@@ -135,12 +135,15 @@ Every interactive surface must be operable without a mouse. Two layers cooperate
 | :--- | :--- |
 | File grid (`FileGrid`) | container `role="listbox"` + `aria-multiselectable`; cards `role="option"` with `aria-selected` and an `aria-label` |
 | File list (`FileListView`) | table `role="grid"`, rows `role="row"` with `aria-selected`, cells `role="gridcell"` |
-| Sidebar filters (`TagSidebar`, `FolderSidebar`) | `role="button"` + `tabindex="0"` + `aria-current` on the active filter |
+| Tag filters (`TagSidebar`) | `role="button"` + `tabindex="0"` + `aria-current` on the active filter |
+| Folder tree (`FolderSidebar`) | container `role="tree"` + `aria-labelledby`; rows `role="treeitem"` with `aria-level`, `aria-expanded`, `aria-selected` and a roving tabindex; children live in `role="group"` inside the parent treeitem |
 | Modals (`ModalHost`) | `role="dialog"` + `aria-modal` + `aria-labelledby`, `tabindex="-1"`; focus moves into the dialog on open, Escape closes, `Tab`/`Shift+Tab` cycle inside the dialog, and focus returns to the opener on close |
 
 **Roving tabindex**: library surfaces expose exactly one tab stop (the first selected item, otherwise the first item on the page); every other item is `tabindex="-1"` and reached with the arrow keys. Never make every row a tab stop.
 
 **Selection gestures**: a plain click (or a plain arrow) replaces the selection and sets the anchor; `Ctrl`+click toggles and re-anchors; `Shift`+click and `Shift`+arrow extend an inclusive range from the anchor across the current page in display order and leave the anchor in place, so repeated shifts grow the same range. The span maths lives in `Tagium.Core/Files/SelectionRange` so it can be unit-tested; `AppState` only decides when to apply it. A filter change, `SetSelection` or `ClearSelection` drops the anchor, and an anchor that is no longer on the page degrades to a plain click rather than selecting rows the user cannot see.
+
+**Folder tree keys**: Up/Down move one visible row and clamp at the ends, Right expands a collapsed folder or steps into its first child, Left collapses or steps out to the parent, Home/End jump to the ends, and Enter/Space select the folder. Expansion is therefore fully keyboard-reachable, which makes the chevron a mouse-only affordance: it is `aria-hidden`, never a separate tab stop, and never a nested button inside the treeitem. The row maths lives in `Tagium.Core/Library/FolderTreeNavigation` and is unit-tested there; the component only decides when to apply it.
 
 **Icon-only buttons** must carry `aria-label` alongside `title`, and toggles should expose `aria-expanded`/`aria-current` so state is announced.
 

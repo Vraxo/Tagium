@@ -15,7 +15,7 @@ window.libraryNav = {
 
         document.addEventListener('keydown', function (e) {
             const item = e.target && e.target.closest
-                ? e.target.closest('.file-card, .file-row, .tag-item, .folder-item')
+                ? e.target.closest('.file-card, .file-row, .tag-item, .folder-node')
                 : null;
 
             if (!item) {
@@ -26,6 +26,23 @@ window.libraryNav = {
                 e.preventDefault();
             }
         });
+    },
+
+    // Focuses the item at a position in DOM order. The folder tree renders its rows in the
+    // same order it navigates them, so an index is enough and Blazor needs no element refs.
+    focusItem: function (containerSelector, itemSelector, index) {
+        const container = document.querySelector(containerSelector);
+        if (!container) {
+            return false;
+        }
+
+        const items = container.querySelectorAll(itemSelector);
+        if (index < 0 || index >= items.length) {
+            return false;
+        }
+
+        items[index].focus();
+        return true;
     },
 
     // Moves focus to the neighbouring item in the requested direction and returns the

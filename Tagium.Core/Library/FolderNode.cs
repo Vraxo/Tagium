@@ -1,5 +1,9 @@
-﻿namespace Tagium.Photino.Blazor.Files;
+namespace Tagium.Core.Library;
 
+/// <summary>
+/// One folder in the sidebar tree. It lives in Core rather than next to the component so the
+/// navigation maths in <see cref="FolderTreeNavigation"/> can be unit-tested without the UI.
+/// </summary>
 public class FolderNode
 {
     public required string Path { get; set; }
