@@ -90,10 +90,7 @@
                 <div class="tag-item pill @(isActive ? "active" : "")"
                      @onclick="() => SetSearch(tag.Name)"
                      style="@tagStyle">
-                    @if (!string.IsNullOrWhiteSpace(tag.Emoji))
-                    {
-                        <span class="item-emoji">@tag.Emoji</span>
-                    }
+                    <TagIcon Tag="@tag" ShowColor="false" />
                     <span class="name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
                 </div>

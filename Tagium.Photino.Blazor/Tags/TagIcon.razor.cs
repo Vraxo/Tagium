@@ -7,4 +7,5 @@ public partial class TagIcon
 {
     [Parameter, EditorRequired] public required Tag Tag { get; set; }
     [Parameter] public bool ShowIcon { get; set; } = true;
+    [Parameter] public bool ShowColor { get; set; } = true;
 }

@@ -172,10 +172,6 @@
         margin-left: auto;
     }
 
-    ::deep .tag-item.pill .item-emoji {
-        margin-right: 6px;
-    }
-
 /* ====== Legacy Mode (Minimal Circles) ====== */
 ::deep .tag-item.legacy {
     padding: 3px 8px;
@@ -205,13 +201,6 @@
         font-size: 0.8em;
         color: var(--text-muted);
         margin-left: auto;
-    }
-
-    ::deep .tag-item.legacy .tag-emoji {
-        margin-right: 8px;
-        width: 1.2em;
-        text-align: center;
-        font-size: var(--font-size-sm);
     }
 
 /* ====== Shared Styles ====== */
