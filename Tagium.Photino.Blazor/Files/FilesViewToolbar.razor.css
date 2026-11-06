@@ -27,7 +27,7 @@
     color: var(--text-muted);
     width: 30px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -55,7 +55,7 @@
     margin-top: 8px;
     background: var(--panel-bg);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 10px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     z-index: 1001;

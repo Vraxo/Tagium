@@ -69,6 +69,7 @@ public partial class MainLayout : IDisposable
         // Safely boot theme configurations after the DOM is fully loaded and interactive
         await ThemeService.InitializeAsync(JS);
         await ThemeService.ApplyThemeAsync(JS, SettingsManager.Current.SelectedTheme);
+        await JS.InvokeVoidAsync("themeManager.applyCornerStyle", SettingsManager.Current.CornerStyle.ToString());
     }
 
     [JSInvokable]

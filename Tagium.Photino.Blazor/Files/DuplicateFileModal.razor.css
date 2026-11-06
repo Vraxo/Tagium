@@ -7,7 +7,7 @@
         background: #222;
         padding: 10px;
         border: 1px solid #444;
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
         font-family: monospace;
         word-break: break-all;
         margin: 15px 0;
@@ -23,7 +23,7 @@
 
     .btn {
         padding: 6px 15px;
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
         border: none;
         cursor: pointer;
         background: #444;
