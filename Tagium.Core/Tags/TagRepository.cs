@@ -62,7 +62,7 @@ public class TagRepository
             WHERE T.Id IN @Ids
             GROUP BY T.Id";
 
-        return conn.Query<Tag>(sql, new { Ids = idList }).ToList();
+        return TagOrdering.ByName(conn.Query<Tag>(sql, new { Ids = idList }));
     }
 
     public void Add(string name, string colorHex, string? emoji, string? category = null)
