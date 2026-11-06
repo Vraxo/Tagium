@@ -108,7 +108,7 @@ public class ShippedThemeTests
     [Fact]
     public void RootPalette_MeetsWcagAaForTextPairs()
     {
-        List<string> problems = FindContrastProblems("Default (app.css :root)", LoadRootPalette());
+        List<string> problems = FindContrastProblems("Default (app.css :root)", LoadRootPalette()).ToList();
 
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
     }
