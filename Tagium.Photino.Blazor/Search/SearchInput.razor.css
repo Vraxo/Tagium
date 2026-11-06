@@ -15,7 +15,7 @@
     .search-input:focus {
         outline: none;
         border-color: var(--primary-color);
-        background: #000;
+        background: var(--surface-bg);
     }
 
     .search-input::placeholder {

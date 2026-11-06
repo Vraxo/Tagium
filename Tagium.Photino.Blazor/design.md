@@ -24,15 +24,18 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 | `var(--bg-color)` | Core app background (dark charcoal) |
 | `var(--panel-bg)` | Sidebar and secondary panel background |
 | `var(--surface-bg)` | Cards, input fields, and elevated elements |
-| `var(--surface-hover)` | Interactive hover state (semi-transparent white) |
+| `var(--surface-hover)` | Interactive hover state (translucent white on dark themes, black on light themes) |
 | `var(--border-color)` | Structural separation lines, thin borders |
 | `var(--text-color)` | Primary readable content |
 | `var(--text-muted)` | Supporting descriptors, labels, and timestamps |
 | `var(--primary-color)` | Focus rings, primary buttons, accents |
 | `var(--primary-hover)` | Active primary button hover states |
+| `var(--primary-tint)` | Translucent primary wash for selection rings and selected rows |
 | `var(--text-on-primary)` | Contrasting text color sitting on primary-colored backgrounds (WCAG AA) |
 | `var(--danger-color)` | Destructive buttons, warnings, missing alerts |
 | `var(--danger-hover)` | Active destructive hover states |
+| `var(--text-on-danger)` | Contrasting text color sitting on solid danger buttons |
+| `var(--success-color)` | Completed operations, thumbnail progress, success toasts |
 | `var(--folder-color)` | Directories, roots, and folder paths (`#ffca28`) |
 | `var(--warning-color)` | High-visibility alert orange for missing file flags (`#ff9800`) |
 | `var(--appearance-color)` | Theme preferences and creative palettes (`#ba68c8`) |
@@ -77,6 +80,7 @@ Configure UI elements and icons dynamically using these targeted states:
 * **Alarms & Warnings**: Render critical states and missing files with `color: var(--warning-color)`.
 * **Selection Override**: When a container gains the active selection state, all inner text and colored icons must immediately transition to `color: var(--text-on-primary) !important`.
 * **Interactive Deletions**: Tag-removal/delete controls must rest at `var(--text-muted)` and transition to `var(--danger-color)` on hover.
+* **Tag-Coloured Fills**: Any surface painted with a tag's own `ColorHex` (sidebar pills, inspector pills, swatches with labels) must derive its label ink from `TagColorContrast.GetTextColor(...)` instead of a fixed white, because tag colours range from near-white to near-black. Controls nested inside those pills inherit that ink and give feedback via opacity plus `var(--surface-hover)`, never via a fixed accent colour.
 
 ### Settings Panel Tab Accents
 

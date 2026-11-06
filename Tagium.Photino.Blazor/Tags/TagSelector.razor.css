@@ -55,7 +55,7 @@
 }
 
     .tag-dropdown-item:hover {
-        background-color: rgba(255, 255, 255, 0.08);
+        background-color: var(--surface-hover);
     }
 
     .tag-dropdown-item.active {

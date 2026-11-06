@@ -1,17 +1,22 @@
 {
   "Name": "Classic Light",
+  "Version": 2,
   "Colors": {
     "--bg-color": "#F5F5F5",
     "--panel-bg": "#EAEAEA",
     "--surface-bg": "#FFFFFF",
+    "--surface-hover": "rgba(0, 0, 0, 0.06)",
     "--border-color": "#DCDCDC",
     "--text-color": "#212121",
     "--text-muted": "#666666",
     "--primary-color": "#1976D2",
     "--primary-hover": "#1565C0",
+    "--primary-tint": "rgba(25, 118, 210, 0.14)",
     "--text-on-primary": "#FFFFFF",
     "--danger-color": "#D32F2F",
     "--danger-hover": "#C62828",
+    "--text-on-danger": "#FFFFFF",
+    "--success-color": "#2E7D32",
     "--folder-color": "#E65100",
     "--warning-color": "#F57C00",
     "--appearance-color": "#8E24AA"

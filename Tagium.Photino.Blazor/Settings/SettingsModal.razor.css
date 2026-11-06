@@ -419,7 +419,7 @@ input:checked + .slider {
 .btn-danger {
     background-color: var(--danger-color);
     border-color: var(--danger-hover);
-    color: white;
+    color: var(--text-on-danger);
 }
 
     .btn-danger:hover {

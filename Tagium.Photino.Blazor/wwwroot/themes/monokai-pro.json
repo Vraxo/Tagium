@@ -1,17 +1,22 @@
 {
   "Name": "Monokai Pro",
+  "Version": 2,
   "Colors": {
     "--bg-color": "#2d2a2e",
     "--panel-bg": "#221f22",
     "--surface-bg": "#3a373a",
+    "--surface-hover": "rgba(255, 255, 255, 0.07)",
     "--border-color": "#403e41",
     "--text-color": "#fcfcfa",
-    "--text-muted": "#939293",
+    "--text-muted": "#a8a7a9",
     "--primary-color": "#78dce8",
     "--primary-hover": "#5ecbda",
+    "--primary-tint": "rgba(120, 220, 232, 0.22)",
     "--text-on-primary": "#2d2a2e",
     "--danger-color": "#ff6188",
     "--danger-hover": "#f14e76",
+    "--text-on-danger": "#2d2a2e",
+    "--success-color": "#a9dc76",
     "--folder-color": "#ffd866",
     "--warning-color": "#fc9867",
     "--appearance-color": "#ab9df2"

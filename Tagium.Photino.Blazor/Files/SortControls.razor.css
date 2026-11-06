@@ -16,5 +16,5 @@ select {
 }
 
     select:hover {
-        border-color: #555;
+        border-color: var(--text-muted);
     }
