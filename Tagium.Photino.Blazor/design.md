@@ -50,6 +50,17 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 | `var(--space-md)` | 16px | Workspace borders, grid container margins |
 | `var(--space-lg)` | 24px | Layout spacing, empty state paddings |
 
+### Typography
+
+| CSS Variable | Value | Purpose |
+| :--- | :--- | :--- |
+| `var(--font-size-xs)` | 11px | Metadata, badges, counters, field hints |
+| `var(--font-size-sm)` | 12px | Default control and body text |
+| `var(--font-size-lg)` | 16px | Stat values and single prominent numbers |
+
+Breakpoints are literal `@media` values and cannot be tokens (custom properties are not
+valid inside media queries): the shell collapses at **900px** and the tag manager at **760px**.
+
 ### Border Radii & Transitions
 
 The `Corner Style` preference selects the shared radius tokens used throughout the interface. The default values preserve the original design; circles and intentionally pill-shaped controls keep their distinctive geometry.
