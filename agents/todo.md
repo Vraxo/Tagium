@@ -38,7 +38,7 @@ Still open in this area:
 - [ ] Verify the tab order end-to-end in the running app — CI can only prove it compiles.
 - [ ] Screen-reader pass with a real AT (Narrator/NVDA) over the grid, list and tag sidebar.
 - [x] Announce selection changes and filtered counts with a polite live region — `AppShell/LibraryAnnouncer` keeps a single mounted `role="status"` region, debounced 400 ms so arrow-key repeats collapse into one sentence, silent when only paging or a re-render changed. Wording lives in `Tagium.Core/Files/LibraryAnnouncement` with tests in `Tagium.Core.Tests/Files/LibraryAnnouncementTests.cs`.
-- [ ] Folder tree could use `role="tree"`/`treeitem` with `aria-expanded`/`aria-level` instead of flat buttons.
+- [x] Folder tree is now a real `role="tree"`: `role="treeitem"` rows with `aria-level`/`aria-expanded`/`aria-selected`, children in `role="group"` inside their parent, a roving tabindex instead of every row being a tab stop, and the chevron demoted to a mouse-only `aria-hidden` affordance. Up/Down/Left/Right/Home/End are handled in Blazor via `Tagium.Core/Library/FolderTreeNavigation` (unit-tested), and `libraryNav.js` gained `focusItem` plus a suppression match on `.folder-node`.
 
 ## 3. Multi-select model — shipped
 

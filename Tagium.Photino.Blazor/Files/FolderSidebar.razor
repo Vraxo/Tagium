@@ -2,64 +2,82 @@
 
 <div class="sidebar-container">
     <div class="sidebar-header">
-        <h4>Folders</h4>
+        <h4 id="folder-tree-heading">Folders</h4>
     </div>
-    <div class="folder-list">
-        @if (_rootNodes.Count == 0)
-        {
+
+    @if (_rootNodes.Count == 0)
+    {
+        <div class="folder-list">
             <div class="empty-state">
                 <p>No managed folders. Add one in settings.</p>
             </div>
-        }
-        else
-        {
-            @foreach (var node in _rootNodes)
+        </div>
+    }
+    else
+    {
+        <div class="folder-list" role="tree" aria-labelledby="folder-tree-heading">
+            @foreach (FolderNode node in _rootNodes)
             {
-                @RenderNode(node, 0)
+                @RenderNode(node, 1, TabStopPath)
             }
-        }
-    </div>
+        </div>
+    }
 </div>
 
 @code {
-    private RenderFragment RenderNode(FolderNode node, int depth) => __builder =>
+    private RenderFragment RenderNode(FolderNode node, int level, string? tabStopPath) => __builder =>
     {
         bool isSelected = AppState.CurrentFolderPath == node.Path;
+        bool isTabStop = tabStopPath is not null && string.Equals(tabStopPath, node.Path, StringComparison.OrdinalIgnoreCase);
 
-        <div class="folder-item @(isSelected ? "active" : "")"
-             role="button"
-             tabindex="0"
-             aria-current="@(isSelected ? "true" : "false")"
-             style="--depth: @depth;"
+        // Children are only discovered on first expand, so "expandable" means "expanded, has
+        // children, or has never been loaded" — a folder proven empty stops claiming to expand.
+        bool isExpandable = node.IsExpanded || node.Children.Count > 0 || !node.ChildrenLoaded;
+
+        @* The treeitem wraps its own children so screen readers get the real tree shape;
+           the 24px visual row lives inside it and carries the selected/hover styling. *@
+        <div class="folder-node"
+             role="treeitem"
+             aria-level="@level"
+             aria-expanded="@(isExpandable ? (node.IsExpanded ? "true" : "false") : null)"
+             aria-selected="@(isSelected ? "true" : "false")"
+             tabindex="@(isTabStop ? 0 : -1)"
+             data-path="@node.Path"
              @onclick="() => SelectFolder(node)"
-             @onkeydown="e => ActivateOnKey(e, () => SelectFolder(node))">
+             @onclick:stopPropagation="true"
+             @onkeydown="e => OnRowKeyDown(e, node)"
+             @onkeydown:stopPropagation="true">
 
-            <button class="expand-btn"
-                    title="@(node.IsExpanded ? "Collapse folder" : "Expand folder")"
-                    aria-label="@(node.IsExpanded ? "Collapse folder" : "Expand folder")"
-                    aria-expanded="@(node.IsExpanded ? "true" : "false")"
-                    @onclick="e => ToggleExpand(node)"
-                    @onclick:stopPropagation="true">
-                @if (node.IsExpanded)
+            <div class="folder-row @(isSelected ? "active" : "")" style="--depth: @(level - 1);">
+                @* Mouse-only affordance: keyboard users expand with Right/Left on the row,
+                   and the row itself exposes aria-expanded. *@
+                @if (isExpandable)
                 {
-                    <i class="fa-solid fa-chevron-down"></i>
+                    <span class="expand-btn"
+                          aria-hidden="true"
+                          @onclick="() => ToggleExpand(node)"
+                          @onclick:stopPropagation="true">
+                        <i class="fa-solid @(node.IsExpanded ? "fa-chevron-down" : "fa-chevron-right")"></i>
+                    </span>
                 }
                 else
                 {
-                    <i class="fa-solid fa-chevron-right"></i>
+                    <span class="expand-btn expand-btn-empty" aria-hidden="true"></span>
                 }
-            </button>
 
-            <i class="fa-solid fa-folder folder-icon"></i>
-            <span class="folder-name" title="@node.Path">@node.Name</span>
-        </div>
+                <i class="fa-solid fa-folder folder-icon" aria-hidden="true"></i>
+                <span class="folder-name" title="@node.Path">@node.Name</span>
+            </div>
 
-        @if (node.IsExpanded && node.Children.Count > 0)
-        {
-            @foreach (var child in node.Children)
+            @if (node.IsExpanded && node.Children.Count > 0)
             {
-                @RenderNode(child, depth + 1)
+                <div class="folder-group" role="group">
+                    @foreach (FolderNode child in node.Children)
+                    {
+                        @RenderNode(child, level + 1, tabStopPath)
+                    }
+                </div>
             }
-        }
+        </div>
     };
 }

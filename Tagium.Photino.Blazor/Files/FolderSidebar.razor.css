@@ -36,7 +36,14 @@
         border-color: var(--panel-bg);
     }
 
-.folder-item {
+/* The treeitem is a structural wrapper (it owns the row and its children); the 24px
+   visual row, and therefore all styling, belongs to .folder-row. */
+.folder-node,
+.folder-group {
+    display: block;
+}
+
+.folder-row {
     display: flex;
     align-items: center;
     height: 24px; /* Locked to the sleeker, compact desktop height boundary */
@@ -50,11 +57,11 @@
     box-sizing: border-box;
 }
 
-    .folder-item:hover {
+    .folder-row:hover {
         background-color: var(--surface-hover);
     }
 
-    .folder-item.active {
+    .folder-row.active {
         background-color: var(--primary-color);
     }
 
@@ -63,10 +70,21 @@
    When selected, all inner text and colored icons must transition 
    to high-contrast primary text color immediately. 
 */
-        .folder-item.active,
-        .folder-item.active * {
+        .folder-row.active,
+        .folder-row.active * {
             color: var(--text-on-primary) !important;
         }
+
+/* A treeitem spans its whole subtree, so the global focus ring is moved onto the row it
+   represents instead of drawing a box around every child underneath it. */
+.folder-list .folder-node:focus-visible {
+    outline: none;
+}
+
+.folder-list .folder-node:focus-visible > .folder-row {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px; /* hugging the row keeps the ring inside the 24px boundary */
+}
 
 .expand-btn {
     background: transparent;
@@ -89,6 +107,12 @@
         background-color: var(--surface-bg);
         color: var(--text-color);
     }
+
+/* Keeps the name column aligned for folders that have no chevron (proven empty). */
+.expand-btn-empty {
+    cursor: default;
+    pointer-events: none;
+}
 
 .folder-icon {
     color: var(--folder-color); /* Strict yellow-gold system token alignment */
