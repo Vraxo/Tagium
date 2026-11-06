@@ -67,17 +67,29 @@ public class TagRepository
 
     public void Add(string name, string colorHex, string? emoji, string? category = null)
     {
+        string canonicalName = TagFormatter.CanonicalizeName(name);
+        if (canonicalName.Length == 0)
+        {
+            return;
+        }
+
         using SqliteConnection conn = _db.GetConnection();
         try
         {
             conn.Execute("INSERT INTO Tags (Id, Name, ColorHex, Emoji, Category) VALUES (@Id, @Name, @ColorHex, @Emoji, @Category)",
-                new { Id = Guid.NewGuid(), Name = name, ColorHex = colorHex, Emoji = emoji, Category = category });
+                new { Id = Guid.NewGuid(), Name = canonicalName, ColorHex = colorHex, Emoji = emoji, Category = category });
         }
         catch { /* Ignore duplicates */ }
     }
 
     public void Update(Tag tag)
     {
+        tag.Name = TagFormatter.CanonicalizeName(tag.Name);
+        if (tag.Name.Length == 0)
+        {
+            return;
+        }
+
         using SqliteConnection conn = _db.GetConnection();
         string sql = @"
             UPDATE Tags 
@@ -137,8 +149,14 @@ public class TagRepository
 
     public Guid? ResolveTagId(string input)
     {
+        string canonicalInput = TagFormatter.CanonicalizeName(input);
+        if (canonicalInput.Length == 0)
+        {
+            return null;
+        }
+
         using SqliteConnection conn = _db.GetConnection();
-        return conn.QueryFirstOrDefault<Guid?>("SELECT Id FROM Tags WHERE Name = @Name", new { Name = input }) ??
-               conn.QueryFirstOrDefault<Guid?>("SELECT TagId FROM TagAliases WHERE Alias = @Alias", new { Alias = input });
+        return conn.QueryFirstOrDefault<Guid?>("SELECT Id FROM Tags WHERE Name = @Name", new { Name = canonicalInput }) ??
+               conn.QueryFirstOrDefault<Guid?>("SELECT TagId FROM TagAliases WHERE Alias = @Alias", new { Alias = input.Trim() });
     }
 }
