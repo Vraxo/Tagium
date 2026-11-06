@@ -37,7 +37,7 @@ Still open in this area:
 - [x] Focus **trap** inside `ModalHost` and restore focus to the opener on close — `wwwroot/js/modalFocus.js` captures the opener before the dialog re-renders, traps `Tab`/`Shift+Tab` at the first/last focusable element (capture-phase listener, so Blazor keeps owning Escape), and restores focus after the dialog leaves the DOM. `ModalHost` is now `IAsyncDisposable` so the listener cannot outlive the host.
 - [ ] Verify the tab order end-to-end in the running app — CI can only prove it compiles.
 - [ ] Screen-reader pass with a real AT (Narrator/NVDA) over the grid, list and tag sidebar.
-- [ ] Announce selection changes and filtered counts with a polite live region.
+- [x] Announce selection changes and filtered counts with a polite live region — `AppShell/LibraryAnnouncer` keeps a single mounted `role="status"` region, debounced 400 ms so arrow-key repeats collapse into one sentence, silent when only paging or a re-render changed. Wording lives in `Tagium.Core/Files/LibraryAnnouncement` with tests in `Tagium.Core.Tests/Files/LibraryAnnouncementTests.cs`.
 - [ ] Folder tree could use `role="tree"`/`treeitem` with `aria-expanded`/`aria-level` instead of flat buttons.
 
 ## 3. Multi-select model — shipped

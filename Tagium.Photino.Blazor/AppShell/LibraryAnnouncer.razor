@@ -1,0 +1,7 @@
+@namespace Tagium.Photino.Blazor.AppShell
+@implements IDisposable
+
+@* Rendered unconditionally, never inside an @if: a live region that appears with its text
+   already in place is frequently not announced, while one whose text changes while it stays
+   mounted is. Everything here is repeated by the visual UI, so it is hidden on screen only. *@
+<div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">@_message</div>
