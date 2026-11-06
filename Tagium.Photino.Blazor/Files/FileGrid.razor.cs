@@ -176,12 +176,12 @@ public partial class FileGrid : IDisposable
             case "ArrowRight":
             case "Home":
             case "End":
-                _ = MoveFocusAsync(e.Key);
+                _ = MoveFocusAsync(e.Key, e.ShiftKey);
                 break;
         }
     }
 
-    private async Task MoveFocusAsync(string key)
+    private async Task MoveFocusAsync(string key, bool extendSelection)
     {
         string? targetId;
 
@@ -197,7 +197,8 @@ public partial class FileGrid : IDisposable
 
         if (Guid.TryParse(targetId, out Guid id))
         {
-            AppState.SelectFile(id, false, false);
+            // Shift+arrow extends the same range a shift-click would, from the same anchor.
+            AppState.SelectFile(id, false, extendSelection);
         }
     }
 

@@ -40,7 +40,25 @@ Still open in this area:
 - [ ] Announce selection changes and filtered counts with a polite live region.
 - [ ] Folder tree could use `role="tree"`/`treeitem` with `aria-expanded`/`aria-level` instead of flat buttons.
 
-## 3. Theme authoring & validation
+## 3. Multi-select model — shipped
+
+Evidence: `AppState.SelectFile(id, multiSelect, rangeSelect)` accepted `rangeSelect` and ignored it. Both views were already passing `e.ShiftKey` into it, so Shift+click silently behaved like a plain click and the gesture simply did nothing.
+
+- [x] `Tagium.Core/Files/SelectionRange.Between` — inclusive span between anchor and target in display order, direction-agnostic, empty when either endpoint is not in the list. Tested in `Tagium.Core.Tests/Files/SelectionRangeTests.cs`.
+- [x] `AppState` keeps a `_selectionAnchor`: plain click, Ctrl+click and plain arrow movement move it; Shift+click and Shift+arrow extend from it and leave it where it is, so repeated shift gestures grow from the original row.
+- [x] The span is scoped to the current page in display order — exactly what the grid and list render — so a stale anchor cannot select rows the user cannot see. An anchor that left the page falls back to a plain click.
+- [x] The anchor is dropped by search/folder/missing-only changes, `SetSelection` (Ctrl+A) and `ClearSelection`, so a range never starts from a filtered-away row.
+- [x] Keyboard parity: `Shift`+arrows / `Home` / `End` reach the same code path as Shift+click.
+
+Still open:
+
+- [ ] Ctrl+Shift+click unions with the existing selection but cannot subtract it — there is no "deselect this range" gesture.
+- [ ] Marquee drag-select and Ctrl+A bypass the anchor; both land on `SetSelection`, which clears it.
+- [ ] No automated coverage of the anchor itself (it lives in `AppState`, in the UI project, which has no test project). Only the range maths is covered.
+
+---
+
+## 4. Theme authoring & validation
 
 Evidence: themes can only be added by dropping JSON into AppData — Settings mentions the folder but offers no "open folder" or "reload", and `ThemeService` reports parse failures through `Console.WriteLine` only. A partial theme renders with invisible default fallbacks and no explanation.
 
@@ -51,7 +69,7 @@ Evidence: themes can only be added by dropping JSON into AppData — Settings me
 
 ---
 
-## 4. Polish backlog
+## 5. Polish backlog
 
 - [ ] **Tag chips pass colours as inline strings.** `TagSidebar` builds `"background-color: …; border-color: …; color: …"` in C#; prefer a `--tag-color` custom property set inline and let CSS read it.
 - [ ] **Media letterbox backgrounds are hardcoded:** `#000` (`FileGrid`, `FileListView`), `#101010` (`SingleFileInspector`). Fine for dark themes, blunt for Classic Light — introduce `--media-bg` if that should soften.
