@@ -92,6 +92,7 @@ Configure UI elements and icons dynamically using these targeted states:
 * **Selection Override**: When a container gains the active selection state, all inner text and colored icons must immediately transition to `color: var(--text-on-primary) !important`.
 * **Interactive Deletions**: Tag-removal/delete controls must rest at `var(--text-muted)` and transition to `var(--danger-color)` on hover.
 * **Tag-Coloured Fills**: Any surface painted with a tag's own `ColorHex` (sidebar pills, inspector pills, swatches with labels) must derive its label ink from `TagColorContrast.GetTextColor(...)` instead of a fixed white, because tag colours range from near-white to near-black. Controls nested inside those pills inherit that ink and give feedback via opacity plus `var(--surface-hover)`, never via a fixed accent colour.
+* **Keyboard Focus**: Every interactive element must show a `:focus-visible` ring — `outline: 2px solid var(--primary-color)` with `outline-offset: 2px`, declared once in `app.css`. Never style `:focus` without `:focus-visible`, and never leave `outline: none` behind without a replacement. Text inputs and selects keep their border-colour focus treatment instead.
 
 ### Settings Panel Tabs
 
@@ -119,3 +120,23 @@ Ensure all inputs, selectors, and controls conform to this compact desktop horiz
 * **Internal Clearance**: Centered with exactly `2px` clearance on all sides (`left: 2px; bottom: 2px`).
 * **Active Position**: Transform offset transition is locked to `translateX(14px)`.
 * **Thumb Color**: Always use `background: var(--text-on-primary)` for high contrast when activated.
+
+---
+
+## 5. Keyboard & Screen Reader Contract
+
+Every interactive surface must be operable without a mouse. Two layers cooperate:
+
+* **Blazor owns semantics and actions** — roles, `aria-*`, and handling Enter (activate), Space (toggle selection), Escape (clear/close) on the focused element.
+* **`wwwroot/js/libraryNav.js` owns focus movement** — geometry-based arrow/Home/End movement between `data-id` items, so the same helper works for the auto-fill grid and the single-column list. It also suppresses the browser default for Space/arrows/Home/End on library items so the container does not scroll away.
+
+| Surface | Markup contract |
+| :--- | :--- |
+| File grid (`FileGrid`) | container `role="listbox"` + `aria-multiselectable`; cards `role="option"` with `aria-selected` and an `aria-label` |
+| File list (`FileListView`) | table `role="grid"`, rows `role="row"` with `aria-selected`, cells `role="gridcell"` |
+| Sidebar filters (`TagSidebar`, `FolderSidebar`) | `role="button"` + `tabindex="0"` + `aria-current` on the active filter |
+| Modals (`ModalHost`) | `role="dialog"` + `aria-modal` + `aria-labelledby`, focus moved into the dialog on open, Escape closes |
+
+**Roving tabindex**: library surfaces expose exactly one tab stop (the first selected item, otherwise the first item on the page); every other item is `tabindex="-1"` and reached with the arrow keys. Never make every row a tab stop.
+
+**Icon-only buttons** must carry `aria-label` alongside `title`, and toggles should expose `aria-expanded`/`aria-current` so state is announced.

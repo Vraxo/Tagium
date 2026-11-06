@@ -19,20 +19,26 @@ Each item names the evidence that motivated it so it can be re-verified later.
 
 ---
 
-## 2. Keyboard & screen-reader pass — next
+## 2. Keyboard & screen-reader pass — shipped (first slice)
 
-Evidence: file cards are `<div @onclick>`, list rows are `<tr @onclick>`, sidebar tag items are `<div @onclick>` — no `tabindex`, no `role`, no `aria-selected`. There is not a single `:focus-visible` rule in the app, and the only two `@onkeydown` handlers are on text inputs. Selection and navigation are mouse-only today.
+Evidence: file cards were `<div @onclick>`, list rows `<tr @onclick>`, sidebar tag items `<div @onclick>` — no `tabindex`, no `role`, no `aria-selected`, and the app had no `:focus-visible` rule at all.
 
-- [ ] Add a focus-ring rule (and `design.md` entry): `:focus-visible` outline using `--primary-color` with offset.
-- [ ] `FileGrid` cards: `role`/`tabindex`/`aria-selected`, Enter/Space selects, Enter opens.
-- [ ] `FileListView` rows: same contract as the grid.
-- [ ] `TagSidebar` tag items + system items: focusable, `aria-current` on the active filter.
-- [ ] Roving-tabindex arrow navigation (grid: 2D, list: linear) plus Home/End.
-- [ ] Audit icon-only buttons (`IconButton`, toolbar, modal close) for `aria-label`.
-- [ ] `ModalHost`: focus trap, initial focus, restore focus to the opener on close.
-- [ ] Verify tab order end-to-end once the above lands.
+- [x] `:focus-visible` ring in `app.css` (`2px var(--primary-color)`, offset 2px) + documented in `design.md` §5.
+- [x] `FileGrid`: `role="listbox"`/`option`, `aria-selected`, `aria-label`, roving tabindex, Enter/Space/Escape/arrows.
+- [x] `FileListView`: table `role="grid"`, rows `role="row"` + `aria-selected`, cells `role="gridcell"`, same key contract.
+- [x] `TagSidebar` + `FolderSidebar`: filters are `role="button"`, focusable, `aria-current`, Enter/Space activate.
+- [x] `wwwroot/js/libraryNav.js`: geometry-based arrow/Home/End focus movement shared by both views (works for auto-fill grid and single-column list).
+- [x] `grid.js` no longer owns arrows/Enter — that moved into Blazor, so keys are not handled twice. Marquee colours now come from the theme instead of hardcoded blue.
+- [x] `ModalHost`: `role="dialog"` + `aria-modal` + `aria-labelledby`, focus moves into the dialog on open, Escape closes, close button labelled; the component now actually implements `IDisposable` so its event handlers unsubscribe.
+- [x] `aria-label` added to the remaining icon-only buttons (toolbar view/view-options/settings, files-view toolbar, folder expand, pagination prev/next, rating stars, modal close) plus `aria-expanded`/`aria-current` on toggles.
 
----
+Still open in this area:
+
+- [ ] Focus **trap** inside `ModalHost` (focus can still Tab out to the backdrop) and restore focus to the opener on close.
+- [ ] Verify the tab order end-to-end in the running app — CI can only prove it compiles.
+- [ ] Screen-reader pass with a real AT (Narrator/NVDA) over the grid, list and tag sidebar.
+- [ ] Announce selection changes and filtered counts with a polite live region.
+- [ ] Folder tree could use `role="tree"`/`treeitem` with `aria-expanded`/`aria-level` instead of flat buttons.
 
 ## 3. Theme authoring & validation
 

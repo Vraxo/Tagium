@@ -41,6 +41,18 @@ public partial class TagSidebar : IDisposable
         return IsTagSearchOpen ? "Close tag search" : "Search tags";
     }
 
+    /// <summary>
+    /// Sidebar filters are rendered as div rows, so Enter/Space have to be wired up by hand
+    /// to match the click behaviour.
+    /// </summary>
+    private static void ActivateOnKey(KeyboardEventArgs e, Action action)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            action();
+        }
+    }
+
     protected override void OnInitialized()
     {
         RefreshData();

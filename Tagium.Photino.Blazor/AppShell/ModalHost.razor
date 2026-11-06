@@ -1,14 +1,22 @@
 @namespace Tagium.Photino.Blazor.AppShell
+@implements IDisposable
 @inject ModalService ModalService
 
 @if (IsVisible)
 {
     <div class="modal-backdrop" @onclick="Close">
-        <div class="modal-container" @onclick:stopPropagation="true">
+        <div class="modal-container"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="tagium-modal-title"
+             tabindex="-1"
+             @ref="_dialog"
+             @onkeydown="HandleKeyDown"
+             @onclick:stopPropagation="true">
             <div class="modal-header">
-                <h3>@ModalService.Title</h3>
-                <button class="close-btn" @onclick="Close">
-                    <i class="fa-solid fa-xmark"></i>
+                <h3 id="tagium-modal-title">@ModalService.Title</h3>
+                <button class="close-btn" title="Close" aria-label="Close dialog" @onclick="Close">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
             </div>
             <div class="modal-body">

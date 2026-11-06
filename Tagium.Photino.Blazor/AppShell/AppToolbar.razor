@@ -37,7 +37,8 @@
         {
             <button class="btn-icon"
                     @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
-                    title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+                    title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")"
+                    aria-label="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
                 @if (Settings.Current.FileViewMode == FileViewMode.Grid)
                 {
                     <i class="fa-solid fa-list"></i>
@@ -51,7 +52,9 @@
             <div class="view-options-wrapper">
                 <button class="btn-icon @(IsMenuOpen ? "active" : "")"
                         @onclick="ToggleMenu"
-                        title="View Options">
+                        title="View Options"
+                        aria-label="View Options"
+                        aria-expanded="@(IsMenuOpen ? "true" : "false")">
                     <i class="fa-solid fa-eye"></i>
                 </button>
 
@@ -84,7 +87,7 @@
             <div class="vertical-divider"></div>
         }
 
-        <button class="btn-icon" @onclick="OpenSettings" title="Settings & Preferences">
+        <button class="btn-icon" @onclick="OpenSettings" title="Settings & Preferences" aria-label="Settings & Preferences">
             <i class="fa-solid fa-gear"></i>
         </button>
     </div>

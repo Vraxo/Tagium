@@ -5,11 +5,19 @@
 @inject SettingsManager Settings
 @inject IJSRuntime JS
 
+@{
+    List<FileEntry> pagedFiles = AppState.GetPagedFiles().ToList();
+    Guid? tabStopId = GetTabStopId(pagedFiles);
+}
+
 <div id="file-grid-container"
      class="grid-container"
+     role="listbox"
+     aria-label="Library files"
+     aria-multiselectable="true"
      style="--thumb-size: @(Settings.Current.ThumbnailSize)px;">
 
-    @foreach (var file in AppState.GetPagedFiles())
+    @foreach (var file in pagedFiles)
     {
         bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
         bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
@@ -17,9 +25,14 @@
 
         <div @key="file.Id"
              class="file-card @(isSelected ? "selected" : "")"
+             role="option"
+             aria-selected="@(isSelected ? "true" : "false")"
+             aria-label="@GetCardLabel(file)"
+             tabindex="@(tabStopId == file.Id ? 0 : -1)"
              data-id="@file.Id"
              @onclick="e => OnCardClick(e, file.Id)"
              @ondblclick="e => OnCardDoubleClick(e, file)"
+             @onkeydown="e => OnCardKeyDown(e, file)"
              @onclick:stopPropagation="true">
 
             <div class="thumbnail @(hasThumb ? "" : "broken")">
@@ -30,7 +43,7 @@
                 else
                 {
                     <div class="placeholder-icon">
-                        <i class="fa-solid fa-image"></i>
+                        <i class="fa-solid fa-image" aria-hidden="true"></i>
                     </div>
                 }
             </div>

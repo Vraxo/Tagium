@@ -27,10 +27,19 @@
         bool isSelected = AppState.CurrentFolderPath == node.Path;
 
         <div class="folder-item @(isSelected ? "active" : "")"
+             role="button"
+             tabindex="0"
+             aria-current="@(isSelected ? "true" : "false")"
              style="--depth: @depth;"
-             @onclick="() => SelectFolder(node)">
+             @onclick="() => SelectFolder(node)"
+             @onkeydown="e => ActivateOnKey(e, () => SelectFolder(node))">
 
-            <button class="expand-btn" @onclick="e => ToggleExpand(node)" @onclick:stopPropagation="true">
+            <button class="expand-btn"
+                    title="@(node.IsExpanded ? "Collapse folder" : "Expand folder")"
+                    aria-label="@(node.IsExpanded ? "Collapse folder" : "Expand folder")"
+                    aria-expanded="@(node.IsExpanded ? "true" : "false")"
+                    @onclick="e => ToggleExpand(node)"
+                    @onclick:stopPropagation="true">
                 @if (node.IsExpanded)
                 {
                     <i class="fa-solid fa-chevron-down"></i>
