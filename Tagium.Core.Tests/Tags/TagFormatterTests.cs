@@ -25,4 +25,14 @@ public class TagFormatterTests
     {
         TagFormatter.Normalize(input!).Should().Be(expected);
     }
+
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData("   ", "")]
+    [InlineData("  My Cool Tag  ", "my cool tag")]
+    [InlineData("Café & TEA!", "café & tea!")]
+    public void CanonicalizeName_LowercasesAndTrimsWithoutSlugifying(string? input, string expected)
+    {
+        TagFormatter.CanonicalizeName(input).Should().Be(expected);
+    }
 }

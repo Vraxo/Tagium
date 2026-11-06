@@ -402,8 +402,14 @@ public class LibraryService
 
     public void UpdateTag(Tag tag)
     {
+        tag.Name = TagFormatter.CanonicalizeName(tag.Name);
+        if (tag.Name.Length == 0)
+        {
+            return;
+        }
+
         Tag? original = _tagRepo.GetTagsByIds([tag.Id]).FirstOrDefault();
-        bool nameChanged = original is not null && !string.Equals(original.Name, tag.Name, StringComparison.OrdinalIgnoreCase);
+        bool nameChanged = original is not null && !string.Equals(original.Name, tag.Name, StringComparison.Ordinal);
 
         _tagRepo.Update(tag);
 

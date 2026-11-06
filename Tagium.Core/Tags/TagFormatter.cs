@@ -1,9 +1,16 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 
 namespace Tagium.Core.Tags;
 
 public static class TagFormatter
 {
+    public static string CanonicalizeName(string? input)
+    {
+        return string.IsNullOrWhiteSpace(input)
+            ? string.Empty
+            : input.Trim().ToLowerInvariant();
+    }
+
     public static string Normalize(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
