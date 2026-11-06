@@ -9,13 +9,14 @@
             <button type="button"
                     class="star @(star <= CurrentRating ? "filled" : "")"
                     title="@(star == CurrentRating ? "Clear rating" : $"Rate {star} of 5")"
+                    aria-label="@(star == CurrentRating ? "Clear rating" : $"Rate {star} of 5")"
                     @onclick="() => SetRating(star)">
                 <i class="fa-solid fa-star"></i>
             </button>
         }
         @if (CurrentRating > 0)
         {
-            <button type="button" class="star-clear" title="Clear rating" @onclick="ClearRating">
+            <button type="button" class="star-clear" title="Clear rating" aria-label="Clear rating" @onclick="ClearRating">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         }

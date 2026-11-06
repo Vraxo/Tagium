@@ -15,8 +15,6 @@ window.gridInteractions = {
             this.selectionBox = document.createElement('div');
             this.selectionBox.id = 'selection-box';
             this.selectionBox.style.position = 'absolute';
-            this.selectionBox.style.border = '1px solid #42a5f5';
-            this.selectionBox.style.backgroundColor = 'rgba(66, 165, 245, 0.2)';
             this.selectionBox.style.display = 'none';
             this.selectionBox.style.zIndex = '9999';
             this.selectionBox.style.pointerEvents = 'none';
@@ -24,6 +22,13 @@ window.gridInteractions = {
         } else {
             this.selectionBox = document.getElementById('selection-box');
         }
+
+        // Marquee colours come from the active theme so they match the selection ring
+        const themeStyles = getComputedStyle(document.documentElement);
+        const accentColor = themeStyles.getPropertyValue('--primary-color').trim() || 'currentColor';
+        const accentTint = themeStyles.getPropertyValue('--primary-tint').trim() || 'transparent';
+        this.selectionBox.style.border = '1px solid ' + accentColor;
+        this.selectionBox.style.backgroundColor = accentTint;
 
         // Attach global events
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
@@ -34,52 +39,16 @@ window.gridInteractions = {
         }
     },
 
+    // Only surface-wide shortcuts live here. Arrow/Home/End/Enter/Space are handled by the
+    // focused card or row in Blazor (see libraryNav.js for the focus movement).
     handleKeyDown: function (e) {
         // Ignore if focus is in an input
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
-        if (e.key === 'Delete') {
-            this.dotNetRef.invokeMethodAsync('OnDeleteKey');
-        } else if (e.key === 'Enter') {
-            this.dotNetRef.invokeMethodAsync('OnEnterKey');
-        } else if (e.key.startsWith('Arrow')) {
-            e.preventDefault();
-            this.navigate(e.key);
-        } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+        if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             this.dotNetRef.invokeMethodAsync('SelectAll');
         }
-    },
-
-    navigate: function (direction) {
-        const items = Array.from(document.querySelectorAll('.file-card'));
-        if (items.length === 0) return;
-
-        const selected = document.querySelector('.file-card.selected');
-        let index = selected ? items.indexOf(selected) : -1;
-
-        if (index === -1) {
-            index = 0; // Default to first
-        } else {
-            const containerWidth = document.getElementById(this.containerId).clientWidth;
-            const itemWidth = items[0].getBoundingClientRect().width + 10; // + gap
-            const cols = Math.floor(containerWidth / itemWidth) || 1;
-
-            if (direction === 'ArrowRight') index++;
-            else if (direction === 'ArrowLeft') index--;
-            else if (direction === 'ArrowDown') index += cols;
-            else if (direction === 'ArrowUp') index -= cols;
-        }
-
-        // Clamp
-        if (index < 0) index = 0;
-        if (index >= items.length) index = items.length - 1;
-
-        // Get ID (as string)
-        const id = items[index].getAttribute('data-id');
-        items[index].scrollIntoView({ block: 'nearest' });
-
-        this.dotNetRef.invokeMethodAsync('SelectFile', id);
     },
 
     handleMouseDown: function (e) {

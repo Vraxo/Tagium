@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.JSInterop;
 using Tagium.Core.Files;
 using Tagium.Core.Thumbnails;
 using Tagium.Photino.Blazor;
@@ -74,6 +75,78 @@ public partial class FileListView : IDisposable
         }
 
         Launcher.OpenFile(file.Path);
+    }
+
+    /// <summary>
+    /// The single tab stop for the grid: the first selected row, otherwise the first row on
+    /// the page. Every other row is reachable with the arrow keys.
+    /// </summary>
+    private Guid? GetTabStopId(IReadOnlyList<FileEntry> files)
+    {
+        if (files.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (FileEntry file in files)
+        {
+            if (AppState.SelectedFileIds.Contains(file.Id))
+            {
+                return file.Id;
+            }
+        }
+
+        return files[0].Id;
+    }
+
+    private void OnRowKeyDown(KeyboardEventArgs e, FileEntry file)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                if (!file.IsMissing)
+                {
+                    Launcher.OpenFile(file.Path);
+                }
+                break;
+
+            case " ":
+                AppState.SelectFile(file.Id, true, false);
+                break;
+
+            case "Escape":
+                AppState.ClearSelection();
+                break;
+
+            case "ArrowUp":
+            case "ArrowDown":
+            case "ArrowLeft":
+            case "ArrowRight":
+            case "Home":
+            case "End":
+                _ = MoveFocusAsync(e.Key);
+                break;
+        }
+    }
+
+    private async Task MoveFocusAsync(string key)
+    {
+        string? targetId;
+
+        try
+        {
+            targetId = await JS.InvokeAsync<string?>("libraryNav.move", key, "#file-list-container", ".file-row");
+        }
+        catch (JSException)
+        {
+            // Interop is only used to move DOM focus; losing it must not break selection.
+            return;
+        }
+
+        if (Guid.TryParse(targetId, out Guid id))
+        {
+            AppState.SelectFile(id, false, false);
+        }
     }
 
     private static string FormatDate(long unixTimestamp)

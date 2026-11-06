@@ -54,15 +54,23 @@
         }
     </div>
 
-    <div class="tag-list @GetDisplayModeClass()">
+    <div class="tag-list @GetDisplayModeClass()" role="group" aria-label="Tag filters">
         <div class="tag-item system-item @(IsAllFilesActive ? "active" : "")"
-             @onclick="() => SetSearch(string.Empty)">
-            <i class="fa-solid fa-folder icon folder-accent fa-fw"></i> All Files
+             role="button"
+             tabindex="0"
+             aria-current="@(IsAllFilesActive ? "true" : "false")"
+             @onclick="() => SetSearch(string.Empty)"
+             @onkeydown="e => ActivateOnKey(e, () => SetSearch(string.Empty))">
+            <i class="fa-solid fa-folder icon folder-accent fa-fw" aria-hidden="true"></i> All Files
         </div>
 
         <div class="tag-item system-item @(IsMissingActive ? "active" : "")"
-             @onclick="() => AppState.SetMissingOnly(true)">
-            <i class="fa-solid fa-triangle-exclamation icon warning-accent fa-fw"></i> Missing Files
+             role="button"
+             tabindex="0"
+             aria-current="@(IsMissingActive ? "true" : "false")"
+             @onclick="() => AppState.SetMissingOnly(true)"
+             @onkeydown="e => ActivateOnKey(e, () => AppState.SetMissingOnly(true))">
+            <i class="fa-solid fa-triangle-exclamation icon warning-accent fa-fw" aria-hidden="true"></i> Missing Files
         </div>
 
         <hr />
@@ -75,7 +83,12 @@
 
             if (Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)
             {
-                <div class="tag-item legacy @(isActive ? "active" : "")" @onclick="() => SetSearch(tag.Name)">
+                <div class="tag-item legacy @(isActive ? "active" : "")"
+                     role="button"
+                     tabindex="0"
+                     aria-current="@(isActive ? "true" : "false")"
+                     @onclick="() => SetSearch(tag.Name)"
+                     @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))">
                     <TagIcon Tag="@tag" />
                     <span class="name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
@@ -88,7 +101,11 @@
                 : $"border-color: {tag.ColorHex};";
 
                 <div class="tag-item pill @(isActive ? "active" : "")"
+                     role="button"
+                     tabindex="0"
+                     aria-current="@(isActive ? "true" : "false")"
                      @onclick="() => SetSearch(tag.Name)"
+                     @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))"
                      style="@tagStyle">
                     <TagIcon Tag="@tag" ShowColor="false" />
                     <span class="name">@tag.Name</span>

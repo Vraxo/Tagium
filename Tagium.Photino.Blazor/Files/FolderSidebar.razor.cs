@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Tagium.Core.Library;
 using Tagium.Photino.Blazor;
 
@@ -111,5 +112,16 @@ public partial class FolderSidebar : IDisposable
     {
         AppState.OnChange -= OnAppStateChanged;
         Library.LibraryChanged -= LoadRoots;
+    }
+
+    /// <summary>
+    /// Folder rows are rendered as divs, so Enter/Space have to mirror the click behaviour.
+    /// </summary>
+    private static void ActivateOnKey(KeyboardEventArgs e, Action action)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            action();
+        }
     }
 }

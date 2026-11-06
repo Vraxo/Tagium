@@ -124,28 +124,81 @@ public partial class FileGrid : IDisposable
         AppState.ClearSelection();
     }
 
-    [JSInvokable]
-    public void OnEnterKey()
+    /// <summary>
+    /// The single tab stop for the whole listbox: the first selected card, otherwise the first
+    /// card on the page. Every other card is reachable with the arrow keys.
+    /// </summary>
+    private Guid? GetTabStopId(IReadOnlyList<FileEntry> files)
     {
-        if (AppState.SelectedFileIds.Count != 1)
+        if (files.Count == 0)
         {
-            return;
+            return null;
         }
 
-        Guid id = AppState.SelectedFileIds.First();
-        FileEntry? file = AppState.GetPagedFiles().FirstOrDefault(f => f.Id == id);
-
-        if (file is null || file.IsMissing)
+        foreach (FileEntry file in files)
         {
-            return;
+            if (AppState.SelectedFileIds.Contains(file.Id))
+            {
+                return file.Id;
+            }
         }
 
-        Launcher.OpenFile(file.Path);
+        return files[0].Id;
     }
 
-    [JSInvokable]
-    public void OnDeleteKey()
+    private static string GetCardLabel(FileEntry file)
     {
+        return file.IsMissing ? $"{file.Name} (missing)" : file.Name;
+    }
+
+    private void OnCardKeyDown(KeyboardEventArgs e, FileEntry file)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                if (!file.IsMissing)
+                {
+                    Launcher.OpenFile(file.Path);
+                }
+                break;
+
+            case " ":
+                AppState.SelectFile(file.Id, true, false);
+                break;
+
+            case "Escape":
+                AppState.ClearSelection();
+                break;
+
+            case "ArrowUp":
+            case "ArrowDown":
+            case "ArrowLeft":
+            case "ArrowRight":
+            case "Home":
+            case "End":
+                _ = MoveFocusAsync(e.Key);
+                break;
+        }
+    }
+
+    private async Task MoveFocusAsync(string key)
+    {
+        string? targetId;
+
+        try
+        {
+            targetId = await JS.InvokeAsync<string?>("libraryNav.move", key, "#file-grid-container", ".file-card");
+        }
+        catch (JSException)
+        {
+            // Interop is only used to move DOM focus; losing it must not break selection.
+            return;
+        }
+
+        if (Guid.TryParse(targetId, out Guid id))
+        {
+            AppState.SelectFile(id, false, false);
+        }
     }
 
     public void Dispose()

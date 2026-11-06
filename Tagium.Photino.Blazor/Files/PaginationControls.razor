@@ -11,7 +11,8 @@
             <button class="page-btn ctrl-btn"
                     disabled="@(AppState.CurrentPage == 1)"
                     @onclick="() => GoToPage(AppState.CurrentPage - 1)"
-                    title="Previous Page">
+                    title="Previous Page"
+                    aria-label="Previous Page">
                 <i class="fa-solid fa-chevron-left"></i>
             </button>
 
@@ -21,6 +22,7 @@
                 if (pageItem.PageNumber.HasValue)
                 {
                     <button class="page-btn @(pageItem.IsActive ? "active" : "")"
+                            aria-current="@(pageItem.IsActive ? "page" : "false")"
                             @onclick="() => GoToPage(pageItem.PageNumber.Value)">
                         @pageItem.DisplayText
                     </button>
@@ -34,7 +36,8 @@
             <button class="page-btn ctrl-btn"
                     disabled="@(AppState.CurrentPage == AppState.TotalPages)"
                     @onclick="() => GoToPage(AppState.CurrentPage + 1)"
-                    title="Next Page">
+                    title="Next Page"
+                    aria-label="Next Page">
                 <i class="fa-solid fa-chevron-right"></i>
             </button>
         </div>
