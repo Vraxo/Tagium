@@ -1,11 +1,12 @@
 {
   "Name": "Nordic Frost",
-  "Version": 2,
+  "Version": 3,
   "Colors": {
     "--bg-color": "#0F141C",
     "--panel-bg": "#161B25",
     "--surface-bg": "#1F2430",
     "--surface-hover": "rgba(255, 255, 255, 0.07)",
+    "--media-bg": "#000000",
     "--border-color": "#2D323F",
     "--text-color": "#E0E6F0",
     "--text-muted": "#808D9C",

@@ -1,11 +1,12 @@
 {
   "Name": "Classic Light",
-  "Version": 2,
+  "Version": 3,
   "Colors": {
     "--bg-color": "#F5F5F5",
     "--panel-bg": "#EAEAEA",
     "--surface-bg": "#FFFFFF",
     "--surface-hover": "rgba(0, 0, 0, 0.06)",
+    "--media-bg": "#E0E0E0",
     "--border-color": "#DCDCDC",
     "--text-color": "#212121",
     "--text-muted": "#666666",

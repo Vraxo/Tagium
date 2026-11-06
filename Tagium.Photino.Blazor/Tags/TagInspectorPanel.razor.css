@@ -33,8 +33,10 @@
     padding: var(--space-2xs) var(--space-xs);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
-    /* Fallback ink only: the readable colour for the tag fill is resolved inline. */
-    color: var(--text-color);
+    /* The tag's fill and its readable ink arrive as custom properties; the fallback only
+       applies if a caller forgot to set them. */
+    background-color: var(--tag-color);
+    color: var(--tag-on-color, var(--text-color));
 }
 
 .pill-emoji {

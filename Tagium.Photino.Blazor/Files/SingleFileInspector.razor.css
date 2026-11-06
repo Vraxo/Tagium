@@ -32,7 +32,7 @@
     position: relative;
     display: block;
     height: 200px;
-    background-color: #101010;
+    background-color: var(--media-bg);
     border-radius: var(--radius-md);
     overflow: hidden;
     border: 1px solid var(--border-color);

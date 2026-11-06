@@ -60,7 +60,7 @@
                     <td class="tags-cell" role="gridcell">
                         @foreach (var tag in file.Tags)
                         {
-                            <span class="tag-pill" style="border-color: @tag.ColorHex">@tag.Name</span>
+                            <span class="tag-pill" style="--tag-color: @tag.ColorHex">@tag.Name</span>
                         }
                     </td>
                     <td class="date-cell" role="gridcell">@FormatDate(file.DateAdded)</td>

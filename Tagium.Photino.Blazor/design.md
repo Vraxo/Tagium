@@ -25,6 +25,7 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 | `var(--panel-bg)` | Sidebar and secondary panel background |
 | `var(--surface-bg)` | Cards, input fields, and elevated elements |
 | `var(--surface-hover)` | Interactive hover state (translucent white on dark themes, black on light themes) |
+| `var(--media-bg)` | Matte behind thumbnails, previews and video letterboxing — near-black on dark themes, lifted on light themes so media is not boxed in black |
 | `var(--border-color)` | Structural separation lines, thin borders |
 | `var(--text-color)` | Primary readable content |
 | `var(--text-muted)` | Supporting descriptors, labels, and timestamps |
@@ -91,7 +92,7 @@ Configure UI elements and icons dynamically using these targeted states:
 * **Alarms & Warnings**: Render critical states and missing files with `color: var(--warning-color)`.
 * **Selection Override**: When a container gains the active selection state, all inner text and colored icons must immediately transition to `color: var(--text-on-primary) !important`.
 * **Interactive Deletions**: Tag-removal/delete controls must rest at `var(--text-muted)` and transition to `var(--danger-color)` on hover.
-* **Tag-Coloured Fills**: Any surface painted with a tag's own `ColorHex` (sidebar pills, inspector pills, swatches with labels) must derive its label ink from `TagColorContrast.GetTextColor(...)` instead of a fixed white, because tag colours range from near-white to near-black. Controls nested inside those pills inherit that ink and give feedback via opacity plus `var(--surface-hover)`, never via a fixed accent colour.
+* **Tag-Coloured Fills**: Any surface painted with a tag's own `ColorHex` (sidebar pills, inspector pills, swatches with labels) must derive its label ink from `TagColorContrast.GetTextColor(...)` instead of a fixed white, because tag colours range from near-white to near-black. Controls nested inside those pills inherit that ink and give feedback via opacity plus `var(--surface-hover)`, never via a fixed accent colour. Tag colours reach the stylesheet as custom properties — `--tag-color` for the fill or outline and `--tag-on-color` for the ink resolved by `TagColorContrast` — never as `background-color:`/`border-color:`/`color:` inside an inline `style` string, so the component supplies data and the component CSS decides where it is painted.
 * **Keyboard Focus**: Every interactive element must show a `:focus-visible` ring — `outline: 2px solid var(--primary-color)` with `outline-offset: 2px`, declared once in `app.css`. Never style `:focus` without `:focus-visible`, and never leave `outline: none` behind without a replacement. Text inputs and selects keep their border-colour focus treatment instead.
 
 ### Settings Panel Tabs

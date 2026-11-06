@@ -71,10 +71,10 @@ Evidence: themes can only be added by dropping JSON into AppData — Settings me
 
 ## 5. Polish backlog
 
-- [ ] **Tag chips pass colours as inline strings.** `TagSidebar` builds `"background-color: …; border-color: …; color: …"` in C#; prefer a `--tag-color` custom property set inline and let CSS read it.
-- [ ] **Media letterbox backgrounds are hardcoded:** `#000` (`FileGrid`, `FileListView`), `#101010` (`SingleFileInspector`). Fine for dark themes, blunt for Classic Light — introduce `--media-bg` if that should soften.
-- [ ] **`TagManagerView` `.color-circle`** uses `2px solid var(--border-color)`, which is nearly invisible on Classic Light; give it the same treatment as the `TagIcon` dot.
-- [ ] **Monokai `--danger-hover`** is 4.11:1 against `--text-on-danger`; the guardrail test allows 4.0 for hover states, but lightening the hover would clear 4.5 outright.
+- [x] **Tag chips passed colours as inline style strings.** Every tag-coloured surface now sends `--tag-color` (and `--tag-on-color` for the `TagColorContrast` ink) as custom properties and its own CSS decides where they land: `TagSidebar` pills, `TagInspectorPanel` pills, the `FileListView` tag pill, the `TagManagerView` colour circle and palette swatches, and the `TagIcon` dot. No `background-color:`/`border-color:`/`color:` strings left in any `.razor`.
+- [x] **Media letterbox backgrounds were hardcoded.** `--media-bg` is now a required token: `#000000` in the default palette, Monokai and Nordic Frost (unchanged rendering), `#E0E0E0` in Classic Light so media is not boxed in black on a light theme. `FileGrid`/`FileListView` thumbnails and the `SingleFileInspector` preview read it, and `ShippedThemeTests` guards the icon-on-matte pair at the non-text 3:1 floor.
+- [x] **`TagManagerView` `.color-circle`** was ringed with `var(--border-color)` and vanished on Classic Light. It now uses the `TagIcon` dot treatment — `2px solid var(--text-muted)` — so near-white and near-black tag colours both stay visible.
+- [x] **Monokai `--danger-hover`** was 4.11:1 against `--text-on-danger`. Lightened to `#ff7a9c` (5.75:1), and the test's hover allowance was deleted: every text pair now has to hold 4.5:1, hover states included, since all four palettes clear it anyway (lowest is 5.04).
 - [ ] Consider deriving the `--primary-tint` / `--surface-hover` alphas per theme from a shared formula instead of hand-tuned rgba values.
 
 ---

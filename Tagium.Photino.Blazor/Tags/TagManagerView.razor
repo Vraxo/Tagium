@@ -100,7 +100,7 @@
                                     <div class="color-picker-wrapper">
                                         <button class="color-circle"
                                                 type="button"
-                                                style="background-color: @tag.ColorHex"
+                                                style="--tag-color: @tag.ColorHex"
                                                 @onclick="() => ToggleColorPicker(tag.Id)"
                                                 title="Change color for @tag.Name"
                                                 aria-label="Change color for @tag.Name"></button>
@@ -115,7 +115,7 @@
                                                         {
                                                             <button class="swatch"
                                                                     type="button"
-                                                                    style="background-color: @color"
+                                                                    style="--tag-color: @color"
                                                                     @onclick="() => UpdateTagColor(tag, color)"
                                                                     title="@color"
                                                                     aria-label="Set @tag.Name color to @color"></button>

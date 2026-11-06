@@ -316,7 +316,10 @@
     width: 20px;
     height: 20px;
     padding: 0;
-    border: 2px solid var(--border-color);
+    background-color: var(--tag-color);
+    /* Same ring treatment as the TagIcon dot: a neutral mid-tone outline keeps near-white
+       tag colours visible on Classic Light and near-black ones visible on dark themes. */
+    border: 2px solid var(--text-muted);
     border-radius: 50%;
     cursor: pointer;
 }
@@ -352,6 +355,7 @@
     width: 20px;
     height: 20px;
     padding: 0;
+    background-color: var(--tag-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     cursor: pointer;
