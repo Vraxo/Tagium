@@ -129,14 +129,17 @@ Every interactive surface must be operable without a mouse. Two layers cooperate
 
 * **Blazor owns semantics and actions** — roles, `aria-*`, and handling Enter (activate), Space (toggle selection), Escape (clear/close) on the focused element.
 * **`wwwroot/js/libraryNav.js` owns focus movement** — geometry-based arrow/Home/End movement between `data-id` items, so the same helper works for the auto-fill grid and the single-column list. It also suppresses the browser default for Space/arrows/Home/End on library items so the container does not scroll away.
+* **`wwwroot/js/modalFocus.js` owns modal focus** — it records the opener, traps `Tab`/`Shift+Tab` inside the open dialog and gives focus back to the opener on close.
 
 | Surface | Markup contract |
 | :--- | :--- |
 | File grid (`FileGrid`) | container `role="listbox"` + `aria-multiselectable`; cards `role="option"` with `aria-selected` and an `aria-label` |
 | File list (`FileListView`) | table `role="grid"`, rows `role="row"` with `aria-selected`, cells `role="gridcell"` |
 | Sidebar filters (`TagSidebar`, `FolderSidebar`) | `role="button"` + `tabindex="0"` + `aria-current` on the active filter |
-| Modals (`ModalHost`) | `role="dialog"` + `aria-modal` + `aria-labelledby`, focus moved into the dialog on open, Escape closes |
+| Modals (`ModalHost`) | `role="dialog"` + `aria-modal` + `aria-labelledby`, `tabindex="-1"`; focus moves into the dialog on open, Escape closes, `Tab`/`Shift+Tab` cycle inside the dialog, and focus returns to the opener on close |
 
 **Roving tabindex**: library surfaces expose exactly one tab stop (the first selected item, otherwise the first item on the page); every other item is `tabindex="-1"` and reached with the arrow keys. Never make every row a tab stop.
 
 **Icon-only buttons** must carry `aria-label` alongside `title`, and toggles should expose `aria-expanded`/`aria-current` so state is announced.
+
+**Focus in dialogs**: an open dialog is the only thing Tab can reach. `ModalHost` captures `document.activeElement` before it re-renders (rendering the dialog can replace the node that opened it), traps Tab at the first/last focusable element, and restores the opener only after the dialog has left the DOM. Do not add a second modal surface that renders its own backdrop — every modal goes through `ModalService`, so this containment stays in one place.

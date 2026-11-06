@@ -34,7 +34,7 @@ Evidence: file cards were `<div @onclick>`, list rows `<tr @onclick>`, sidebar t
 
 Still open in this area:
 
-- [ ] Focus **trap** inside `ModalHost` (focus can still Tab out to the backdrop) and restore focus to the opener on close.
+- [x] Focus **trap** inside `ModalHost` and restore focus to the opener on close — `wwwroot/js/modalFocus.js` captures the opener before the dialog re-renders, traps `Tab`/`Shift+Tab` at the first/last focusable element (capture-phase listener, so Blazor keeps owning Escape), and restores focus after the dialog leaves the DOM. `ModalHost` is now `IAsyncDisposable` so the listener cannot outlive the host.
 - [ ] Verify the tab order end-to-end in the running app — CI can only prove it compiles.
 - [ ] Screen-reader pass with a real AT (Narrator/NVDA) over the grid, list and tag sidebar.
 - [ ] Announce selection changes and filtered counts with a polite live region.
