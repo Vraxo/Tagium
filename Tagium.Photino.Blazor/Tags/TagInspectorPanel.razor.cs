@@ -57,7 +57,7 @@ public partial class TagInspectorPanel : IDisposable
 
             await InvokeAsync(() =>
             {
-                _activeTags = active;
+                _activeTags = TagOrdering.ByName(active);
                 _availableTags = available;
                 StateHasChanged();
             });

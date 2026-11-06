@@ -325,11 +325,10 @@ public class FileRepository
     {
         return string.IsNullOrEmpty(tagData)
             ? []
-            : tagData.Split(";;", StringSplitOptions.RemoveEmptyEntries)
-            .Select(ParseTagFromData)
-            .Where(t => t != null)
-            .Cast<Tag>()
-            .ToList();
+            : TagOrdering.ByName(tagData.Split(";;", StringSplitOptions.RemoveEmptyEntries)
+                .Select(ParseTagFromData)
+                .Where(tag => tag is not null)
+                .Cast<Tag>());
     }
 
     private Tag? ParseTagFromData(string tagData)

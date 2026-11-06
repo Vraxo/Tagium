@@ -1,4 +1,4 @@
-﻿using Tagium.Core.Files;
+using Tagium.Core.Files;
 using Tagium.Core.Tags;
 
 namespace Tagium.Core.Metadata;
@@ -89,7 +89,7 @@ public class TagMetadataSyncService
 
         MediaMetadata metadata = new()
         {
-            Tags = tags.Select(t => t.Name).ToList(),
+            Tags = TagOrdering.ByName(tags).Select(tag => tag.Name).ToList(),
             Rating = file.Rating,
             Title = file.Title,
             Description = file.Description
