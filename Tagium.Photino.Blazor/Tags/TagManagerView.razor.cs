@@ -9,7 +9,11 @@ public partial class TagManagerView
 {
     private List<Tag> Tags = [];
     private string NewTagName = "";
-    private Guid? ActiveColorPickerId = null;
+    private string TagSearch = "";
+    private bool UnusedOnly;
+    private bool _isLoading = true;
+    private bool _isDisposed;
+    private Guid? ActiveColorPickerId;
 
     private static readonly List<string> Palette =
     [
@@ -36,6 +40,23 @@ public partial class TagManagerView
         "#000000"
     ];
 
+    private bool CanAddTag => !string.IsNullOrWhiteSpace(NewTagName);
+
+    private IEnumerable<Tag> FilteredTags
+    {
+        get
+        {
+            string filter = TagSearch.Trim();
+            return Tags.Where(tag =>
+                (!UnusedOnly || tag.FileCount == 0)
+                && (filter.Length == 0
+                    || tag.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                    || (tag.Emoji?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)));
+        }
+    }
+
+    private int FilteredTagCount => FilteredTags.Count();
+
     protected override void OnInitialized()
     {
         RefreshTags();
@@ -50,7 +71,13 @@ public partial class TagManagerView
             List<Tag> tags = Library.GetTags(Settings.Current.TagSortBy, Settings.Current.TagSortDirection);
             await InvokeAsync(() =>
             {
+                if (_isDisposed)
+                {
+                    return;
+                }
+
                 Tags = tags;
+                _isLoading = false;
                 StateHasChanged();
             });
         });
@@ -58,44 +85,56 @@ public partial class TagManagerView
 
     private void HandleKeyUp(KeyboardEventArgs e)
     {
-        if (e.Key != "Enter")
+        if (e.Key == "Enter")
         {
-            return;
+            AddTag();
         }
-
-        AddTag();
     }
 
     private void AddTag()
     {
-        if (string.IsNullOrWhiteSpace(NewTagName))
+        string name = NewTagName.Trim();
+        if (name.Length == 0)
         {
             return;
         }
 
-        Library.AddTag(NewTagName);
         NewTagName = "";
+        TagSearch = "";
+        Library.AddTag(name);
     }
 
     private void DeleteTag(Guid id)
     {
+        if (ActiveColorPickerId == id)
+        {
+            ActiveColorPickerId = null;
+        }
+
         Library.DeleteTag(id);
     }
 
     private void UpdateTagName(Tag tag, string? newName)
     {
-        if (string.IsNullOrWhiteSpace(newName) || newName == tag.Name)
+        string name = newName?.Trim() ?? "";
+        if (name.Length == 0 || string.Equals(name, tag.Name, StringComparison.Ordinal))
         {
             return;
         }
 
-        tag.Name = newName;
+        tag.Name = name;
         Library.UpdateTag(tag);
     }
 
     private void UpdateTagEmoji(Tag tag, string? newEmoji)
     {
-        tag.Emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji;
+        string? emoji = string.IsNullOrWhiteSpace(newEmoji) ? null : newEmoji.Trim();
+        if (string.Equals(tag.Emoji, emoji, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        tag.Emoji = emoji;
         Library.UpdateTag(tag);
     }
 
@@ -106,31 +145,76 @@ public partial class TagManagerView
 
     private void UpdateTagColor(Tag tag, string color)
     {
+        if (string.Equals(tag.ColorHex, color, StringComparison.OrdinalIgnoreCase))
+        {
+            ActiveColorPickerId = null;
+            return;
+        }
+
         tag.ColorHex = color;
         Library.UpdateTag(tag);
         ActiveColorPickerId = null;
     }
 
-    private void OnSortByChange(ChangeEventArgs e)
+    private void ToggleSort(TagSortBy sortBy)
     {
-        if (Enum.TryParse<TagSortBy>(e.Value?.ToString(), out TagSortBy result))
+        Settings.Update(settings =>
         {
-            Settings.Update(s => s.TagSortBy = result);
-            RefreshTags();
-        }
+            if (settings.TagSortBy == sortBy)
+            {
+                settings.TagSortDirection = settings.TagSortDirection == SortDirection.Asc
+                    ? SortDirection.Desc
+                    : SortDirection.Asc;
+            }
+            else
+            {
+                settings.TagSortBy = sortBy;
+                settings.TagSortDirection = SortDirection.Asc;
+            }
+        });
+
+        RefreshTags();
     }
 
-    private void OnSortDirChange(ChangeEventArgs e)
+    private string GetSortArrow(TagSortBy sortBy)
     {
-        if (Enum.TryParse<SortDirection>(e.Value?.ToString(), out SortDirection result))
+        if (Settings.Current.TagSortBy != sortBy)
         {
-            Settings.Update(s => s.TagSortDirection = result);
-            RefreshTags();
+            return "↕";
         }
+
+        return Settings.Current.TagSortDirection == SortDirection.Asc ? "↑" : "↓";
+    }
+
+    private string GetAriaSort(TagSortBy sortBy)
+    {
+        if (Settings.Current.TagSortBy != sortBy)
+        {
+            return "none";
+        }
+
+        return Settings.Current.TagSortDirection == SortDirection.Asc ? "ascending" : "descending";
+    }
+
+    private void BrowseTag(Tag tag)
+    {
+        AppState.SetSearch(tag.Name);
+    }
+
+    private void ClearSearch()
+    {
+        TagSearch = "";
+    }
+
+    private void ClearFilters()
+    {
+        TagSearch = "";
+        UnusedOnly = false;
     }
 
     public void Dispose()
     {
+        _isDisposed = true;
         Library.LibraryChanged -= RefreshTags;
         Settings.SettingsChanged -= StateHasChanged;
     }
