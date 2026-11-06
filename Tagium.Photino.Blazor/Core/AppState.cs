@@ -18,6 +18,9 @@ public class AppState : IDisposable
     public string? CurrentFolderPath { get; private set; }
     public HashSet<Guid> SelectedFileIds { get; private set; } = [];
 
+    // Where shift-click ranges start from: the last item clicked without Shift.
+    private Guid? _selectionAnchor;
+
     // Pagination State
     public int CurrentPage { get; private set; } = 1;
     public int PageSize { get; private set; } = 120;
@@ -156,6 +159,7 @@ public class AppState : IDisposable
         IsMissingOnly = false;
         CurrentFolderPath = null;
         SelectedFileIds.Clear();
+        _selectionAnchor = null;
         CurrentPage = 1;
 
         if (CurrentView != AppView.Files)
@@ -172,6 +176,7 @@ public class AppState : IDisposable
         SearchText = "";
         CurrentFolderPath = null;
         SelectedFileIds.Clear();
+        _selectionAnchor = null;
         CurrentPage = 1;
 
         if (CurrentView != AppView.Files)
@@ -188,6 +193,7 @@ public class AppState : IDisposable
         SearchText = "";
         IsMissingOnly = false;
         SelectedFileIds.Clear();
+        _selectionAnchor = null;
         CurrentPage = 1;
 
         if (CurrentView != AppView.Folders)
@@ -200,6 +206,12 @@ public class AppState : IDisposable
 
     public void SelectFile(Guid id, bool multiSelect, bool rangeSelect)
     {
+        if (rangeSelect && TrySelectRange(id, addToSelection: multiSelect))
+        {
+            NotifySelectionChanged();
+            return;
+        }
+
         if (!multiSelect)
         {
             SelectedFileIds.Clear();
@@ -212,12 +224,49 @@ public class AppState : IDisposable
                 : SelectedFileIds.Add(id);
         }
 
+        _selectionAnchor = id;
         NotifySelectionChanged();
+    }
+
+    /// <summary>
+    /// Shift-click: selects everything between the anchor and <paramref name="id"/> in the order the
+    /// current page is showing. Returns <c>false</c> when there is nothing to span — no anchor yet,
+    /// or the anchor has been filtered away or left this page — so the caller falls back to treating
+    /// the click as a plain single selection.
+    /// </summary>
+    private bool TrySelectRange(Guid id, bool addToSelection)
+    {
+        if (_selectionAnchor is not { } anchor)
+        {
+            return false;
+        }
+
+        List<Guid> orderedIds = GetPagedFiles().Select(f => f.Id).ToList();
+        IReadOnlyList<Guid> range = SelectionRange.Between(orderedIds, anchor, id);
+
+        if (range.Count == 0)
+        {
+            return false;
+        }
+
+        if (!addToSelection)
+        {
+            SelectedFileIds.Clear();
+        }
+
+        foreach (Guid rangeId in range)
+        {
+            _ = SelectedFileIds.Add(rangeId);
+        }
+
+        // The anchor stays where it was, so repeated shift-clicks extend from the same origin.
+        return true;
     }
 
     public void SetSelection(IEnumerable<Guid> ids)
     {
         SelectedFileIds.Clear();
+        _selectionAnchor = null;
 
         foreach (Guid id in ids)
         {
@@ -229,6 +278,8 @@ public class AppState : IDisposable
 
     public void ClearSelection()
     {
+        _selectionAnchor = null;
+
         if (SelectedFileIds.Count <= 0)
         {
             return;

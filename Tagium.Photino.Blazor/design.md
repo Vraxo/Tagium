@@ -140,6 +140,8 @@ Every interactive surface must be operable without a mouse. Two layers cooperate
 
 **Roving tabindex**: library surfaces expose exactly one tab stop (the first selected item, otherwise the first item on the page); every other item is `tabindex="-1"` and reached with the arrow keys. Never make every row a tab stop.
 
+**Selection gestures**: a plain click (or a plain arrow) replaces the selection and sets the anchor; `Ctrl`+click toggles and re-anchors; `Shift`+click and `Shift`+arrow extend an inclusive range from the anchor across the current page in display order and leave the anchor in place, so repeated shifts grow the same range. The span maths lives in `Tagium.Core/Files/SelectionRange` so it can be unit-tested; `AppState` only decides when to apply it. A filter change, `SetSelection` or `ClearSelection` drops the anchor, and an anchor that is no longer on the page degrades to a plain click rather than selecting rows the user cannot see.
+
 **Icon-only buttons** must carry `aria-label` alongside `title`, and toggles should expose `aria-expanded`/`aria-current` so state is announced.
 
 **Focus in dialogs**: an open dialog is the only thing Tab can reach. `ModalHost` captures `document.activeElement` before it re-renders (rendering the dialog can replace the node that opened it), traps Tab at the first/last focusable element, and restores the opener only after the dialog has left the DOM. Do not add a second modal surface that renders its own backdrop — every modal goes through `ModalService`, so this containment stays in one place.
