@@ -95,7 +95,7 @@
         border: none;
         color: white;
         padding: var(--space-xs) var(--space-sm);
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
         cursor: pointer;
         font-size: var(--font-size-sm);
     }
