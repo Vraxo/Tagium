@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Tagium.Core.Files;
+using Tagium.Core.Thumbnails;
 using Tagium.Photino.Blazor;
 
 namespace Tagium.Photino.Blazor.Files;
@@ -8,10 +9,12 @@ public partial class SingleFileInspector
 {
     [Inject] private SystemLauncherService Launcher { get; set; } = default!;
     [Inject] private LocalVideoServer VideoServer { get; set; } = default!;
+    [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
 
     [Parameter, EditorRequired] public required FileEntry File { get; set; }
 
     private string VideoPreviewUrl => VideoServer.GetVideoUrl(File.Id);
+    private bool SourceExists => System.IO.File.Exists(File.Path);
 
     private Guid[] _fileIds = [];
 

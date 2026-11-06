@@ -127,6 +127,30 @@
                 <hr />
 
                 <div class="appearance-section">
+                    <h5>Interface Corner Style</h5>
+                    <p class="section-hint">Choose how sharp or rounded cards, buttons, and inputs appear. Circular and pill-shaped controls keep their distinctive shapes.</p>
+                    <div class="corner-style-options" role="radiogroup" aria-label="Interface corner style">
+                        @foreach (InterfaceCornerStyle style in Enum.GetValues<InterfaceCornerStyle>())
+                        {
+                            <label class="corner-style-option @(Settings.Current.CornerStyle == style ? "selected" : "")">
+                                <input type="radio" name="interfaceCornerStyle"
+                                       value="@style"
+                                       checked="@(Settings.Current.CornerStyle == style)"
+                                       @onchange="@(() => UpdateCornerStyle(style))" />
+                                <span class="corner-style-preview @GetCornerStylePreviewClass(style)" aria-hidden="true">
+                                    <span class="corner-preview-window">
+                                        <span class="corner-preview-button"></span>
+                                    </span>
+                                </span>
+                                <span class="corner-style-name">@GetCornerStyleLabel(style)</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <hr />
+
+                <div class="appearance-section">
                     <h5>Tag Sidebar Style</h5>
                     <div class="radio-group">
                         <label>

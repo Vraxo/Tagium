@@ -7,7 +7,22 @@
     </div>
 
     <div class="inspector-preview">
-        @if (IsImage)
+        @if (!SourceExists)
+        {
+            @if (ThumbnailService.HasThumbnail(File.Id, File.Hash))
+            {
+                <img src="tagium://thumbnail/@File.Id/@(File.Hash ?? "none")" alt="Cached preview of @File.Name" class="preview-media" />
+            }
+            else
+            {
+                <div class="unavailable-file-preview">
+                    <i class="fa-solid fa-file-circle-exclamation"></i>
+                    <span>Original file is unavailable at this path</span>
+                    <small>Rescan the library to update its status; purge missing entries in Settings &gt; Data.</small>
+                </div>
+            }
+        }
+        else if (IsImage)
         {
             <img src="tagium://preview/@File.Id" alt="@File.Name" class="preview-media" />
         }
@@ -71,7 +86,7 @@
     <TagInspectorPanel FileIds="_fileIds" />
 
     <div class="inspector-actions">
-        <button class="btn btn-secondary" @onclick="OpenFile">Open File</button>
-        <button class="btn btn-secondary" @onclick="ShowInExplorer">Show in Explorer</button>
+        <button class="btn btn-secondary" @onclick="OpenFile" disabled="@(!SourceExists)">Open File</button>
+        <button class="btn btn-secondary" @onclick="ShowInExplorer" disabled="@(!SourceExists)">Show in Explorer</button>
     </div>
 </div>

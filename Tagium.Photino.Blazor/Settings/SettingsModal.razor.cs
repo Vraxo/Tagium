@@ -127,6 +127,29 @@ public partial class SettingsModal : IDisposable
         Settings.Update(s => s.TagSidebarStyle = mode);
     }
 
+    private async Task UpdateCornerStyle(InterfaceCornerStyle style)
+    {
+        Settings.Update(s => s.CornerStyle = style);
+        await JS.InvokeVoidAsync("themeManager.applyCornerStyle", style.ToString());
+    }
+
+    private static string GetCornerStylePreviewClass(InterfaceCornerStyle style)
+    {
+        return $"corner-preview-{style.ToString().ToLowerInvariant()}";
+    }
+
+    private static string GetCornerStyleLabel(InterfaceCornerStyle style)
+    {
+        return style switch
+        {
+            InterfaceCornerStyle.Sharp => "Sharp",
+            InterfaceCornerStyle.Subtle => "Subtle",
+            InterfaceCornerStyle.Default => "Default",
+            InterfaceCornerStyle.Rounded => "Rounded",
+            _ => "Default"
+        };
+    }
+
     private void UpdateEmojiSet(EmojiSet set)
     {
         Settings.Update(s => s.EmojiPreference = set);

@@ -49,11 +49,20 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 
 ### Border Radii & Transitions
 
+The `Corner Style` preference selects the shared radius tokens used throughout the interface. The default values preserve the original design; circles and intentionally pill-shaped controls keep their distinctive geometry.
+
+| Corner Style | `--radius-sm` | `--radius-md` | `--radius-lg` |
+| :--- | :---: | :---: | :---: |
+| Sharp | 0px | 0px | 0px |
+| Subtle | 2px | 4px | 6px |
+| Default | 4px | 6px | 8px |
+| Rounded | 8px | 12px | 16px |
+
 | CSS Variable | Value | Purpose / Standard Application |
 | :--- | :--- | :--- |
-| `var(--radius-sm)` | 4px | Small buttons, badges, tag pills |
-| `var(--radius-md)` | 6px | Input fields, file cards, small containers |
-| `var(--radius-lg)` | 8px | Modals, preview windows, dialog frames |
+| `var(--radius-sm)` | Set by Corner Style | Small buttons, badges, compact controls |
+| `var(--radius-md)` | Set by Corner Style | Input fields, file cards, small containers |
+| `var(--radius-lg)` | Set by Corner Style | Modals, preview windows, dialog frames |
 | `var(--transition-fast)` | 0.1s ease-in-out | Hovers, background transitions, selection changes |
 | `var(--transition-normal)` | 0.15s ease-in-out | Drawers, modal overlays, progress bars |
 

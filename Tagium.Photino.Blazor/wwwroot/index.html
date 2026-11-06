@@ -51,14 +51,23 @@
     <script>
         window.themeManager = {
             applyTheme: function (colors) {
+                document.documentElement.removeAttribute('style');
                 if (!colors) {
-                    document.documentElement.removeAttribute('style');
                     return;
                 }
-                document.documentElement.removeAttribute('style');
                 for (const [key, value] of Object.entries(colors)) {
+                    if (['--radius-sm', '--radius-md', '--radius-lg'].includes(key)) {
+                        continue;
+                    }
                     document.documentElement.style.setProperty(key, value);
                 }
+            },
+            applyCornerStyle: function (style) {
+                const styles = ['sharp', 'subtle', 'default', 'rounded'];
+                const normalized = String(style || 'Default').toLowerCase();
+                document.documentElement.dataset.cornerStyle = styles.includes(normalized)
+                    ? normalized
+                    : 'default';
             }
         };
     </script>
