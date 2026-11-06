@@ -1,4 +1,4 @@
-# Tagium UI/UX Design System Guidelines
+﻿# Tagium UI/UX Design System Guidelines
 
 This document serves as the absolute contract for all visual developments in Tagium. All styles must strictly adhere to the tokens defined here.
 
@@ -38,7 +38,7 @@ All CSS variables are declared globally in `app.css`. Use them according to thes
 | `var(--success-color)` | Completed operations, thumbnail progress, success toasts |
 | `var(--folder-color)` | Directories, roots, and folder paths (`#ffca28`) |
 | `var(--warning-color)` | High-visibility alert orange for missing file flags (`#ff9800`) |
-| `var(--appearance-color)` | Theme preferences and creative palettes (`#ba68c8`) |
+| `var(--appearance-color)` | Secondary accent for background task progress, e.g. the tag-sync bar (`#ba68c8`) |
 
 ### Spacing & Grid System
 
@@ -82,13 +82,13 @@ Configure UI elements and icons dynamically using these targeted states:
 * **Interactive Deletions**: Tag-removal/delete controls must rest at `var(--text-muted)` and transition to `var(--danger-color)` on hover.
 * **Tag-Coloured Fills**: Any surface painted with a tag's own `ColorHex` (sidebar pills, inspector pills, swatches with labels) must derive its label ink from `TagColorContrast.GetTextColor(...)` instead of a fixed white, because tag colours range from near-white to near-black. Controls nested inside those pills inherit that ink and give feedback via opacity plus `var(--surface-hover)`, never via a fixed accent colour.
 
-### Settings Panel Tab Accents
+### Settings Panel Tabs
 
-Map category tab icons to these domains to optimize visual navigation:
-* **Library Folders Tab**: Icon color `var(--folder-color)`
-* **Appearance Tab**: Icon color `var(--appearance-color)`
-* **Maintenance Tab**: Icon color `var(--primary-color)`
-* **Active State**: Selected tab icon transition to `color: var(--primary-color)`.
+Settings navigation is a single unified surface: tabs carry no per-category accent colours.
+* **Inactive Tab**: Label and icon `var(--text-muted)`.
+* **Hover**: Label and icon `var(--text-color)` on `var(--surface-hover)`.
+* **Active Tab**: Label and icon `var(--primary-color)` on `var(--surface-bg)`.
+* **Icons**: Never assign a domain colour (folder/appearance/maintenance) to a tab icon; they inherit the label colour.
 
 ---
 
