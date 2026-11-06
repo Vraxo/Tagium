@@ -1,6 +1,6 @@
-using System.Security.Cryptography;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 using Tagium.Core.Library;
 
 namespace Tagium.Core.Tests.Library;
@@ -40,7 +40,7 @@ public class FileHasherTests : IDisposable
     public async Task ComputeSha256Async_SmallFile_ReturnsFullLowercaseHexHash()
     {
         string path = Path.Combine(_tempDir, "hello.txt");
-        await File.WriteAllTextAsync(path, "hello world");
+        await File.WriteAllTextAsync(path, "hello world", TestContext.Current.CancellationToken);
 
         string hash = (await _hasher.ComputeSha256Async(path))!;
 
@@ -53,7 +53,7 @@ public class FileHasherTests : IDisposable
     public async Task ComputeSha256Async_EmptyFile_ReturnsHashOfEmptyContent()
     {
         string path = Path.Combine(_tempDir, "empty.bin");
-        await File.WriteAllBytesAsync(path, []);
+        await File.WriteAllBytesAsync(path, [], TestContext.Current.CancellationToken);
 
         string hash = (await _hasher.ComputeSha256Async(path))!;
 
@@ -67,7 +67,7 @@ public class FileHasherTests : IDisposable
         // 256 KiB exactly still takes the full-file path (length <= 256 * 1024)
         byte[] data = CreatePatternedData(256 * 1024);
         string path = Path.Combine(_tempDir, "threshold.bin");
-        await File.WriteAllBytesAsync(path, data);
+        await File.WriteAllBytesAsync(path, data, TestContext.Current.CancellationToken);
 
         string hash = (await _hasher.ComputeSha256Async(path))!;
 
@@ -81,7 +81,7 @@ public class FileHasherTests : IDisposable
         const int size = 300 * 1024; // Above the 256 KiB threshold
         byte[] data = CreatePatternedData(size);
         string path = Path.Combine(_tempDir, "large.bin");
-        await File.WriteAllBytesAsync(path, data);
+        await File.WriteAllBytesAsync(path, data, TestContext.Current.CancellationToken);
 
         string hash = (await _hasher.ComputeSha256Async(path))!;
 
