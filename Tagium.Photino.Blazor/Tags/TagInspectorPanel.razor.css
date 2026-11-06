@@ -45,6 +45,45 @@
     line-height: 1;
 }
 
+.partial-tags-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+}
+
+.partial-tags-heading {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.partial-tag-pill {
+    gap: var(--space-2xs);
+    border: 1px dashed rgba(255, 255, 255, 0.5);
+}
+
+.partial-tag-count {
+    padding: 0 var(--space-2xs);
+    border-radius: var(--radius-sm);
+    background-color: rgba(0, 0, 0, 0.2);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.btn-apply-partial-tag {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: var(--font-size-xs);
+    line-height: 1;
+    transition: color var(--transition-fast);
+}
+
+    .btn-apply-partial-tag:hover {
+        color: var(--text-on-primary);
+    }
+
 .btn-remove-tag {
     background: none;
     border: none;

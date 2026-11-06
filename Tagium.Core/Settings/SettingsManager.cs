@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Tagium.Core;
 
@@ -6,6 +6,8 @@ namespace Tagium.Core.Settings;
 
 public class SettingsManager
 {
+    public const int MaxRecentTags = 5;
+
     public Settings Current { get; }
 
     private readonly string _settingsPath;
@@ -40,6 +42,23 @@ public class SettingsManager
         }
 
         SettingsChanged?.Invoke();
+    }
+
+    public void RecordRecentTag(Guid tagId)
+    {
+        Update(settings =>
+        {
+            settings.RecentTagIds ??= [];
+            settings.RecentTagIds.RemoveAll(id => id == tagId);
+            settings.RecentTagIds.Insert(0, tagId);
+
+            if (settings.RecentTagIds.Count > MaxRecentTags)
+            {
+                settings.RecentTagIds.RemoveRange(
+                    MaxRecentTags,
+                    settings.RecentTagIds.Count - MaxRecentTags);
+            }
+        });
     }
 
     public void Save()

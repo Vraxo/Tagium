@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Microsoft.Data.Sqlite;
 
 using Tagium.Core;
@@ -36,5 +36,28 @@ public class FileTagRepository
     {
         using SqliteConnection conn = _db.GetConnection();
         return conn.Query<Guid>("SELECT FileId FROM cache.FileTags WHERE TagId = @TagId", new { TagId = tagId }).ToList();
+    }
+
+    public Dictionary<Guid, int> GetTagAssignmentCounts(IEnumerable<Guid> fileIds)
+    {
+        List<Guid> ids = fileIds.Distinct().ToList();
+        Dictionary<Guid, int> counts = [];
+
+        foreach (Guid[] idChunk in ids.Chunk(900))
+        {
+            using SqliteConnection conn = _db.GetConnection();
+            IEnumerable<dynamic> rows = conn.Query(
+                "SELECT TagId, COUNT(*) AS AssignedCount FROM cache.FileTags WHERE FileId IN @FileIds GROUP BY TagId",
+                new { FileIds = idChunk });
+
+            foreach (dynamic row in rows)
+            {
+                Guid tagId = Guid.Parse(Convert.ToString(row.TagId)!);
+                int assignedCount = Convert.ToInt32(row.AssignedCount);
+                counts[tagId] = counts.GetValueOrDefault(tagId) + assignedCount;
+            }
+        }
+
+        return counts;
     }
 }

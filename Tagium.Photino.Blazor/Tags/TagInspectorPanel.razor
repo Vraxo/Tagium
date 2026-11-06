@@ -12,16 +12,56 @@
                         <span class="pill-emoji">@tag.Emoji</span>
                     }
                     <span class="pill-text">@tag.Name</span>
-                    <button class="btn-remove-tag" @onclick="() => RemoveTag(tag.Id)">
-                        <i class="fa-solid fa-xmark"></i>
+                    <button class="btn-remove-tag"
+                            type="button"
+                            title="Remove @tag.Name from selected files"
+                            aria-label="Remove @tag.Name from selected files"
+                            @onclick="() => RemoveTag(tag.Id)">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                     </button>
                 </span>
             }
-            @if (_activeTags.Count == 0)
+            @if (_activeTags.Count == 0 && _partialTags.Count == 0)
             {
                 <span class="empty-tag">No tags assigned.</span>
             }
         </div>
+
+        @if (_partialTags.Count > 0)
+        {
+            <div class="partial-tags-section">
+                <span class="partial-tags-heading">On some selected files</span>
+                <div class="tag-pills">
+                    @foreach (var assignment in _partialTags)
+                    {
+                        <span class="tag-pill partial-tag-pill"
+                              style="background-color: @assignment.Tag.ColorHex"
+                              title="@GetPartialTagDescription(assignment)">
+                            @if (!string.IsNullOrEmpty(assignment.Tag.Emoji))
+                            {
+                                <span class="pill-emoji">@assignment.Tag.Emoji</span>
+                            }
+                            <span class="pill-text">@assignment.Tag.Name</span>
+                            <span class="partial-tag-count">@assignment.AssignedCount/@assignment.SelectedCount</span>
+                            <button class="btn-apply-partial-tag"
+                                    type="button"
+                                    title="Apply @assignment.Tag.Name to all selected files"
+                                    aria-label="Apply @assignment.Tag.Name to all selected files"
+                                    @onclick="() => ApplyPartialTagToAll(assignment.Tag.Id)">
+                                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                            </button>
+                            <button class="btn-remove-tag"
+                                    type="button"
+                                    title="Remove @assignment.Tag.Name from selected files"
+                                    aria-label="Remove @assignment.Tag.Name from selected files"
+                                    @onclick="() => RemoveTag(assignment.Tag.Id)">
+                                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                            </button>
+                        </span>
+                    }
+                </div>
+            </div>
+        }
 
         @if (_availableTags.Count > 0 || true)
         {

@@ -283,26 +283,23 @@ public class LibraryService
         return _tagRepo.GetTagsByIds(tagIds);
     }
 
+    public Dictionary<Guid, int> GetTagAssignmentCounts(IEnumerable<Guid> fileIds)
+    {
+        return _fileTagRepo.GetTagAssignmentCounts(fileIds);
+    }
+
     public List<Tag> GetCommonTags(IEnumerable<Guid> fileIds)
     {
-        List<Guid> ids = fileIds.ToList();
+        List<Guid> ids = fileIds.Distinct().ToList();
         if (ids.Count == 0)
         {
             return [];
         }
 
-        HashSet<Guid> commonIds = [.. _fileTagRepo.GetTagIdsForFile(ids[0])];
-
-        for (int i = 1; i < ids.Count; i++)
-        {
-            List<Guid> tags = _fileTagRepo.GetTagIdsForFile(ids[i]);
-            commonIds.IntersectWith(tags);
-
-            if (commonIds.Count == 0)
-            {
-                break;
-            }
-        }
+        HashSet<Guid> commonIds = GetTagAssignmentCounts(ids)
+            .Where(assignment => assignment.Value == ids.Count)
+            .Select(assignment => assignment.Key)
+            .ToHashSet();
 
         return _tagRepo.GetTagsByIds(commonIds);
     }
