@@ -22,10 +22,10 @@ window.layoutResizer = {
             const splitterWidth = (leftSplitter?.getBoundingClientRect().width ?? 0)
                 + (rightSplitter?.getBoundingClientRect().width ?? 0);
             const availableWidth = window.innerWidth - minCenterWidth - otherPanelWidth - splitterWidth;
-            const legacyLimit = side === 'left' ? 600 : 800;
+            const panelLimit = side === 'left' ? 420 : 600;
 
             return Math.max(side === 'left' ? 150 : 200,
-                Math.min(legacyLimit, 420, window.innerWidth * sidePanelShare, availableWidth));
+                Math.min(panelLimit, window.innerWidth * sidePanelShare, availableWidth));
         }
 
         function setupResizer(splitter, panel, side) {
