@@ -21,6 +21,7 @@ public partial class SearchInput
     private CancellationTokenSource? _blurCts;
     private string _value = "";
     private bool _showHistory;
+    private bool _showHelp;
     private ElementReference _inputElement;
 
     private IReadOnlyList<string> Suggestions =>
@@ -62,7 +63,11 @@ public partial class SearchInput
     private void OnFocus()
     {
         _blurCts?.Cancel();
-        _showHistory = true;
+
+        if (!_showHelp)
+        {
+            _showHistory = true;
+        }
     }
 
     private void OnBlur()
@@ -94,19 +99,38 @@ public partial class SearchInput
         });
     }
 
-    private void OnKeyDown(KeyboardEventArgs e)
+    private void OnInputKeyDown(KeyboardEventArgs e)
     {
-        switch (e.Key)
+        if (e.Key == "Enter")
         {
-            case "Enter":
-                Commit();
-                _showHistory = false;
-                break;
+            Commit();
+            _showHistory = false;
+        }
+    }
 
-            case "Escape":
-                // Escape closes the list and leaves the query alone.
-                _showHistory = false;
-                break;
+    /// <summary>
+    /// Escape closes whichever panel is open, from the input or from inside a panel, and leaves
+    /// the query alone.
+    /// </summary>
+    private void OnBoxKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape")
+        {
+            return;
+        }
+
+        _showHistory = false;
+        _showHelp = false;
+    }
+
+    private void ToggleHelp()
+    {
+        _showHelp = !_showHelp;
+
+        if (_showHelp)
+        {
+            // The two panels share the same slot under the box; never show both.
+            _showHistory = false;
         }
     }
 

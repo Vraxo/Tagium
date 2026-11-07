@@ -95,6 +95,21 @@ Still open:
 
 ---
 
+## 7. In-app query help — shipped
+
+Evidence: the query language existed only in the README. Nothing in the window said that `rating:>=4`, `size:>5mb`, `has:title` or `-tag:x` were possible, so the only discoverable search was a bare word.
+
+- [x] `Tagium.Core/Search/SearchSyntaxHelp` holds the reference as data: twelve rows of syntax, meaning and real example queries, rendered by the search box.
+- [x] `SearchSyntaxHelpTests` tests the docs against the compiler rather than trusting them: every example must compile into a filter, every `key:value` example must reach a field clause instead of the raw-tag fallback, and every key in `SearchQueryCompiler.CategoryKeys` must be mentioned. Documentation can no longer drift silently.
+- [x] `SearchInput` gained a `?` toggle inside the box (`aria-expanded`, Escape closes, never open at the same time as the history list).
+
+Still open:
+
+- [ ] No localisation and no per-surface tailoring; the same twelve rows show on both search boxes.
+- [ ] Keyboard users must Tab to the toggle; there is no shortcut to open the reference.
+
+---
+
 ## Constraints worth remembering
 
 - This sandbox has **no .NET SDK**, so nothing can be compiled locally — CI (`build-and-test` on PRs to `main`) is the only compile gate. Always open a PR rather than pushing straight to `main`.

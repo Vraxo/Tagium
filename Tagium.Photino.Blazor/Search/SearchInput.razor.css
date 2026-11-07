@@ -7,6 +7,8 @@
     border: 1px solid var(--border-color);
     color: var(--text-color);
     padding: 6px var(--space-sm);
+    /* Room for the syntax-help toggle sitting inside the right edge. */
+    padding-right: 30px;
     border-radius: 15px;
     font-size: var(--font-size-sm);
     transition: border-color 0.2s, background-color 0.2s;
@@ -74,4 +76,72 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.search-help-toggle {
+    position: absolute;
+    top: 50%;
+    right: var(--space-2xs);
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    cursor: pointer;
+}
+
+    .search-help-toggle:hover {
+        color: var(--text-color);
+    }
+
+.search-help {
+    position: absolute;
+    top: calc(100% + var(--space-2xs));
+    left: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    width: 360px;
+    max-width: 92vw;
+    max-height: 340px;
+    overflow-y: auto;
+    padding: var(--space-xs);
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.search-help-summary {
+    margin: 0;
+    color: var(--text-color);
+    font-size: var(--font-size-xs);
+}
+
+.search-help-row {
+    display: grid;
+    grid-template-columns: 108px 1fr;
+    gap: var(--space-xs);
+    align-items: baseline;
+}
+
+.search-help-syntax {
+    color: var(--primary-color);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: var(--font-size-xs);
+}
+
+.search-help-description {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
 }

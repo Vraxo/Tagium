@@ -16,6 +16,12 @@ public class SearchQueryCompiler
         "artist", "character", "series", "location", "person", "franchise", "species", "year", "meta"
     };
 
+    /// <summary>
+    /// The category keys this compiler understands. Exposed so the in-app syntax help can be
+    /// tested against it instead of drifting out of date.
+    /// </summary>
+    public static IReadOnlySet<string> CategoryKeys => ValidCategories;
+
     public SearchQueryCompiler(ILogger<SearchQueryCompiler> logger)
     {
         _logger = logger;

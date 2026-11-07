@@ -1,17 +1,41 @@
 @namespace Tagium.Photino.Blazor.Search
 @implements IDisposable
 
-<div class="search-box">
+<div class="search-box" @onkeydown="OnBoxKeyDown">
     <input type="text"
            class="search-input"
            placeholder="Search files..."
            value="@_value"
            @oninput="OnInput"
-           @onkeydown="OnKeyDown"
+           @onkeydown="OnInputKeyDown"
            @onfocus="OnFocus"
            @onblur="OnBlur"
            @ref="_inputElement"
            aria-label="Search files" />
+
+    <button type="button"
+            class="search-help-toggle"
+            title="Search syntax"
+            aria-label="Search syntax help"
+            aria-expanded="@(_showHelp ? "true" : "false")"
+            @onclick="ToggleHelp">
+        <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
+    </button>
+
+    @if (_showHelp)
+    {
+        <div class="search-help" role="group" aria-label="Search syntax">
+            <p class="search-help-summary">@SearchSyntaxHelp.Summary</p>
+
+            @foreach (SearchHelpTopic topic in SearchSyntaxHelp.Topics)
+            {
+                <div class="search-help-row">
+                    <code class="search-help-syntax">@topic.Syntax</code>
+                    <span class="search-help-description">@topic.Description</span>
+                </div>
+            }
+        </div>
+    }
 
     @if (ShowSuggestions)
     {
