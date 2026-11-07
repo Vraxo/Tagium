@@ -21,6 +21,7 @@ public class ShippedThemeTests
         "--panel-bg",
         "--surface-bg",
         "--surface-hover",
+        "--media-bg",
         "--border-color",
         "--text-color",
         "--text-muted",
@@ -38,8 +39,9 @@ public class ShippedThemeTests
     ];
 
     /// <summary>
-    /// Foreground/background pairs that must stay readable in every theme. Hover pairs sit on a
-    /// slightly lower floor: they are transient states and some palettes lighten rather than darken.
+    /// Foreground/background pairs that must stay readable in every theme. Every text pair holds
+    /// the full AA 4.5:1, hover states included — the old 4.0 hover allowance only existed because
+    /// Monokai's danger hover fell to 4.11:1, and that has been fixed.
     /// </summary>
     private static readonly (string Foreground, string Background, double Minimum)[] TextPairs =
     [
@@ -49,10 +51,12 @@ public class ShippedThemeTests
         ("--text-muted", "--bg-color", 4.5),
         ("--text-muted", "--panel-bg", 4.5),
         ("--text-muted", "--surface-bg", 4.5),
+        // The media matte sits behind an icon rather than text, so the non-text 3:1 floor applies.
+        ("--text-muted", "--media-bg", 3.0),
         ("--text-on-primary", "--primary-color", 4.5),
-        ("--text-on-primary", "--primary-hover", 4.0),
+        ("--text-on-primary", "--primary-hover", 4.5),
         ("--text-on-danger", "--danger-color", 4.5),
-        ("--text-on-danger", "--danger-hover", 4.0),
+        ("--text-on-danger", "--danger-hover", 4.5),
     ];
 
     [Fact]

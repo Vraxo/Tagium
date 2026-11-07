@@ -6,7 +6,7 @@
         <div class="tag-pills">
             @foreach (var tag in _activeTags)
             {
-                <span class="tag-pill" style="background-color: @tag.ColorHex; color: @TagColorContrast.GetTextColor(tag.ColorHex)">
+                <span class="tag-pill" style="--tag-color: @tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(tag.ColorHex)">
                     @if (!string.IsNullOrEmpty(tag.Emoji))
                     {
                         <span class="pill-emoji">@tag.Emoji</span>
@@ -35,7 +35,7 @@
                     @foreach (var assignment in _partialTags)
                     {
                         <span class="tag-pill partial-tag-pill"
-                              style="background-color: @assignment.Tag.ColorHex; color: @TagColorContrast.GetTextColor(assignment.Tag.ColorHex)"
+                              style="--tag-color: @assignment.Tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(assignment.Tag.ColorHex)"
                               title="@GetPartialTagDescription(assignment)">
                             @if (!string.IsNullOrEmpty(assignment.Tag.Emoji))
                             {

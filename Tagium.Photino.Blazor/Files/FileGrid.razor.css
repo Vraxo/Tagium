@@ -38,7 +38,7 @@
 
 .thumbnail {
     flex: 1;
-    background: #000;
+    background: var(--media-bg);
     overflow: hidden;
     display: flex;
     align-items: center;

@@ -62,7 +62,7 @@
 .thumbnail {
     width: 40px;
     height: 40px;
-    background: #000;
+    background: var(--media-bg);
     border-radius: var(--radius-sm);
     overflow: hidden;
     display: flex;
@@ -121,7 +121,7 @@
     font-size: 0.85em;
     margin-right: 4px;
     margin-bottom: 2px;
-    border: 1px solid transparent;
+    border: 1px solid var(--tag-color);
     white-space: nowrap;
     max-width: 100px;
     overflow: hidden;

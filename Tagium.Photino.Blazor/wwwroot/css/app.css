@@ -4,6 +4,7 @@
     --panel-bg: #202020;
     --surface-bg: #2D2D2D;
     --surface-hover: rgba(255, 255, 255, 0.07);
+    --media-bg: #000000; /* matte behind thumbnails and previews; lifted in light themes */
     --border-color: #383838;
     --text-color: #E0E0E0;
     --text-muted: #9E9E9E;

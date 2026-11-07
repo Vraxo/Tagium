@@ -96,17 +96,13 @@
             }
             else
             {
-                string tagStyle = isActive
-                ? $"background-color: {tag.ColorHex}; border-color: {tag.ColorHex}; border-style: solid; color: {TagColorContrast.GetTextColor(tag.ColorHex)};"
-                : $"border-color: {tag.ColorHex};";
-
                 <div class="tag-item pill @(isActive ? "active" : "")"
                      role="button"
                      tabindex="0"
                      aria-current="@(isActive ? "true" : "false")"
                      @onclick="() => SetSearch(tag.Name)"
                      @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))"
-                     style="@tagStyle">
+                     style="--tag-color: @tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(tag.ColorHex);">
                     <TagIcon Tag="@tag" ShowColor="false" />
                     <span class="name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>

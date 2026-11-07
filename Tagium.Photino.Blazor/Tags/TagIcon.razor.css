@@ -18,6 +18,7 @@
 
 .tag-color {
     display: block;
+    background-color: var(--tag-color);
     flex: 0 0 8px;
     width: 8px;
     height: 8px;
