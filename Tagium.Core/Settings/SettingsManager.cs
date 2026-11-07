@@ -1,12 +1,14 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Tagium.Core;
+using Tagium.Core.Search;
 
 namespace Tagium.Core.Settings;
 
 public class SettingsManager
 {
     public const int MaxRecentTags = 5;
+    public const int MaxRecentSearches = SearchHistory.DefaultLimit;
 
     public Settings Current { get; }
 
@@ -59,6 +61,23 @@ public class SettingsManager
                     settings.RecentTagIds.Count - MaxRecentTags);
             }
         });
+    }
+
+    /// <summary>
+    /// Remembers a committed search. The ordering, dedupe and cap rules live in
+    /// <see cref="SearchHistory"/>; this only decides when the file is worth rewriting.
+    /// </summary>
+    public void RecordRecentSearch(string? query)
+    {
+        List<string> current = Current.RecentSearches ?? [];
+        IReadOnlyList<string> updated = SearchHistory.Record(current, query, MaxRecentSearches);
+
+        if (updated.SequenceEqual(current, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        Update(settings => settings.RecentSearches = [.. updated]);
     }
 
     public void Save()

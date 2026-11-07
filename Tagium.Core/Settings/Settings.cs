@@ -12,6 +12,7 @@ public class Settings
     public TagSortBy TagSortBy { get; set; } = TagSortBy.Name;
     public SortDirection TagSortDirection { get; set; } = SortDirection.Asc;
     public List<Guid> RecentTagIds { get; set; } = [];
+    public List<string> RecentSearches { get; set; } = [];
     public FileViewMode FileViewMode { get; set; } = FileViewMode.Grid;
     public string SelectedTheme { get; set; } = "Default";
     public int LeftSidebarWidth { get; set; } = 250;

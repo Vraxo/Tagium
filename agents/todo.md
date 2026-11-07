@@ -79,6 +79,22 @@ Evidence: themes can only be added by dropping JSON into AppData — Settings me
 
 ---
 
+## 6. Recent searches — shipped
+
+Evidence: the query language (`tag:`, `rating:`, `size:`, `ext:`, `added:`, `modified:`, `has:`, `missing:`, `untagged`, `-`) is the only way to filter, and the search box forgot everything the moment a query was cleared — so long queries were retyped from scratch.
+
+- [x] `Tagium.Core/Search/SearchHistory` owns the rules and is unit-tested (`SearchHistoryTests`): newest first, case-insensitive dedupe, a shorter prefix is collapsed when its longer query arrives ("pho" then "photos" leaves one entry), blank never enters, capped at 10.
+- [x] `Settings.RecentSearches` persists across restarts, with `SettingsManager.RecordRecentSearch` skipping the file write when nothing moved.
+- [x] `SearchInput` shows the history on focus, filtered by whatever is already typed, and applies a suggestion on click. Real buttons in a labelled group, so Tab reaches them; Escape closes the list without changing the query.
+- [x] A query is recorded when it is confirmed — Enter, leaving the box, or picking a suggestion — not on every keystroke, so live search does not fill the list with prefixes.
+
+Still open:
+
+- [ ] No way to remove a single entry from the history (only the 10-entry cap prunes it).
+- [ ] Arrow keys inside the box do not move into the list; Tab does.
+
+---
+
 ## Constraints worth remembering
 
 - This sandbox has **no .NET SDK**, so nothing can be compiled locally — CI (`build-and-test` on PRs to `main`) is the only compile gate. Always open a PR rather than pushing straight to `main`.
