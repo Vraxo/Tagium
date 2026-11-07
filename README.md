@@ -10,6 +10,7 @@ Desktop media library and file tagger for Windows, built with [.NET 10](https://
 - Track renamed and moved files across scans using SHA-256 hashes
 - Browse media in grid or list views, or navigate by folder tree
 - Sort the library by date added, name, path, size, modified time, or rating (ascending/descending)
+- Filter with a query language — `tag:`, `rating:`, `size:`, `ext:`, `added:`, `modified:`, `has:`, `missing:`, `untagged` and `-` to negate — with the last ten queries recalled from a dropdown under the search box
 - Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes
 - Read embedded metadata (`Subject`, `Keywords`, `Title`, `Description`, `Rating`) on scan and sync tag updates back to files via ExifTool
 - Rate files with a 1–5 star rating from the inspector (single or multi-select), searchable with `rating:` and undoable; ratings sync back to files via ExifTool

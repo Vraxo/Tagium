@@ -1,11 +1,33 @@
 @namespace Tagium.Photino.Blazor.Search
-@inject AppState AppState
 @implements IDisposable
 
-<input type="text"
-       class="search-input"
-       placeholder="Search files..."
-       value="@_value"
-       @oninput="OnInput"
-       @ref="_inputElement"
-       aria-label="Search files" />
+<div class="search-box">
+    <input type="text"
+           class="search-input"
+           placeholder="Search files..."
+           value="@_value"
+           @oninput="OnInput"
+           @onkeydown="OnKeyDown"
+           @onfocus="OnFocus"
+           @onblur="OnBlur"
+           @ref="_inputElement"
+           aria-label="Search files" />
+
+    @if (ShowSuggestions)
+    {
+        @* Real buttons rather than an ARIA combobox: Tab reaches them, Enter or Space applies
+           one, and there is no custom arrow-key model to keep in sync with the input. *@
+        <div class="search-history" role="group" aria-label="Recent searches">
+            @foreach (string suggestion in Suggestions)
+            {
+                <button type="button"
+                        class="search-history-item"
+                        @onclick="() => ApplySuggestion(suggestion)"
+                        title="@suggestion">
+                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                    <span class="search-history-text">@suggestion</span>
+                </button>
+            }
+        </div>
+    }
+</div>
