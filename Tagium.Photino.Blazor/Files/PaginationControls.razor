@@ -1,19 +1,36 @@
 @namespace Tagium.Photino.Blazor.Files
 
-@if (AppState.TotalPages > 1)
-{
-    <div class="pagination-bar">
-        <div class="pagination-info">
-            Showing @GetStartItemIndex() - @GetEndItemIndex() of @AppState.TotalFilesCount files
-        </div>
+<nav class="pagination-bar" aria-label="File pagination">
+    <div class="pagination-info">
+        @if (AppState.TotalFilesCount == 0)
+        {
+            <span>No files</span>
+        }
+        else
+        {
+            <span>Showing @GetStartItemIndex() - @GetEndItemIndex() of @AppState.TotalFilesCount @(AppState.TotalFilesCount == 1 ? "file" : "files")</span>
+        }
+    </div>
 
+    <label class="page-size-control">
+        <span>Files per page</span>
+        <select class="page-size-select" value="@AppState.PageSize" @onchange="OnPageSizeChange">
+            @foreach (int size in FilePagination.PageSizes)
+            {
+                <option value="@size">@size</option>
+            }
+        </select>
+    </label>
+
+    @if (AppState.TotalPages > 1)
+    {
         <div class="pagination-buttons">
             <button class="page-btn ctrl-btn"
                     disabled="@(AppState.CurrentPage == 1)"
                     @onclick="() => GoToPage(AppState.CurrentPage - 1)"
                     title="Previous Page"
                     aria-label="Previous Page">
-                <i class="fa-solid fa-chevron-left"></i>
+                <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
             </button>
 
             @foreach (var item in GetPageItems())
@@ -38,8 +55,8 @@
                     @onclick="() => GoToPage(AppState.CurrentPage + 1)"
                     title="Next Page"
                     aria-label="Next Page">
-                <i class="fa-solid fa-chevron-right"></i>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
             </button>
         </div>
-    </div>
-}
+    }
+</nav>

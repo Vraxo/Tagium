@@ -1,9 +1,10 @@
 .pagination-bar {
-    height: 36px;
+    min-height: 36px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 var(--space-md);
+    flex-wrap: wrap;
+    gap: var(--space-2xs) var(--space-sm);
+    padding: var(--space-2xs) var(--space-md);
     background: var(--panel-bg);
     border-top: 1px solid var(--border-color);
     box-sizing: border-box;
@@ -12,15 +13,52 @@
 }
 
 .pagination-info {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-weight: 500;
 }
 
+.page-size-control {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-2xs);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.page-size-select {
+    min-width: 60px;
+    height: 24px;
+    padding: 0 var(--space-2xs);
+    box-sizing: border-box;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--surface-bg);
+    color: var(--text-color);
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+}
+
+.page-size-select:hover {
+    border-color: var(--text-muted);
+}
+
+.page-size-select:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
 .pagination-buttons {
     display: flex;
     align-items: center;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    min-width: 0;
 }
 
 .page-btn {

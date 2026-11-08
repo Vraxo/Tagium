@@ -27,9 +27,15 @@ public class SettingsManager
     };
 
     public SettingsManager()
+        : this(Path.Combine(AppDataHelper.GetBaseDirectory(), "settings.json"))
     {
-        string baseDir = AppDataHelper.GetBaseDirectory();
-        _settingsPath = Path.Combine(baseDir, "settings.json");
+    }
+
+    /// <summary>Uses an explicit settings file, allowing isolated storage when needed.</summary>
+    public SettingsManager(string settingsPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
+        _settingsPath = settingsPath;
         Current = Load();
     }
 

@@ -9,6 +9,7 @@ Desktop media library and file tagger for Windows, built with [.NET 10](https://
 - Index multiple local folders in place without moving or copying your files
 - Track renamed and moved files across scans using SHA-256 hashes
 - Browse media in grid or list views, or navigate by folder tree
+- Choose 50, 100 (default), or 250 files per page; the preference is remembered across sessions
 - Sort the library by date added, name, path, size, modified time, or rating (ascending/descending)
 - Filter with a query language — `tag:`, `rating:`, `size:`, `ext:`, `added:`, `modified:`, `has:`, `missing:`, `untagged`, the `artist:`/`series:`/… category filters and `-` to negate — with an in-app syntax reference on the search box and the last ten queries recalled from a dropdown under it
 - Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes

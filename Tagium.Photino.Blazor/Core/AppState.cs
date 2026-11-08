@@ -1,5 +1,6 @@
 using Tagium.Core.Files;
 using Tagium.Core.Library;
+using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.Files;
 
 namespace Tagium.Photino.Blazor;
@@ -10,6 +11,7 @@ public class AppState : IDisposable
 {
     private readonly LibraryService _library;
     private readonly ModalService _modalService;
+    private readonly SettingsManager _settings;
     private List<FileEntry> _currentFiles = [];
 
     public AppView CurrentView { get; private set; } = AppView.Files;
@@ -23,7 +25,7 @@ public class AppState : IDisposable
 
     // Pagination State
     public int CurrentPage { get; private set; } = 1;
-    public int PageSize { get; private set; } = 120;
+    public int PageSize { get; private set; }
     public int TotalFilesCount => _currentFiles.Count;
     public int TotalPages => (int)Math.Ceiling((double)TotalFilesCount / PageSize);
 
@@ -33,13 +35,29 @@ public class AppState : IDisposable
     public Task InitialLoadTask { get; }
     public IReadOnlyList<FileEntry> InitialFiles { get; private set; } = [];
 
-    public AppState(LibraryService library, ModalService modalService)
+    public AppState(LibraryService library, ModalService modalService, SettingsManager settings)
     {
         _library = library;
         _modalService = modalService;
+        _settings = settings;
+        PageSize = _settings.Current.FilesPerPage;
+        _settings.SettingsChanged += OnSettingsChanged;
         _library.LibraryChanged += OnLibraryChanged;
         _library.DuplicatesDetected += OnDuplicatesDetected;
         InitialLoadTask = LoadInitialFilesAsync();
+    }
+
+    private void OnSettingsChanged()
+    {
+        int newPageSize = _settings.Current.FilesPerPage;
+        if (newPageSize == PageSize)
+        {
+            return;
+        }
+
+        CurrentPage = FilePagination.PageAfterSizeChange(CurrentPage, PageSize, newPageSize, TotalFilesCount);
+        PageSize = newPageSize;
+        NotifyStateChanged();
     }
 
     private void OnLibraryChanged()
@@ -88,15 +106,7 @@ public class AppState : IDisposable
         _currentFiles = files;
 
         // Adjust page if it goes out of bounds after a filter or library change.
-        int total = TotalPages;
-        if (CurrentPage < 1)
-        {
-            CurrentPage = 1;
-        }
-        else if (CurrentPage > total && total > 0)
-        {
-            CurrentPage = total;
-        }
+        CurrentPage = Math.Clamp(CurrentPage, 1, Math.Max(TotalPages, 1));
 
         NotifyStateChanged();
     }
@@ -117,6 +127,17 @@ public class AppState : IDisposable
 
         CurrentPage = page;
         NotifyStateChanged();
+    }
+
+    public void SetPageSize(int pageSize)
+    {
+        if (!FilePagination.IsSupportedPageSize(pageSize) || pageSize == PageSize)
+        {
+            return;
+        }
+
+        // The settings change handler updates the current page and notifies both file views.
+        _settings.Update(settings => settings.FilesPerPage = pageSize);
     }
 
     public void NextPage()
@@ -301,6 +322,7 @@ public class AppState : IDisposable
 
     public void Dispose()
     {
+        _settings.SettingsChanged -= OnSettingsChanged;
         _library.LibraryChanged -= OnLibraryChanged;
         _library.DuplicatesDetected -= OnDuplicatesDetected;
     }
