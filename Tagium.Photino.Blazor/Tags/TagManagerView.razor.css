@@ -316,10 +316,12 @@
     width: 20px;
     height: 20px;
     padding: 0;
+    box-sizing: border-box;
     background-color: var(--tag-color);
-    /* Same ring treatment as the TagIcon dot: a neutral mid-tone outline keeps near-white
-       tag colours visible on Classic Light and near-black ones visible on dark themes. */
-    border: 2px solid var(--text-muted);
+    /* Match TagIcon: a thin, tag-tinted edge avoids a separate pale ring while helping
+       near-white and near-black colours remain visible against similar backgrounds. */
+    border: 1px solid var(--tag-color);
+    border-color: color-mix(in srgb, var(--tag-color) 50%, var(--text-muted));
     border-radius: 50%;
     cursor: pointer;
 }

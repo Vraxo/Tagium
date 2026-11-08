@@ -9,7 +9,7 @@ Each item names the evidence that motivated it so it can be re-verified later.
 
 - [x] **`--font-size-lg` was undefined.** `Files/StatsModal.razor.css` asked for it, so `font-size` silently inherited. Now declared in `app.css` and documented in `design.md`.
 - [x] **`--breakpoint-sm` was a dead token.** Custom properties are not valid inside `@media`, so the token could never be used. Removed; the real breakpoints (shell 900px, tag manager 760px) are documented instead.
-- [x] **`TagIcon` colour-dot ring was invisible on light themes.** `rgba(255, 255, 255, 0.1)` disappeared on Classic Light, so white tag dots had no edge. Now a neutral `--text-muted` ring drawn inside the dot.
+- [x] **`TagIcon` colour-dot edge was invisible on light themes.** The original translucent white ring disappeared on Classic Light. A solid `--text-muted` ring fixed that but looked pale around coloured dots; the edge is now a thin mix of the tag colour and `--text-muted`, with a tag-colour fallback.
 - [x] **Contrast math extracted.** `Tagium.Core/Theming/ColorContrast.cs` (WCAG luminance + ratio + readable-ink picker); `TagColorContrast` is now a thin tag-specific wrapper over it.
 - [x] **Theme guardrail tests** (`Tagium.Core.Tests/Theming/ShippedThemeTests.cs`):
   - `app.css :root` defines every contract token;
@@ -73,7 +73,7 @@ Evidence: themes can only be added by dropping JSON into AppData — Settings me
 
 - [x] **Tag chips passed colours as inline style strings.** Every tag-coloured surface now sends `--tag-color` (and `--tag-on-color` for the `TagColorContrast` ink) as custom properties and its own CSS decides where they land: `TagSidebar` pills, `TagInspectorPanel` pills, the `FileListView` tag pill, the `TagManagerView` colour circle and palette swatches, and the `TagIcon` dot. No `background-color:`/`border-color:`/`color:` strings left in any `.razor`.
 - [x] **Media letterbox backgrounds were hardcoded.** `--media-bg` is now a required token: `#000000` in the default palette, Monokai and Nordic Frost (unchanged rendering), `#E0E0E0` in Classic Light so media is not boxed in black on a light theme. `FileGrid`/`FileListView` thumbnails and the `SingleFileInspector` preview read it, and `ShippedThemeTests` guards the icon-on-matte pair at the non-text 3:1 floor.
-- [x] **`TagManagerView` `.color-circle`** was ringed with `var(--border-color)` and vanished on Classic Light. It now uses the `TagIcon` dot treatment — `2px solid var(--text-muted)` — so near-white and near-black tag colours both stay visible.
+- [x] **`TagManagerView` `.color-circle`** was ringed with `var(--border-color)` and vanished on Classic Light. It now shares the thin, tag-tinted `TagIcon` edge, reducing the pale ring while keeping extreme colours more distinguishable from similar backgrounds.
 - [x] **Monokai `--danger-hover`** was 4.11:1 against `--text-on-danger`. Lightened to `#ff7a9c` (5.75:1), and the test's hover allowance was deleted: every text pair now has to hold 4.5:1, hover states included, since all four palettes clear it anyway (lowest is 5.04).
 - [ ] Consider deriving the `--primary-tint` / `--surface-hover` alphas per theme from a shared formula instead of hand-tuned rgba values.
 
