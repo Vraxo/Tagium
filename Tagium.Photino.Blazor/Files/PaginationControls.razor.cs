@@ -24,6 +24,14 @@ public partial class PaginationControls : IDisposable
         AppState.SetPage(page);
     }
 
+    private void OnPageSizeChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int pageSize))
+        {
+            AppState.SetPageSize(pageSize);
+        }
+    }
+
     private int GetStartItemIndex()
     {
         if (AppState.TotalFilesCount == 0)
@@ -36,8 +44,8 @@ public partial class PaginationControls : IDisposable
 
     private int GetEndItemIndex()
     {
-        int end = AppState.CurrentPage * AppState.PageSize;
-        return end > AppState.TotalFilesCount ? AppState.TotalFilesCount : end;
+        long end = (long)AppState.CurrentPage * AppState.PageSize;
+        return (int)Math.Min(end, AppState.TotalFilesCount);
     }
 
     private List<PageItem> GetPageItems()

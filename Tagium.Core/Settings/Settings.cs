@@ -1,7 +1,17 @@
+using Tagium.Core.Files;
+
 namespace Tagium.Core.Settings;
 
 public class Settings
 {
+    private int _filesPerPage = FilePagination.DefaultPageSize;
+
+    public int FilesPerPage
+    {
+        get => _filesPerPage;
+        set => _filesPerPage = FilePagination.NormalizePageSize(value);
+    }
+
     public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
     public EmojiSet EmojiPreference { get; set; } = EmojiSet.SystemDefault;
     public InterfaceCornerStyle CornerStyle { get; set; } = InterfaceCornerStyle.Default;
