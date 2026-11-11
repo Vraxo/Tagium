@@ -15,8 +15,6 @@
 .section-title {
     margin: 0;
     font-size: var(--font-size-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     color: var(--text-muted);
 }
 
