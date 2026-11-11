@@ -28,4 +28,13 @@ public class Settings
     public int LeftSidebarWidth { get; set; } = 250;
     public int RightSidebarWidth { get; set; } = 320;
     public int Zoom { get; set; } = 100;
+
+    private double _videoVolume = 1.0;
+
+    /// <summary>The last selected video-player volume, from 0 (silent) to 1 (full volume).</summary>
+    public double VideoVolume
+    {
+        get => _videoVolume;
+        set => _videoVolume = double.IsFinite(value) ? Math.Clamp(value, 0.0, 1.0) : 1.0;
+    }
 }

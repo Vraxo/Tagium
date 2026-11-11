@@ -28,7 +28,7 @@
         }
         else if (IsVideo)
         {
-            <video src="@VideoPreviewUrl" controls preload="metadata" class="preview-media"></video>
+            <video @key="File.Id" @ref="_videoElement" src="@VideoPreviewUrl" controls preload="metadata" class="preview-media"></video>
         }
         else
         {
