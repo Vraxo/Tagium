@@ -3,6 +3,7 @@ using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Core.Settings;
 using Tagium.Core.Tags;
+using Tagium.Photino.Blazor.Notifications;
 
 namespace Tagium.Photino.Blazor.Tags;
 
@@ -13,6 +14,7 @@ public partial class TagInspectorPanel : IDisposable
     [Inject] private LibraryService Library { get; set; } = default!;
     [Inject] private TagRepository TagRepo { get; set; } = default!;
     [Inject] private SettingsManager Settings { get; set; } = default!;
+    [Inject] private ToastService Toast { get; set; } = default!;
 
     [Parameter, EditorRequired] public required IEnumerable<Guid> FileIds { get; set; }
 
@@ -142,10 +144,14 @@ public partial class TagInspectorPanel : IDisposable
         });
     }
 
-    private void RemoveTag(Guid tagId)
+    private async Task RemoveTag(Guid tagId)
     {
         List<Guid> ids = _fileIdsList.ToList();
-        _ = Task.Run(() =>
+        string tagName = _activeTags.FirstOrDefault(tag => tag.Id == tagId)?.Name
+            ?? _partialTags.FirstOrDefault(assignment => assignment.Tag.Id == tagId)?.Tag.Name
+            ?? "tag";
+
+        await Task.Run(() =>
         {
             if (ids.Count == 1)
             {
@@ -156,6 +162,12 @@ public partial class TagInspectorPanel : IDisposable
                 Library.RemoveTagFromFiles(ids, tagId);
             }
         });
+
+        Toast.Show(
+            ids.Count == 1
+                ? $"Removed “{tagName}” from this file."
+                : $"Removed “{tagName}” from selected files.",
+            ToastType.Success);
     }
 
     public void Dispose()
