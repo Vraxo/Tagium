@@ -64,7 +64,7 @@ valid inside media queries): the shell collapses at **900px** and the tag manage
 
 ### Border Radii & Transitions
 
-The `Corner Style` preference selects the shared radius tokens used throughout the interface. The default values preserve the original design; circles and intentionally pill-shaped controls keep their distinctive geometry.
+The `Corner Style` preference selects the shared radius tokens used throughout the interface, including sidebar tag pills. The default values preserve the original design; circular controls keep their distinctive geometry.
 
 | Corner Style | `--radius-sm` | `--radius-md` | `--radius-lg` |
 | :--- | :---: | :---: | :---: |
