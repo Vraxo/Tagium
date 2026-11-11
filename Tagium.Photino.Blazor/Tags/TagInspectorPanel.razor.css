@@ -1,4 +1,4 @@
-﻿.tag-inspector-panel {
+.tag-inspector-panel {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -45,7 +45,25 @@
 }
 
 .pill-text {
+    display: inline-block;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
     line-height: 1;
+    text-align: left;
+    cursor: pointer;
+}
+
+.pill-text:hover {
+    text-decoration: underline;
+}
+
+.pill-text:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
 }
 
 .partial-tags-section {
