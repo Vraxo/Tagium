@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Tagium.Core.Settings;
+using AppSettings = Tagium.Core.Settings.Settings;
 
 namespace Tagium.Core.Tests.Settings;
 
@@ -39,7 +40,7 @@ public class SettingsManagerVideoVolumeTests : IDisposable
     [InlineData(1.1, 1.0)]
     public void VideoVolume_ClampsValuesToSupportedRange(double input, double expected)
     {
-        Settings settings = new() { VideoVolume = input };
+        AppSettings settings = new() { VideoVolume = input };
 
         settings.VideoVolume.Should().Be(expected);
     }
@@ -51,7 +52,7 @@ public class SettingsManagerVideoVolumeTests : IDisposable
             { "videoVolume": 1.5, "thumbnailSize": 160 }
             """);
 
-        Settings settings = new SettingsManager(_settingsPath).Current;
+        AppSettings settings = new SettingsManager(_settingsPath).Current;
 
         settings.VideoVolume.Should().Be(1.0);
         settings.ThumbnailSize.Should().Be(160);

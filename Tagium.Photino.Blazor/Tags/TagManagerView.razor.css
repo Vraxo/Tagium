@@ -227,8 +227,8 @@
 }
 
 .tag-table td {
-    height: 44px;
-    padding: var(--space-2xs) var(--space-sm);
+    height: 36px;
+    padding: 2px var(--space-sm);
     border-bottom: 1px solid var(--border-color);
     font-size: var(--font-size-sm);
 }
