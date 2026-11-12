@@ -484,36 +484,257 @@ button:focus-visible,
     }
 }
 
-/* A macOS-inspired web UI, independent of the selected palette and corner style.
-   Native window chrome and file dialogs are still supplied by the host OS. */
-:root[data-interface-style="macos"] body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
+/* macOS-inspired interface. This is a web treatment, not native window chrome.
+   All colors and corner radii still come from the user's selected preferences. */
 :root[data-interface-style="macos"] {
-    --toolbar-height: 48px;
-    --toolbar-icon-size: 30px;
+    --toolbar-height: 56px;
+    --toolbar-icon-size: 32px;
 }
 
+:root[data-interface-style="macos"] body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* A quieter, unified toolbar with inset segmented navigation. */
 :root[data-interface-style="macos"] .app-toolbar {
+    padding-inline: 18px;
+    gap: 12px;
     background: var(--panel-bg);
-    padding-inline: 16px;
+}
+
+:root[data-interface-style="macos"] .toolbar-left,
+:root[data-interface-style="macos"] .toolbar-right {
+    gap: 6px;
+}
+
+:root[data-interface-style="macos"] .toolbar-center {
+    max-width: 360px;
+    min-width: 80px;
+    margin-inline: 8px;
+}
+
+:root[data-interface-style="macos"] .segmented-control {
+    padding: 3px;
+    gap: 2px;
+    background: var(--surface-hover);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+}
+
+:root[data-interface-style="macos"] .segment-btn {
+    min-height: 26px;
+    padding: 4px 10px;
+    font-size: var(--font-size-sm);
+    border-radius: var(--radius-sm);
+}
+
+:root[data-interface-style="macos"] .segment-btn.active {
+    background: var(--surface-bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+
+:root[data-interface-style="macos"] .btn-icon,
+:root[data-interface-style="macos"] .icon-button {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    color: var(--text-color);
+}
+
+:root[data-interface-style="macos"] .search-input,
+:root[data-interface-style="macos"] .tag-search-input {
+    min-height: 30px;
+    background: var(--surface-bg);
+    border-color: var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+:root[data-interface-style="macos"] .search-input:focus,
+:root[data-interface-style="macos"] .tag-search-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-tint);
+}
+
+/* Finder-like sidebar: breathable rows and subdued section dividers. */
+:root[data-interface-style="macos"] .sidebar-header {
+    padding: 16px 16px 8px;
+    border-bottom: 0;
 }
 
 :root[data-interface-style="macos"] .sidebar-header h4 {
     text-transform: none;
     letter-spacing: normal;
     font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+:root[data-interface-style="macos"] .tag-list,
+:root[data-interface-style="macos"] .folder-list {
+    padding: 4px 10px 12px;
+}
+
+:root[data-interface-style="macos"] .tag-item,
+:root[data-interface-style="macos"] .folder-row {
+    min-height: 29px;
+    margin-bottom: 3px;
+    border-radius: var(--radius-md);
 }
 
 :root[data-interface-style="macos"] .folder-row {
-    height: 28px;
+    height: 29px;
+    margin-inline: 0;
 }
 
-:root[data-interface-style="macos"] .icon-button:hover {
+:root[data-interface-style="macos"] .tag-item.pill:not(.active) {
+    border-color: transparent;
+    border-left-color: var(--tag-color);
+    border-left-style: solid;
+    border-left-width: 3px;
+}
+
+:root[data-interface-style="macos"] .tag-list hr {
+    margin: 10px 6px;
+    opacity: .55;
+}
+
+/* Image tiles put the media first, with labels floating below rather than in boxes. */
+:root[data-interface-style="macos"] .grid-container {
+    gap: 22px 18px;
+    padding: 24px;
+}
+
+:root[data-interface-style="macos"] .file-card {
+    padding: 3px;
+    border-color: transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    overflow: visible;
+}
+
+:root[data-interface-style="macos"] .file-card:hover {
     background: var(--surface-hover);
+    border-color: transparent;
 }
 
-:root[data-interface-style="macos"] .segmented-control {
-    background: var(--surface-bg);
+:root[data-interface-style="macos"] .file-card.selected {
+    background: var(--primary-tint);
+    border-color: var(--primary-color);
+    box-shadow: none;
+}
+
+:root[data-interface-style="macos"] .file-card .thumbnail {
+    border-radius: var(--radius-md);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .16);
+}
+
+:root[data-interface-style="macos"] .file-card .filename {
+    height: 25px;
+    line-height: 25px;
+    padding-inline: 4px;
+    border: 0;
+    background: transparent;
+    text-align: center;
+    font-size: var(--font-size-xs);
+}
+
+:root[data-interface-style="macos"] .file-list th {
+    text-transform: none;
+    letter-spacing: normal;
+    padding-block: 10px;
+}
+
+:root[data-interface-style="macos"] .file-list td {
+    padding-block: 8px;
+}
+
+/* A more spacious inspector and lighter-weight footer. */
+:root[data-interface-style="macos"] .inspector-content {
+    padding: 16px;
+}
+
+:root[data-interface-style="macos"] .single-file-inspector {
+    padding: 0;
+    gap: 16px;
+}
+
+:root[data-interface-style="macos"] .inspector-preview {
+    border-radius: var(--radius-lg);
+}
+
+:root[data-interface-style="macos"] .details-heading {
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: var(--font-size-sm);
+}
+
+:root[data-interface-style="macos"] .detail-row {
+    padding-block: 2px;
+}
+
+:root[data-interface-style="macos"] .pagination-bar {
+    min-height: 44px;
+    padding-inline: 18px;
+    background: var(--bg-color);
+}
+
+:root[data-interface-style="macos"] .page-btn,
+:root[data-interface-style="macos"] .page-size-select {
+    min-height: 28px;
+    border-radius: var(--radius-md);
+}
+
+/* Sheets and menus have a gentler depth while retaining their accessible controls. */
+:root[data-interface-style="macos"] .modal-backdrop {
+    background: rgba(0, 0, 0, .38);
+}
+
+:root[data-interface-style="macos"] .modal-container,
+:root[data-interface-style="macos"] .view-menu-dropdown,
+:root[data-interface-style="macos"] .search-history {
+    border-radius: var(--radius-lg);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .24), 0 2px 8px rgba(0, 0, 0, .12);
+}
+
+:root[data-interface-style="macos"] .modal-header {
+    padding: 16px 20px;
+}
+
+:root[data-interface-style="macos"] .modal-body {
+    padding: 20px;
+}
+
+:root[data-interface-style="macos"] .settings-sidebar {
+    gap: 4px;
+    padding-right: 16px;
+}
+
+:root[data-interface-style="macos"] .settings-content {
+    padding-left: 20px;
+}
+
+:root[data-interface-style="macos"] .tab-btn {
+    min-height: 32px;
+    border-radius: var(--radius-md);
+}
+
+:root[data-interface-style="macos"] .tab-btn.active {
+    background: var(--primary-tint);
+    border-color: transparent;
+    color: var(--text-color);
+}
+
+@media (max-width: 900px) {
+    :root[data-interface-style="macos"] .app-toolbar {
+        padding-inline: 8px;
+        gap: 4px;
+    }
+
+    :root[data-interface-style="macos"] .segment-btn {
+        padding-inline: 6px;
+    }
+
+    :root[data-interface-style="macos"] .toolbar-center {
+        margin-inline: 4px;
+    }
 }
