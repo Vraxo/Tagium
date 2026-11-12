@@ -24,6 +24,26 @@
                 <option value="5">5 or more</option>
             </select>
         </label>
+        <details class="tag-graph-force-menu">
+            <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i> Forces</summary>
+            <div class="tag-graph-force-options">
+                <label>
+                    <span>Repulsion</span>
+                    <input type="range" min="0" max="100" step="5" @bind="RepulsionStrength" @bind:event="oninput" @bind:after="MarkForcesDirty" />
+                    <output>@RepulsionStrength%</output>
+                </label>
+                <label>
+                    <span>Link strength</span>
+                    <input type="range" min="0" max="100" step="5" @bind="LinkStrength" @bind:event="oninput" @bind:after="MarkForcesDirty" />
+                    <output>@LinkStrength%</output>
+                </label>
+                <label>
+                    <span>Link distance</span>
+                    <input type="range" min="40" max="180" step="5" @bind="LinkDistance" @bind:event="oninput" @bind:after="MarkForcesDirty" />
+                    <output>@LinkDistance px</output>
+                </label>
+            </div>
+        </details>
         <span class="tag-graph-summary">@GraphSummary</span>
     </div>
 
@@ -42,12 +62,17 @@
         }
         else
         {
-            <svg @ref="_svg"
-                 class="tag-graph-svg"
-                 role="img"
-                 aria-label="Tag graph. Node size represents the number of files with that tag. Click a tag to browse its files; drag nodes to rearrange and scroll to zoom.">
-                <text class="tag-graph-empty-label" x="50%" y="50%">No relationships match these filters.</text>
-            </svg>
+            <canvas @ref="_canvas"
+                    class="tag-graph-renderer"
+                    tabindex="0"
+                    role="img"
+                    aria-label="Interactive tag graph. Node size represents file count. Drag to move tags, drag the background to pan, and scroll to zoom. Use the accessible tag list to browse by keyboard."></canvas>
+            <div class="visually-hidden" role="list" aria-label="Tags in the graph">
+                @foreach (Tag tag in _data.Nodes)
+                {
+                    <button type="button" role="listitem" @onclick="() => BrowseTag(tag.Id.ToString())">@tag.Name, @tag.FileCount files</button>
+                }
+            </div>
         }
     </div>
 
