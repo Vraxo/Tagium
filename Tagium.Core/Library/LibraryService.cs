@@ -277,6 +277,11 @@ public class LibraryService
         return _tagRepo.GetAll(sortBy, direction);
     }
 
+    public TagGraphData GetTagGraphData(int maxNodes = 120)
+    {
+        return _tagRepo.GetGraphData(maxNodes);
+    }
+
     public List<Tag> GetTagsForFile(Guid fileId)
     {
         List<Guid> tagIds = _fileTagRepo.GetTagIdsForFile(fileId);

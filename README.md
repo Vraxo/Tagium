@@ -13,6 +13,7 @@ Desktop media library and file tagger for Windows, built with [.NET 10](https://
 - Sort the library by date added, name, path, size, modified time, or rating (ascending/descending)
 - Filter with a query language — `tag:`, `rating:`, `size:`, `ext:`, `added:`, `modified:`, `has:`, `missing:`, `untagged`, the `artist:`/`series:`/… category filters and `-` to negate — with an in-app syntax reference on the search box and the last ten queries recalled from a dropdown under it
 - Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes
+- Explore up to 120 of the most-used tags in an interactive graph: nodes scale by file count, links show shared files or explicit tag hierarchy, and graph search, overlap thresholds, dragging, and zoom help navigate relationships
 - Read embedded metadata (`Subject`, `Keywords`, `Title`, `Description`, `Rating`) on scan and sync tag updates back to files via ExifTool
 - Rate files with a 1–5 star rating from the inspector (single or multi-select), searchable with `rating:` and undoable; ratings sync back to files via ExifTool
 - Inspect read-only file details in the inspector: type, size, added/modified dates, content hash, and embedded metadata (title, description)

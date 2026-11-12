@@ -11,161 +11,178 @@
             <p>Search, sort, and edit the tags in your library.</p>
         </div>
 
-        <div class="add-row">
-            <input type="text"
-                   @bind="NewTagName"
-                   @bind:event="oninput"
-                   @onkeyup="HandleKeyUp"
-                   placeholder="New tag name..."
-                   aria-label="New tag name" />
-            <button class="btn-primary" type="button" @onclick="AddTag" disabled="@(!CanAddTag)">Add tag</button>
-        </div>
-    </div>
-
-    <div class="table-toolbar">
-        <label class="tag-search">
-            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-            <input type="search"
-                   @bind="TagSearch"
-                   @bind:event="oninput"
-                   placeholder="Filter tags..."
-                   aria-label="Filter tags" />
-            @if (!string.IsNullOrWhiteSpace(TagSearch))
-            {
-                <button class="clear-search" type="button" @onclick="ClearSearch" title="Clear search" aria-label="Clear search">
-                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        <div class="tag-manager-actions">
+            <div class="tag-view-toggle" role="group" aria-label="Tag manager view">
+                <button type="button" class="@(IsGraphView ? "" : "active")" @onclick="() => SetGraphView(false)" aria-pressed="@(!IsGraphView)">
+                    <i class="fa-solid fa-list" aria-hidden="true"></i> List
                 </button>
-            }
-        </label>
-
-        <label class="unused-filter">
-            <input type="checkbox" @bind="UnusedOnly" />
-            <span>Unused only</span>
-        </label>
-
-        <div class="tag-results" aria-live="polite">
-            @FilteredTagCount of @Tags.Count tags
+                <button type="button" class="@(IsGraphView ? "active" : "")" @onclick="() => SetGraphView(true)" aria-pressed="@IsGraphView">
+                    <i class="fa-solid fa-circle-nodes" aria-hidden="true"></i> Graph
+                </button>
+            </div>
+            <div class="add-row">
+                <input type="text"
+                       @bind="NewTagName"
+                       @bind:event="oninput"
+                       @onkeyup="HandleKeyUp"
+                       placeholder="New tag name..."
+                       aria-label="New tag name" />
+                <button class="btn-primary" type="button" @onclick="AddTag" disabled="@(!CanAddTag)">Add tag</button>
+            </div>
         </div>
     </div>
 
-    <div class="tag-table-container">
-        @if (_isLoading)
-        {
-            <div class="empty-state">Loading tags...</div>
-        }
-        else if (Tags.Count == 0)
-        {
-            <div class="empty-state">
-                <i class="fa-solid fa-tags" aria-hidden="true"></i>
-                <strong>No tags yet</strong>
-                <span>Add a tag above to start organizing your library.</span>
-            </div>
-        }
-        else if (FilteredTagCount == 0)
-        {
-            <div class="empty-state">
+    @if (IsGraphView)
+    {
+        <TagGraphView />
+    }
+    else
+    {
+        <div class="table-toolbar">
+            <label class="tag-search">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                <strong>No matching tags</strong>
-                <span>Try a different search or clear the unused-only filter.</span>
-                <button class="btn-secondary" type="button" @onclick="ClearFilters">Clear filters</button>
-            </div>
-        }
-        else
-        {
-            <table class="tag-table">
-                <thead>
-                    <tr>
-                        <th class="appearance-column" scope="col">Style</th>
-                        <th scope="col" aria-sort="@GetAriaSort(TagSortBy.Name)">
-                            <button class="sort-button" type="button" @onclick="() => ToggleSort(TagSortBy.Name)">
-                                <span>Name</span>
-                                <span class="sort-indicator" aria-hidden="true">@GetSortArrow(TagSortBy.Name)</span>
-                            </button>
-                        </th>
-                        <th class="count-column" scope="col" aria-sort="@GetAriaSort(TagSortBy.FileCount)">
-                            <button class="sort-button" type="button" @onclick="() => ToggleSort(TagSortBy.FileCount)">
-                                <span>Files</span>
-                                <span class="sort-indicator" aria-hidden="true">@GetSortArrow(TagSortBy.FileCount)</span>
-                            </button>
-                        </th>
-                        <th class="actions-column" scope="col">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (Tag tag in FilteredTags)
-                    {
-                        <tr @key="tag.Id">
-                            <td class="appearance-cell">
-                                <div class="tag-style-controls">
-                                    <div class="color-picker-wrapper">
-                                        <button class="color-circle"
-                                                type="button"
-                                                style="--tag-color: @tag.ColorHex"
-                                                @onclick="() => ToggleColorPicker(tag.Id)"
-                                                title="Change color for @tag.Name"
-                                                aria-label="Change color for @tag.Name"></button>
+                <input type="search"
+                       @bind="TagSearch"
+                       @bind:event="oninput"
+                       placeholder="Filter tags..."
+                       aria-label="Filter tags" />
+                @if (!string.IsNullOrWhiteSpace(TagSearch))
+                {
+                    <button class="clear-search" type="button" @onclick="ClearSearch" title="Clear search" aria-label="Clear search">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                }
+            </label>
 
-                                        @if (ActiveColorPickerId == tag.Id)
-                                        {
-                                            <div class="color-popup" @onclick:stopPropagation="true">
-                                                <button class="overlay" type="button" @onclick="() => ActiveColorPickerId = null" aria-label="Close color palette"></button>
-                                                <div class="color-popup-panel">
-                                                    <div class="color-grid">
-                                                        @foreach (string color in Palette)
-                                                        {
-                                                            <button class="swatch"
-                                                                    type="button"
-                                                                    style="--tag-color: @color"
-                                                                    @onclick="() => UpdateTagColor(tag, color)"
-                                                                    title="@color"
-                                                                    aria-label="Set @tag.Name color to @color"></button>
-                                                        }
+            <label class="unused-filter">
+                <input type="checkbox" @bind="UnusedOnly" />
+                <span>Unused only</span>
+            </label>
+
+            <div class="tag-results" aria-live="polite">
+                @FilteredTagCount of @Tags.Count tags
+            </div>
+        </div>
+
+        <div class="tag-table-container">
+            @if (_isLoading)
+            {
+                <div class="empty-state">Loading tags...</div>
+            }
+            else if (Tags.Count == 0)
+            {
+                <div class="empty-state">
+                    <i class="fa-solid fa-tags" aria-hidden="true"></i>
+                    <strong>No tags yet</strong>
+                    <span>Add a tag above to start organizing your library.</span>
+                </div>
+            }
+            else if (FilteredTagCount == 0)
+            {
+                <div class="empty-state">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <strong>No matching tags</strong>
+                    <span>Try a different search or clear the unused-only filter.</span>
+                    <button class="btn-secondary" type="button" @onclick="ClearFilters">Clear filters</button>
+                </div>
+            }
+            else
+            {
+                <table class="tag-table">
+                    <thead>
+                        <tr>
+                            <th class="appearance-column" scope="col">Style</th>
+                            <th scope="col" aria-sort="@GetAriaSort(TagSortBy.Name)">
+                                <button class="sort-button" type="button" @onclick="() => ToggleSort(TagSortBy.Name)">
+                                    <span>Name</span>
+                                    <span class="sort-indicator" aria-hidden="true">@GetSortArrow(TagSortBy.Name)</span>
+                                </button>
+                            </th>
+                            <th class="count-column" scope="col" aria-sort="@GetAriaSort(TagSortBy.FileCount)">
+                                <button class="sort-button" type="button" @onclick="() => ToggleSort(TagSortBy.FileCount)">
+                                    <span>Files</span>
+                                    <span class="sort-indicator" aria-hidden="true">@GetSortArrow(TagSortBy.FileCount)</span>
+                                </button>
+                            </th>
+                            <th class="actions-column" scope="col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (Tag tag in FilteredTags)
+                        {
+                            <tr @key="tag.Id">
+                                <td class="appearance-cell">
+                                    <div class="tag-style-controls">
+                                        <div class="color-picker-wrapper">
+                                            <button class="color-circle"
+                                                    type="button"
+                                                    style="--tag-color: @tag.ColorHex"
+                                                    @onclick="() => ToggleColorPicker(tag.Id)"
+                                                    title="Change color for @tag.Name"
+                                                    aria-label="Change color for @tag.Name"></button>
+
+                                            @if (ActiveColorPickerId == tag.Id)
+                                            {
+                                                <div class="color-popup" @onclick:stopPropagation="true">
+                                                    <button class="overlay" type="button" @onclick="() => ActiveColorPickerId = null" aria-label="Close color palette"></button>
+                                                    <div class="color-popup-panel">
+                                                        <div class="color-grid">
+                                                            @foreach (string color in Palette)
+                                                            {
+                                                                <button class="swatch"
+                                                                        type="button"
+                                                                        style="--tag-color: @color"
+                                                                        @onclick="() => UpdateTagColor(tag, color)"
+                                                                        title="@color"
+                                                                        aria-label="Set @tag.Name color to @color"></button>
+                                                            }
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        }
-                                    </div>
+                                            }
+                                        </div>
 
+                                        <input type="text"
+                                               class="emoji-input"
+                                               value="@tag.Emoji"
+                                               @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
+                                               maxlength="4"
+                                               title="Emoji for @tag.Name"
+                                               aria-label="Emoji for @tag.Name" />
+                                    </div>
+                                </td>
+                                <td class="name-cell">
                                     <input type="text"
-                                           class="emoji-input"
-                                           value="@tag.Emoji"
-                                           @onchange="@(e => UpdateTagEmoji(tag, e.Value?.ToString()))"
-                                           maxlength="4"
-                                           title="Emoji for @tag.Name"
-                                           aria-label="Emoji for @tag.Name" />
-                                </div>
-                            </td>
-                            <td class="name-cell">
-                                <input type="text"
-                                       class="name-input"
-                                       value="@tag.Name"
-                                       @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))"
-                                       aria-label="Name for @tag.Name" />
-                            </td>
-                            <td class="count-cell">
-                                <button class="count-button"
-                                        type="button"
-                                        @onclick="() => BrowseTag(tag)"
-                                        disabled="@(tag.FileCount == 0)"
-                                        title="Show files with the @tag.Name tag"
-                                        aria-label="@tag.FileCount files tagged @tag.Name">
-                                    @tag.FileCount
-                                    <span>@(tag.FileCount == 1 ? "file" : "files")</span>
-                                </button>
-                            </td>
-                            <td class="actions-cell">
-                                <button class="delete-button"
-                                        type="button"
-                                        @onclick="() => DeleteTag(tag.Id)"
-                                        title="Delete @tag.Name"
-                                        aria-label="Delete @tag.Name">
-                                    <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </div>
+                                           class="name-input"
+                                           value="@tag.Name"
+                                           @onchange="@(e => UpdateTagName(tag, e.Value?.ToString()))"
+                                           aria-label="Name for @tag.Name" />
+                                </td>
+                                <td class="count-cell">
+                                    <button class="count-button"
+                                            type="button"
+                                            @onclick="() => BrowseTag(tag)"
+                                            disabled="@(tag.FileCount == 0)"
+                                            title="Show files with the @tag.Name tag"
+                                            aria-label="@tag.FileCount files tagged @tag.Name">
+                                        @tag.FileCount
+                                        <span>@(tag.FileCount == 1 ? "file" : "files")</span>
+                                    </button>
+                                </td>
+                                <td class="actions-cell">
+                                    <button class="delete-button"
+                                            type="button"
+                                            @onclick="() => DeleteTag(tag.Id)"
+                                            title="Delete @tag.Name"
+                                            aria-label="Delete @tag.Name">
+                                        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
 </div>
