@@ -659,7 +659,7 @@
     --fluent-layer-3: color-mix(in srgb, var(--surface-bg) 90%, transparent);
 }
 
-:root[data-interface-style="windows11"][data-native-mica="active"] html,
+:root[data-interface-style="windows11"][data-native-mica="active"],
 :root[data-interface-style="windows11"][data-native-mica="active"] body,
 :root[data-interface-style="windows11"][data-native-mica="active"] #app {
     background: transparent !important;
