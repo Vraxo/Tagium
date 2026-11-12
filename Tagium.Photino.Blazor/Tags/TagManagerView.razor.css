@@ -235,10 +235,6 @@
     border-bottom: 0;
 }
 
-.tag-table tbody tr {
-    transition: background-color var(--transition-fast);
-}
-
 .tag-table tbody tr:hover {
     background: var(--panel-bg);
 }
