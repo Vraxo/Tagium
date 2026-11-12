@@ -138,6 +138,24 @@
 
 <div class="main-layout">
     <div class="sidebar-panel" id="sidebar-panel" style="width: @(SettingsManager.Current.LeftSidebarWidth)px;">
+        @if (SettingsManager.Current.MacOSAppearance)
+        {
+            <nav class="finder-navigation" aria-label="Library views">
+                <div class="finder-navigation-heading">Library</div>
+                <button type="button" class="finder-navigation-item @(AppState.CurrentView == AppView.Files ? "active" : "")"
+                        aria-current="@(AppState.CurrentView == AppView.Files ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Files)">
+                    <i class="fa-regular fa-images" aria-hidden="true"></i><span>Files</span>
+                </button>
+                <button type="button" class="finder-navigation-item @(AppState.CurrentView == AppView.Folders ? "active" : "")"
+                        aria-current="@(AppState.CurrentView == AppView.Folders ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Folders)">
+                    <i class="fa-regular fa-folder" aria-hidden="true"></i><span>Folders</span>
+                </button>
+                <button type="button" class="finder-navigation-item @(AppState.CurrentView == AppView.Tags ? "active" : "")"
+                        aria-current="@(AppState.CurrentView == AppView.Tags ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Tags)">
+                    <i class="fa-solid fa-tags" aria-hidden="true"></i><span>Tags</span>
+                </button>
+            </nav>
+        }
         @if (AppState.CurrentView == AppView.Folders)
         {
             <FolderSidebar />

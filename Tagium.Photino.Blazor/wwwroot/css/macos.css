@@ -217,3 +217,161 @@
     :root[data-interface-style="macos"] .segment-btn { padding-inline: 6px; }
     :root[data-interface-style="macos"] .toolbar-center { flex-basis: 100px; }
 }
+
+/* Navigation selection is a quiet material rather than a solid accent. Keep the
+   system and folder icons distinct; tag-pill selections retain their own contrast-checked colors. */
+:root[data-interface-style="macos"] .system-item.active,
+:root[data-interface-style="macos"] .folder-row.active {
+    background: var(--surface-hover) !important;
+    color: var(--text-color) !important;
+}
+
+:root[data-interface-style="macos"] .folder-row.active * {
+    color: var(--text-color) !important;
+}
+
+:root[data-interface-style="macos"] .folder-row.active .folder-icon,
+:root[data-interface-style="macos"] .system-item.active .folder-accent {
+    color: var(--folder-color) !important;
+}
+
+:root[data-interface-style="macos"] .system-item.active .warning-accent {
+    color: var(--warning-color) !important;
+}
+
+:root[data-interface-style="macos"] .tag-item.pill:not(.active) {
+    border-left-color: transparent;
+    border-left-width: 1px;
+}
+
+/* Finder-style selection keeps the image unobscured and highlights its label. */
+:root[data-interface-style="macos"] .file-card.selected,
+:root[data-interface-style="macos"] .file-card.selected:hover {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+:root[data-interface-style="macos"] .file-card.selected .filename {
+    align-self: center;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding-inline: 6px;
+    border-radius: var(--radius-sm);
+    background: var(--primary-color);
+    color: var(--text-on-primary);
+}
+
+:root[data-interface-style="macos"] .file-card:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root[data-interface-style="macos"] .file-card,
+    :root[data-interface-style="macos"] .segment-btn {
+        transition: none;
+    }
+}
+
+/* Finder reference: navigation lives in the sidebar, leaving the toolbar for
+   the current location, search, and actions. The regular interface is unchanged. */
+:root[data-interface-style="macos"] .toolbar-left { display: none; }
+
+:root[data-interface-style="macos"] .app-toolbar {
+    background: var(--bg-color);
+    min-height: 52px;
+    gap: 10px;
+}
+
+:root[data-interface-style="macos"] .toolbar-center {
+    margin-left: auto;
+    max-width: 240px;
+}
+
+:root[data-interface-style="macos"] .toolbar-right { margin-left: 0; }
+
+:root[data-interface-style="macos"] .sidebar-panel {
+    background: var(--panel-bg);
+}
+
+:root[data-interface-style="macos"] .sidebar-panel > .sidebar-container {
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+:root[data-interface-style="macos"] .finder-navigation {
+    flex: 0 0 auto;
+    padding: 20px 10px 0;
+    background: var(--panel-bg);
+}
+
+:root[data-interface-style="macos"] .finder-navigation-heading {
+    padding: 0 8px 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+:root[data-interface-style="macos"] .finder-navigation-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 28px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-color);
+    text-align: left;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+:root[data-interface-style="macos"] .finder-navigation-item i {
+    flex: 0 0 16px;
+    color: var(--folder-color);
+    text-align: center;
+}
+
+:root[data-interface-style="macos"] .finder-navigation-item:hover,
+:root[data-interface-style="macos"] .finder-navigation-item.active {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="macos"] .grid-container {
+    column-gap: 20px;
+    row-gap: 16px;
+    padding: 22px 24px;
+}
+
+:root[data-interface-style="macos"] .file-card {
+    height: calc(var(--thumb-size) + 44px);
+}
+
+:root[data-interface-style="macos"] .file-card .filename {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    height: auto;
+    min-height: 30px;
+    max-height: 30px;
+    margin-top: 5px;
+    line-height: 15px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+:root[data-interface-style="macos"] .file-list tbody tr:nth-child(even):not(.selected) {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="macos"] .file-list tbody tr {
+    border-bottom: 0;
+}
+
+:root[data-interface-style="macos"] .file-list tbody tr.selected {
+    border-left: 0;
+}
