@@ -74,6 +74,11 @@ public class LibraryService
         _undoService.Undo();
     }
 
+    public int GetMissingFileCount()
+    {
+        return _fileRepo.GetMissingCount();
+    }
+
     public List<FileEntry> GetFiles(string? searchText = null, bool missingOnly = false, string? folderPath = null)
     {
         SortBy sort = _settingsManager.Current.FileSortBy;

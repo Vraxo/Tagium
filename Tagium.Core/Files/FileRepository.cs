@@ -30,6 +30,22 @@ public class FileRepository
         return conn.Query<FileEntry>(sql).ToList();
     }
 
+    public int GetMissingCount()
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        string sql = $@"
+            SELECT COUNT(*)
+            FROM cache.Files F
+            WHERE F.IsMissing = 1
+              AND EXISTS (
+                  SELECT 1 FROM LibraryRoots LR
+                  WHERE LR.IsEnabled = 1
+                    AND (F.Path = LR.Path OR SUBSTR(F.Path, 1, LENGTH(LR.Path) + 1) = LR.Path || '{Path.DirectorySeparatorChar}')
+              )";
+
+        return conn.ExecuteScalar<int>(sql);
+    }
+
     public List<FileEntry> GetFilesWithTags(SortBy sortBy, SortDirection direction, bool includeMissing = false)
     {
         using SqliteConnection conn = _db.GetConnection();

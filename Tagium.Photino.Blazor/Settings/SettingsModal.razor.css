@@ -1,4 +1,4 @@
-﻿.settings-modal-layout {
+.settings-modal-layout {
     display: flex;
     height: 380px;
     box-sizing: border-box;
@@ -94,6 +94,17 @@ h5 {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     line-height: 1.3;
+}
+
+.maintenance-status {
+    margin: 0 0 var(--space-xs);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.maintenance-status i {
+    margin-right: var(--space-2xs);
+    color: var(--primary-color);
 }
 
 /* Dropdown Menu */

@@ -201,9 +201,21 @@
                 <div class="maintenance-group">
                     <h5>Integrity Diagnostics</h5>
                     <p class="section-hint">Scan library references to clean up missing directory files.</p>
+                    @if (IsMissingCountLoading)
+                    {
+                        <p class="maintenance-status" role="status"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Checking missing-file count…</p>
+                    }
+                    else
+                    {
+                        <p class="maintenance-status">@MissingFileCount missing file(s) currently indexed.</p>
+                    }
                     <div class="btn-row">
-                        <button class="btn" @onclick="ScanIntegrity">Scan Missing References</button>
-                        <button class="btn btn-danger" @onclick="PurgeMissing" disabled="@(Library.GetFiles(null, true).Count == 0)">Purge Missing</button>
+                        <button class="btn" @onclick="ScanIntegrity" disabled="@IsIntegrityScanning">
+                            @(IsIntegrityScanning ? "Scanning…" : "Scan Missing References")
+                        </button>
+                        <button class="btn btn-danger" @onclick="PurgeMissing" disabled="@(IsMissingCountLoading || IsPurgingMissing || MissingFileCount == 0)">
+                            @(IsPurgingMissing ? "Purging…" : "Purge Missing")
+                        </button>
                     </div>
 
                     @if (ScanResult is not null)
@@ -222,10 +234,10 @@
                     <h5>Export & Backups</h5>
                     <p class="section-hint">Export catalog data to flat files, or backup and restore the local library configurations.</p>
                     <div class="btn-row">
-                        <button class="btn" @onclick="ExportJson">Export JSON</button>
-                        <button class="btn" @onclick="ExportCsv">Export CSV</button>
-                        <button class="btn" @onclick="BackupDb">Backup DB</button>
-                        <button class="btn btn-danger" @onclick="RestoreDb">Restore DB...</button>
+                        <button class="btn" @onclick="ExportJson" disabled="@IsExporting">@(IsExporting ? "Exporting…" : "Export JSON")</button>
+                        <button class="btn" @onclick="ExportCsv" disabled="@IsExporting">@(IsExporting ? "Exporting…" : "Export CSV")</button>
+                        <button class="btn" @onclick="BackupDb" disabled="@IsBackingUp">@(IsBackingUp ? "Backing up…" : "Backup DB")</button>
+                        <button class="btn btn-danger" @onclick="RestoreDb" disabled="@IsRestoring">@(IsRestoring ? "Restoring…" : "Restore DB...")</button>
                     </div>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-﻿using Tagium.Core.Files;
+using Tagium.Core.Files;
 using Tagium.Core.Settings;
 
 namespace Tagium.Core.Maintenance;
@@ -12,16 +12,18 @@ public class LibraryIntegrityService
         _fileRepo = fileRepo;
     }
 
-    public async Task<IntegrityScanResult> ScanAsync()
+    public Task<IntegrityScanResult> ScanAsync()
     {
-        List<FileEntry> allFiles = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
-        IntegrityScanResult result = new() { FilesScanned = allFiles.Count };
-
-        List<Guid> toMarkMissing = [];
-        List<Guid> toMarkFound = [];
-
-        await Task.Run(() =>
+        // This includes the full catalog read as well as filesystem probes and database updates.
+        // Keep all of it off the UI thread for large libraries and slow network roots.
+        return Task.Run(() =>
         {
+            List<FileEntry> allFiles = _fileRepo.GetAll(SortBy.Path, SortDirection.Asc);
+            IntegrityScanResult result = new() { FilesScanned = allFiles.Count };
+
+            List<Guid> toMarkMissing = [];
+            List<Guid> toMarkFound = [];
+
             foreach (FileEntry file in allFiles)
             {
                 bool exists = File.Exists(file.Path);
@@ -35,25 +37,25 @@ public class LibraryIntegrityService
                     toMarkFound.Add(file.Id);
                 }
             }
+
+            if (toMarkMissing.Count != 0)
+            {
+                _fileRepo.SetMissingStatus(toMarkMissing, true);
+                result.NewlyMissing = toMarkMissing.Count;
+            }
+
+            if (toMarkFound.Count != 0)
+            {
+                _fileRepo.SetMissingStatus(toMarkFound, false);
+                result.NewlyFound = toMarkFound.Count;
+            }
+
+            return result;
         });
-
-        if (toMarkMissing.Count != 0)
-        {
-            _fileRepo.SetMissingStatus(toMarkMissing, true);
-            result.NewlyMissing = toMarkMissing.Count;
-        }
-
-        if (toMarkFound.Count != 0)
-        {
-            _fileRepo.SetMissingStatus(toMarkFound, false);
-            result.NewlyFound = toMarkFound.Count;
-        }
-
-        return result;
     }
 
-    public void PurgeMissing()
+    public Task PurgeMissingAsync()
     {
-        _fileRepo.RemoveMissingFiles();
+        return Task.Run(_fileRepo.RemoveMissingFiles);
     }
 }
