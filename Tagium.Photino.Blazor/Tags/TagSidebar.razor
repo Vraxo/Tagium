@@ -110,7 +110,7 @@
                      @onclick="() => SetSearch(tag.Name)"
                      @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))"
                      style="--tag-color: @tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(tag.ColorHex);">
-                    <TagIcon Tag="@tag" ShowColor="@Settings.Current.InterfaceStyle != InterfaceStyle.Classic" />
+                    <TagIcon Tag="@tag" ShowColor="@(Settings.Current.InterfaceStyle != InterfaceStyle.Classic)" />
                     <span class="name" title="@tag.Name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
                 </div>
