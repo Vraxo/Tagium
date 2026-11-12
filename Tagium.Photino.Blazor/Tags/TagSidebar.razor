@@ -6,7 +6,7 @@
 <div class="sidebar-container">
     <div class="sidebar-header">
         <div class="sidebar-header-row">
-            <h4>Tags</h4>
+            <h4>@(Settings.Current.MacOSAppearance ? "Library" : "Tags")</h4>
             <button @ref="_tagSearchToggle"
                     type="button"
                     class="tag-search-toggle @(IsTagSearchOpen ? "active" : "")"
@@ -73,7 +73,14 @@
             <i class="fa-solid fa-triangle-exclamation icon warning-accent fa-fw" aria-hidden="true"></i> Missing Files
         </div>
 
-        <hr />
+        @if (Settings.Current.MacOSAppearance)
+        {
+            <div class="finder-section-label">Tags</div>
+        }
+        else
+        {
+            <hr />
+        }
 
         @foreach (var tag in FilteredTags)
         {
