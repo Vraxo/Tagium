@@ -154,3 +154,18 @@ Every interactive surface must be operable without a mouse. Two layers cooperate
 **Live regions**: library selection and filter counts are announced by exactly one polite live region — `AppShell/LibraryAnnouncer`, rendered by `MainLayout` and never removed. It must stay mounted and only have its text replaced: a region that appears with its message already in the DOM is frequently not announced at all. Announcements are debounced by 400 ms so arrow-key repeats collapse into a single sentence, and the wording lives in `Tagium.Core/Files/LibraryAnnouncement` so the phrasing and its plural and clamp edge cases are unit-tested. Other surfaces keep their own regions (`TagManagerView` results, the `TagSidebar` empty-filter notice); never mirror the same state into two of them.
 
 **Recent searches**: the search box offers its history as a labelled `role="group"` of real `<button>`s, so Tab reaches them and Enter or Space applies one — no custom arrow-key model and no half-implemented `combobox` role. Escape closes the list without touching the query; choosing a suggestion fills the box and re-records it as most recent. The list stays open until a 200 ms grace period after blur so a click on it is not swallowed by the blur that precedes it. The search box also carries a one-button syntax reference beside it: a real `<button>` with `aria-expanded`, opening a read-only panel of syntax-to-meaning rows that takes the same slot as the history list — never both at once, and Escape closes either.
+
+
+---
+
+## 8. Windows 11 Interface Style (Fluent 2)
+
+The optional Windows 11 interface is a Fluent 2-inspired WebView implementation. It must preserve the application's existing behavior, semantic theme colors, keyboard support, and accessibility contracts.
+
+* Use Segoe UI Variable with Segoe UI fallback.
+* Prefer 32px standard controls, compact 4px control corners, subtle borders, and restrained hover/pressed states.
+* Navigation uses a persistent left navigation surface with a narrow accent selection indicator.
+* Toolbars use compact command controls; file cards and inspector surfaces remain quiet and information-dense.
+* Menus and flyouts use elevated surfaces, clear separators, and restrained shadows. Do not apply blur indiscriminately.
+* Keep the style independent of JSON color themes and the global corner-style preference.
+* The WebView cannot render actual WinUI controls or system Mica. CSS materials are visual approximations; native window chrome and system dialogs remain host-owned.
