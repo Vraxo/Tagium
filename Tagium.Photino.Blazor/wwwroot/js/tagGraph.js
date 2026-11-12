@@ -1,47 +1,18 @@
 window.tagGraph = (() => {
     const states = new WeakMap();
+    const { d3Force: d3, PIXI } = window.tagGraphVendors;
 
     function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
     }
 
-    function measure(state) {
-        const rect = state.canvas.getBoundingClientRect();
-        if (!rect.width || !rect.height) return false;
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const width = Math.round(rect.width);
-        const height = Math.round(rect.height);
-        if (state.width !== width || state.height !== height || state.dpr !== dpr) {
-            state.width = width;
-            state.height = height;
-            state.dpr = dpr;
-            state.canvas.width = Math.round(width * dpr);
-            state.canvas.height = Math.round(height * dpr);
-            state.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            state.alpha = Math.max(state.alpha, 0.3);
-            return true;
-        }
-        return false;
+    function colorToNumber(value, fallback = 0x757575) {
+        if (typeof value !== 'string') return fallback;
+        const parsed = Number.parseInt(value.trim().replace(/^#/, ''), 16);
+        return Number.isFinite(parsed) ? parsed : fallback;
     }
 
-    function layoutInitial(state) {
-        const { nodes, width, height } = state;
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const radius = Math.max(35, Math.min(width, height) * 0.32);
-        nodes.forEach((node, index) => {
-            const angle = 2.399963229728653 * index;
-            const spread = radius * Math.sqrt((index + 1) / Math.max(nodes.length, 1));
-            node.x = centerX + Math.cos(angle) * spread;
-            node.y = centerY + Math.sin(angle) * spread;
-            node.vx = 0;
-            node.vy = 0;
-            node.r = clamp(6 + Math.sqrt(node.fileCount) * 1.5, 8, 25);
-            node.pinned = false;
-        });
-    }
-
-    function makeColors() {
+    function getThemeColors() {
         const style = getComputedStyle(document.documentElement);
         return {
             text: style.getPropertyValue('--text-color').trim() || '#dddddd',
@@ -51,284 +22,229 @@ window.tagGraph = (() => {
         };
     }
 
-    function stepSimulation(state) {
-        const nodes = state.nodes;
-        const alpha = state.alpha;
-        const { width, height, forces } = state;
-        const repulsion = forces.repulsion * 1200;
-        const linkStrength = forces.linkStrength * 0.012;
-
-        for (let i = 0; i < nodes.length; i++) {
-            const a = nodes[i];
-            for (let j = i + 1; j < nodes.length; j++) {
-                const b = nodes[j];
-                let dx = a.x - b.x;
-                let dy = a.y - b.y;
-                let distanceSquared = dx * dx + dy * dy;
-                if (distanceSquared < 1) {
-                    dx = (i + 1) * 0.13;
-                    dy = (j + 1) * 0.11;
-                    distanceSquared = dx * dx + dy * dy;
-                }
-                const distance = Math.sqrt(distanceSquared);
-                const repel = Math.min(2.4, repulsion / distanceSquared) * alpha;
-                const overlap = Math.max(0, a.r + b.r + 10 - distance) * 0.035 * alpha;
-                const force = repel + overlap;
-                const fx = dx / distance * force;
-                const fy = dy / distance * force;
-                a.vx += fx;
-                a.vy += fy;
-                b.vx -= fx;
-                b.vy -= fy;
+    function makeNodeLabel(node, state) {
+        const label = new PIXI.Text(
+            `${node.emoji ? `${node.emoji} ` : ''}${node.name}`,
+            {
+                fontFamily: 'Segoe UI, sans-serif',
+                fontSize: 12,
+                fill: colorToNumber(state.colors.text, 0xdddddd),
+                stroke: colorToNumber(state.colors.surface, 0x242424),
+                strokeThickness: 3,
+                lineJoin: 'round'
             }
-        }
-
-        for (const edge of state.edges) {
-            const dx = edge.target.x - edge.source.x;
-            const dy = edge.target.y - edge.source.y;
-            const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-            const desired = edge.isHierarchy ? forces.linkDistance * 0.9 : forces.linkDistance;
-            const spring = (distance - desired) * linkStrength * (edge.isHierarchy ? 1.25 : 1) * alpha;
-            const fx = dx / distance * spring;
-            const fy = dy / distance * spring;
-            edge.source.vx += fx;
-            edge.source.vy += fy;
-            edge.target.vx -= fx;
-            edge.target.vy -= fy;
-        }
-
-        for (const node of nodes) {
-            if (node.pinned) continue;
-            node.vx += (width / 2 - node.x) * 0.0015 * alpha;
-            node.vy += (height / 2 - node.y) * 0.0015 * alpha;
-            node.vx *= 0.82;
-            node.vy *= 0.82;
-            node.x = clamp(node.x + node.vx, node.r + 8, width - node.r - 8);
-            node.y = clamp(node.y + node.vy, node.r + 8, height - node.r - 8);
-        }
-
-        state.alpha *= 0.985;
+        );
+        label.anchor.set(0, 0.5);
+        label.resolution = Math.min(window.devicePixelRatio || 1, 2);
+        return label;
     }
 
-    function draw(state) {
-        const { ctx, width, height, dpr, scale, offsetX, offsetY, colors } = state;
-        if (!width || !height) return;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, width, height);
-        if (state.emptyMessage) {
-            ctx.fillStyle = colors.muted;
-            ctx.font = '14px system-ui, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(state.emptyMessage, width / 2, height / 2, width - 32);
-            return;
+    function drawDashedLink(graphics, x1, y1, x2, y2, dashLength) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        if (length < 1) return;
+        const ux = dx / length;
+        const uy = dy / length;
+        for (let start = 0; start < length; start += dashLength * 2) {
+            const end = Math.min(start + dashLength, length);
+            graphics.moveTo(x1 + ux * start, y1 + uy * start);
+            graphics.lineTo(x1 + ux * end, y1 + uy * end);
         }
-        ctx.save();
-        ctx.translate(offsetX, offsetY);
-        ctx.scale(scale, scale);
+    }
 
-        for (const edge of state.edges) {
-            const { source, target } = edge;
+    function drawScene(state) {
+        if (state.disposed) return;
+        const { linksGraphics, nodesGraphics, world, app, nodes, links, zoom } = state;
+        linksGraphics.clear();
+
+        for (const edge of links) {
+            const source = edge.source;
+            const target = edge.target;
             const dx = target.x - source.x;
             const dy = target.y - source.y;
             const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
             const ux = dx / length;
             const uy = dy / length;
-            const endX = target.x - ux * (target.r + (edge.isHierarchy ? 7 : 1));
-            const endY = target.y - uy * (target.r + (edge.isHierarchy ? 7 : 1));
-            ctx.beginPath();
-            ctx.moveTo(source.x + ux * source.r, source.y + uy * source.r);
-            ctx.lineTo(endX, endY);
-            ctx.strokeStyle = edge.isHierarchy ? colors.primary : colors.muted;
-            ctx.globalAlpha = edge.isHierarchy ? 0.9 : 0.22 + Math.min(edge.sharedFileCount, 10) * 0.035;
-            ctx.lineWidth = edge.isHierarchy ? 1.8 / scale : clamp(0.8 + Math.log2(edge.sharedFileCount + 1) * 0.65, 1, 3.5) / scale;
-            if (edge.isHierarchy) ctx.setLineDash([5 / scale, 4 / scale]);
-            else ctx.setLineDash([]);
-            ctx.stroke();
-            ctx.setLineDash([]);
+            const tipX = target.x - ux * (target.r + (edge.isHierarchy ? 7 : 1));
+            const tipY = target.y - uy * (target.r + (edge.isHierarchy ? 7 : 1));
+            const startX = source.x + ux * source.r;
+            const startY = source.y + uy * source.r;
+            const stroke = edge.isHierarchy ? colorToNumber(state.colors.primary, 0x4b8bf4) : colorToNumber(state.colors.muted, 0x888888);
+            const alpha = edge.isHierarchy ? 0.9 : 0.2 + Math.min(edge.sharedFileCount, 12) * 0.035;
+            const thickness = edge.isHierarchy ? 1.8 : clamp(0.8 + Math.log2(edge.sharedFileCount + 1) * 0.65, 1, 3.5);
+            linksGraphics.lineStyle(thickness, stroke, alpha);
 
             if (edge.isHierarchy) {
-                const size = 7 / scale;
+                drawDashedLink(linksGraphics, startX, startY, tipX, tipY, 5);
                 const angle = Math.atan2(dy, dx);
-                ctx.beginPath();
-                ctx.moveTo(endX, endY);
-                ctx.lineTo(endX - size * Math.cos(angle - Math.PI / 6), endY - size * Math.sin(angle - Math.PI / 6));
-                ctx.lineTo(endX - size * Math.cos(angle + Math.PI / 6), endY - size * Math.sin(angle + Math.PI / 6));
-                ctx.closePath();
-                ctx.fillStyle = colors.primary;
-                ctx.fill();
-            }
-        }
-        ctx.globalAlpha = 1;
-
-        for (const node of state.nodes) {
-            const isHovered = state.hovered === node;
-            const isFocused = node.matchesSearch;
-            ctx.beginPath();
-            ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
-            ctx.fillStyle = node.color || '#757575';
-            ctx.fill();
-            ctx.lineWidth = (isHovered || isFocused ? 3 : 1.5) / scale;
-            ctx.strokeStyle = isHovered || isFocused ? colors.primary : colors.surface;
-            ctx.stroke();
-
-            if (scale >= 0.65 || isHovered || isFocused) {
-                const label = `${node.emoji ? `${node.emoji} ` : ''}${node.name}`;
-                const fontSize = clamp(12 * scale, 10, 24);
-                ctx.font = `${fontSize / scale}px system-ui, sans-serif`;
-                ctx.textBaseline = 'middle';
-                ctx.fillStyle = colors.text;
-                ctx.fillText(label, node.x + node.r + 5 / scale, node.y, 220 / scale);
-            }
-        }
-
-        ctx.restore();
-    }
-
-    function animate(state) {
-        if (state.frame) return;
-        const frame = () => {
-            state.frame = 0;
-            if (state.disposed) return;
-            measure(state);
-            if (state.alpha > 0.015) {
-                stepSimulation(state);
-                stepSimulation(state);
-                draw(state);
-                state.frame = requestAnimationFrame(frame);
+                const size = 7;
+                const baseX = tipX - size * Math.cos(angle);
+                const baseY = tipY - size * Math.sin(angle);
+                linksGraphics.beginFill(stroke, alpha);
+                linksGraphics.moveTo(tipX, tipY);
+                linksGraphics.lineTo(baseX + size * 0.55 * Math.sin(angle), baseY - size * 0.55 * Math.cos(angle));
+                linksGraphics.lineTo(baseX - size * 0.55 * Math.sin(angle), baseY + size * 0.55 * Math.cos(angle));
+                linksGraphics.closePath();
+                linksGraphics.endFill();
             } else {
-                state.alpha = 0;
-                draw(state);
+                linksGraphics.moveTo(startX, startY);
+                linksGraphics.lineTo(tipX, tipY);
             }
-        };
-        state.frame = requestAnimationFrame(frame);
+        }
+
+        nodesGraphics.clear();
+        const primary = colorToNumber(state.colors.primary, 0x4b8bf4);
+        const surface = colorToNumber(state.colors.surface, 0x242424);
+        for (const node of nodes) {
+            const highlighted = node === state.hovered || node.matchesSearch;
+            nodesGraphics.lineStyle(highlighted ? 3 : 1.5, highlighted ? primary : surface, 1);
+            nodesGraphics.beginFill(colorToNumber(node.color));
+            nodesGraphics.drawCircle(node.x, node.y, node.r);
+            nodesGraphics.endFill();
+
+            const label = state.labels.get(node.id);
+            label.position.set(node.x + node.r + 5 / zoom, node.y);
+            label.scale.set(1 / zoom);
+            label.visible = zoom >= 0.62 || highlighted;
+        }
+
+        if (state.emptyLabel) {
+            state.emptyLabel.position.set(state.width / 2, state.height / 2);
+            state.emptyLabel.scale.set(1 / zoom);
+        }
+        world.position.set(state.offsetX, state.offsetY);
+        world.scale.set(zoom);
+        app.render();
     }
 
-    function requestDraw(state) {
-        if (state.frame) return;
-        state.frame = requestAnimationFrame(() => {
-            state.frame = 0;
-            if (!state.disposed) {
-                measure(state);
-                draw(state);
-            }
+    function requestSceneDraw(state) {
+        if (state.drawFrame || state.disposed) return;
+        state.drawFrame = requestAnimationFrame(() => {
+            state.drawFrame = 0;
+            drawScene(state);
         });
-    }
-
-    function reheat(state, amount = 0.85) {
-        state.alpha = Math.max(state.alpha, amount);
-        animate(state);
     }
 
     function hitTest(state, clientX, clientY) {
         const rect = state.canvas.getBoundingClientRect();
-        const x = (clientX - rect.left - state.offsetX) / state.scale;
-        const y = (clientY - rect.top - state.offsetY) / state.scale;
-        let closest = null;
-        let closestDistance = Infinity;
+        const x = (clientX - rect.left - state.offsetX) / state.zoom;
+        const y = (clientY - rect.top - state.offsetY) / state.zoom;
+        let nearest = null;
+        let nearestDistance = Infinity;
         for (const node of state.nodes) {
             const dx = x - node.x;
             const dy = y - node.y;
-            const distanceSquared = dx * dx + dy * dy;
-            const hitRadius = Math.max(node.r + 6, node.r * 1.35);
-            if (distanceSquared <= hitRadius * hitRadius && distanceSquared < closestDistance) {
-                closest = node;
-                closestDistance = distanceSquared;
+            const distance = dx * dx + dy * dy;
+            const radius = Math.max(node.r + 7, node.r * 1.4);
+            if (distance <= radius * radius && distance < nearestDistance) {
+                nearest = node;
+                nearestDistance = distance;
             }
         }
-        return closest;
+        return nearest;
+    }
+
+    function screenToWorld(state, clientX, clientY) {
+        const rect = state.canvas.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left - state.offsetX) / state.zoom,
+            y: (clientY - rect.top - state.offsetY) / state.zoom
+        };
     }
 
     function installInteractions(state) {
         const canvas = state.canvas;
-        const point = event => {
-            const rect = canvas.getBoundingClientRect();
-            return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-        };
-
         state.onPointerDown = event => {
             if (event.button !== 0) return;
-            const position = point(event);
             const node = hitTest(state, event.clientX, event.clientY);
             canvas.setPointerCapture(event.pointerId);
-            state.gesture = node
-                ? { type: 'node', node, startX: position.x, startY: position.y, originX: node.x, originY: node.y, moved: false }
-                : { type: 'pan', startX: position.x, startY: position.y, originX: state.offsetX, originY: state.offsetY, moved: false };
             if (node) {
-                node.pinned = true;
+                const point = screenToWorld(state, event.clientX, event.clientY);
+                state.gesture = { type: 'node', node, startX: event.clientX, startY: event.clientY, originX: node.x, originY: node.y, moved: false };
+                node.fx = point.x;
+                node.fy = point.y;
+                node.vx = node.vy = 0;
                 state.hovered = node;
+                state.simulation.alphaTarget(0.28).restart();
+            } else {
+                state.gesture = { type: 'pan', startX: event.clientX, startY: event.clientY, originX: state.offsetX, originY: state.offsetY, moved: false };
             }
         };
 
         state.onPointerMove = event => {
             if (state.gesture) {
-                const position = point(event);
                 const gesture = state.gesture;
-                const dx = (position.x - gesture.startX) / state.scale;
-                const dy = (position.y - gesture.startY) / state.scale;
+                const dx = event.clientX - gesture.startX;
+                const dy = event.clientY - gesture.startY;
                 if (Math.abs(dx) + Math.abs(dy) > 2) gesture.moved = true;
                 if (gesture.type === 'node') {
-                    gesture.node.x = clamp(gesture.originX + dx, gesture.node.r, state.width - gesture.node.r);
-                    gesture.node.y = clamp(gesture.originY + dy, gesture.node.r, state.height - gesture.node.r);
-                    gesture.node.vx = gesture.node.vy = 0;
+                    const point = screenToWorld(state, event.clientX, event.clientY);
+                    gesture.node.fx = point.x;
+                    gesture.node.fy = point.y;
+                    gesture.node.x = point.x;
+                    gesture.node.y = point.y;
                 } else {
-                    state.offsetX = gesture.originX + position.x - gesture.startX;
-                    state.offsetY = gesture.originY + position.y - gesture.startY;
+                    state.offsetX = gesture.originX + dx;
+                    state.offsetY = gesture.originY + dy;
+                    requestSceneDraw(state);
                 }
-                requestDraw(state);
                 return;
             }
+
             const hovered = hitTest(state, event.clientX, event.clientY);
             if (hovered !== state.hovered) {
                 state.hovered = hovered;
                 canvas.style.cursor = hovered ? 'pointer' : 'grab';
                 canvas.title = hovered ? `${hovered.name} · ${hovered.fileCount} files — click to browse` : 'Drag to pan; scroll to zoom';
-                requestDraw(state);
+                requestSceneDraw(state);
             }
         };
 
-        state.onPointerUp = event => {
+        state.onPointerUp = () => {
             const gesture = state.gesture;
             if (!gesture) return;
             state.gesture = null;
             if (gesture.type === 'node') {
-                gesture.node.pinned = false;
+                gesture.node.fx = null;
+                gesture.node.fy = null;
+                state.simulation.alphaTarget(0).alpha(Math.max(state.simulation.alpha(), 0.25)).restart();
                 if (!gesture.moved && state.dotnetRef) {
                     state.dotnetRef.invokeMethodAsync('BrowseTag', gesture.node.id);
-                } else {
-                    reheat(state, 0.45);
                 }
             }
         };
 
         state.onWheel = event => {
             event.preventDefault();
-            const position = point(event);
-            const nextScale = clamp(state.scale * Math.exp(-event.deltaY * 0.0013), 0.25, 5);
-            const worldX = (position.x - state.offsetX) / state.scale;
-            const worldY = (position.y - state.offsetY) / state.scale;
-            state.scale = nextScale;
-            state.offsetX = position.x - worldX * nextScale;
-            state.offsetY = position.y - worldY * nextScale;
-            requestDraw(state);
+            const rect = canvas.getBoundingClientRect();
+            const px = event.clientX - rect.left;
+            const py = event.clientY - rect.top;
+            const nextZoom = clamp(state.zoom * Math.exp(-event.deltaY * 0.0013), 0.25, 5);
+            const worldX = (px - state.offsetX) / state.zoom;
+            const worldY = (py - state.offsetY) / state.zoom;
+            state.zoom = nextZoom;
+            state.offsetX = px - worldX * nextZoom;
+            state.offsetY = py - worldY * nextZoom;
+            requestSceneDraw(state);
         };
 
         state.onKeyDown = event => {
             if (event.key === '+' || event.key === '=') {
-                state.scale = clamp(state.scale * 1.15, 0.25, 5);
-                requestDraw(state);
+                state.zoom = clamp(state.zoom * 1.15, 0.25, 5);
+                requestSceneDraw(state);
                 event.preventDefault();
             } else if (event.key === '-') {
-                state.scale = clamp(state.scale / 1.15, 0.25, 5);
-                requestDraw(state);
+                state.zoom = clamp(state.zoom / 1.15, 0.25, 5);
+                requestSceneDraw(state);
                 event.preventDefault();
             } else if (event.key === 'Enter' && state.hovered && state.dotnetRef) {
                 state.dotnetRef.invokeMethodAsync('BrowseTag', state.hovered.id);
             } else if (event.key.startsWith('Arrow')) {
-                const step = 28;
-                state.offsetX += event.key === 'ArrowLeft' ? step : event.key === 'ArrowRight' ? -step : 0;
-                state.offsetY += event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0;
-                requestDraw(state);
+                const offset = 28;
+                state.offsetX += event.key === 'ArrowLeft' ? offset : event.key === 'ArrowRight' ? -offset : 0;
+                state.offsetY += event.key === 'ArrowUp' ? offset : event.key === 'ArrowDown' ? -offset : 0;
+                requestSceneDraw(state);
                 event.preventDefault();
             }
         };
@@ -344,7 +260,8 @@ window.tagGraph = (() => {
     function destroyState(state) {
         if (!state) return;
         state.disposed = true;
-        if (state.frame) cancelAnimationFrame(state.frame);
+        if (state.drawFrame) cancelAnimationFrame(state.drawFrame);
+        if (state.simulation) state.simulation.stop();
         if (state.resizeObserver) state.resizeObserver.disconnect();
         if (state.themeObserver) state.themeObserver.disconnect();
         const canvas = state.canvas;
@@ -354,93 +271,189 @@ window.tagGraph = (() => {
         canvas.removeEventListener('pointercancel', state.onPointerUp);
         canvas.removeEventListener('wheel', state.onWheel);
         canvas.removeEventListener('keydown', state.onKeyDown);
+        if (state.app) state.app.destroy(false, { children: true, texture: false, baseTexture: false });
     }
 
-    function render(canvas, data, minSharedFiles, search, forces, dotnetRef) {
-        if (!canvas) return;
-        destroyState(states.get(canvas));
-
+    function selectGraph(data, minSharedFiles, search) {
         const query = (search || '').trim().toLocaleLowerCase();
         const threshold = Number(minSharedFiles) || 1;
-        const sourceNodes = data.nodes;
         const allowedEdges = data.edges.filter(edge => edge.isHierarchy || edge.sharedFileCount >= threshold);
-        let visibleIds = new Set(sourceNodes.map(node => node.id));
+        let visibleIds = new Set(data.nodes.map(node => node.id));
 
         if (query) {
-            const matches = new Set(sourceNodes.filter(node => node.name.toLocaleLowerCase().includes(query)).map(node => node.id));
-            const keep = new Set(matches);
+            const matches = new Set(data.nodes.filter(node => node.name.toLocaleLowerCase().includes(query)).map(node => node.id));
+            const neighborhood = new Set(matches);
             for (const edge of allowedEdges) {
-                if (matches.has(edge.source)) keep.add(edge.target);
-                if (matches.has(edge.target)) keep.add(edge.source);
+                if (matches.has(edge.source)) neighborhood.add(edge.target);
+                if (matches.has(edge.target)) neighborhood.add(edge.source);
             }
-            visibleIds = keep;
+            visibleIds = neighborhood;
         }
 
-        let edges = allowedEdges.filter(edge => visibleIds.has(edge.source) && visibleIds.has(edge.target));
-        edges.sort((a, b) => Number(b.isHierarchy) - Number(a.isHierarchy) || b.sharedFileCount - a.sharedFileCount);
-        edges = edges.slice(0, 500);
+        const edges = allowedEdges
+            .filter(edge => visibleIds.has(edge.source) && visibleIds.has(edge.target))
+            .sort((a, b) => Number(b.isHierarchy) - Number(a.isHierarchy) || b.sharedFileCount - a.sharedFileCount)
+            .slice(0, 500)
+            .map(edge => ({ ...edge }));
         const linkedIds = new Set();
         for (const edge of edges) {
             linkedIds.add(edge.source);
             linkedIds.add(edge.target);
         }
-        const nodes = sourceNodes
+        const nodes = data.nodes
             .filter(node => visibleIds.has(node.id) && (linkedIds.has(node.id) || (query && node.name.toLocaleLowerCase().includes(query))))
             .map(node => ({ ...node, matchesSearch: Boolean(query && node.name.toLocaleLowerCase().includes(query)) }));
-        const nodesById = new Map(nodes.map(node => [node.id, node]));
-        edges = edges
-            .map(edge => ({ ...edge, source: nodesById.get(edge.source), target: nodesById.get(edge.target) }))
-            .filter(edge => edge.source && edge.target);
+        return { nodes, edges };
+    }
+
+    function render(canvas, data, minSharedFiles, search, forces, dotnetRef) {
+        if (!canvas) return;
+        destroyState(states.get(canvas));
+        const bounds = canvas.getBoundingClientRect();
+        const width = Math.max(360, Math.round(bounds.width));
+        const height = Math.max(280, Math.round(bounds.height));
+        const graph = selectGraph(data, minSharedFiles, search);
+        const nodes = graph.nodes;
+        const links = graph.edges;
+
+        nodes.forEach((node, index) => {
+            const angle = 2.399963229728653 * index;
+            const radius = Math.max(35, Math.min(width, height) * 0.32) * Math.sqrt((index + 1) / Math.max(1, nodes.length));
+            node.x = width / 2 + Math.cos(angle) * radius;
+            node.y = height / 2 + Math.sin(angle) * radius;
+            node.r = clamp(6 + Math.sqrt(node.fileCount) * 1.5, 8, 25);
+        });
+
+        const app = new PIXI.Application({
+            view: canvas,
+            width,
+            height,
+            resolution: Math.min(window.devicePixelRatio || 1, 2),
+            autoDensity: true,
+            antialias: true,
+            backgroundAlpha: 0,
+            powerPreference: 'high-performance',
+            autoStart: false,
+            sharedTicker: false
+        });
+        app.ticker.stop();
+
+        const world = new PIXI.Container();
+        const linksGraphics = new PIXI.Graphics();
+        const nodesGraphics = new PIXI.Graphics();
+        const labelsContainer = new PIXI.Container();
+        world.addChild(linksGraphics, nodesGraphics, labelsContainer);
+        app.stage.addChild(world);
 
         const state = {
             canvas,
-            ctx: canvas.getContext('2d', { alpha: true, desynchronized: true }),
-            width: 0,
-            height: 0,
-            dpr: 1,
+            app,
+            world,
+            linksGraphics,
+            nodesGraphics,
+            labelsContainer,
+            labels: new Map(),
             nodes,
-            edges,
-            scale: 1,
+            links,
+            simulation: null,
+            width,
+            height,
+            zoom: 1,
             offsetX: 0,
             offsetY: 0,
-            alpha: 1,
-            frame: 0,
+            colors: getThemeColors(),
             forces: {
                 repulsion: Number(forces?.repulsion ?? 0.45),
                 linkStrength: Number(forces?.linkStrength ?? 0.3),
                 linkDistance: Number(forces?.linkDistance ?? 105)
             },
-            colors: makeColors(),
             hovered: null,
             gesture: null,
             dotnetRef,
             disposed: false
         };
-        states.set(canvas, state);
-        measure(state);
-        layoutInitial(state);
 
+        for (const node of nodes) {
+            const label = makeNodeLabel(node, state);
+            state.labels.set(node.id, label);
+            labelsContainer.addChild(label);
+        }
         if (!nodes.length) {
-            state.emptyMessage = query ? 'No matching tags or relationships.' : 'No relationships match this threshold.';
-            state.alpha = 0;
+            const emptyText = query ? 'No matching tags or relationships.' : 'No relationships match this threshold.';
+            state.emptyLabel = new PIXI.Text(emptyText, {
+                fontFamily: 'Segoe UI, sans-serif',
+                fontSize: 14,
+                fill: colorToNumber(state.colors.muted, 0x888888)
+            });
+            state.emptyLabel.anchor.set(0.5);
+            labelsContainer.addChild(state.emptyLabel);
         }
 
-        state.resizeObserver = new ResizeObserver(() => {
-            if (measure(state)) {
-                state.alpha = Math.max(state.alpha, 0.3);
-                animate(state);
-            } else {
-                requestDraw(state);
-            }
+        const charge = d3.forceManyBody()
+            .strength(-state.forces.repulsion * 520)
+            .distanceMax(Math.max(width, height) * 1.5);
+        const link = d3.forceLink(links)
+            .id(node => node.id)
+            .distance(state.forces.linkDistance)
+            .strength(state.forces.linkStrength);
+        const center = d3.forceCenter(width / 2, height / 2).strength(0.06);
+        const xForce = d3.forceX(width / 2).strength(0.012);
+        const yForce = d3.forceY(height / 2).strength(0.012);
+        const collision = d3.forceCollide().radius(node => node.r + 8).strength(0.85).iterations(2);
+        state.simulation = d3.forceSimulation(nodes)
+            .alphaDecay(0.035)
+            .velocityDecay(0.38)
+            .force('charge', charge)
+            .force('link', link)
+            .force('center', center)
+            .force('x', xForce)
+            .force('y', yForce)
+            .force('collision', collision)
+            .stop();
+        state.chargeForce = charge;
+        state.linkForce = link;
+        state.centerForce = center;
+        state.xForce = xForce;
+        state.yForce = yForce;
+
+        state.simulation.tick(90);
+        state.simulation.on('tick', () => drawScene(state));
+        states.set(canvas, state);
+        installInteractions(state);
+        drawScene(state);
+        if (nodes.length) state.simulation.alpha(0.8).restart();
+
+        state.resizeObserver = new ResizeObserver(entries => {
+            const rect = entries[0]?.contentRect;
+            if (!rect?.width || !rect?.height || state.disposed) return;
+            const nextWidth = Math.round(rect.width);
+            const nextHeight = Math.round(rect.height);
+            if (nextWidth === state.width && nextHeight === state.height) return;
+            state.width = nextWidth;
+            state.height = nextHeight;
+            state.app.renderer.resize(nextWidth, nextHeight);
+            state.centerForce.x(nextWidth / 2).y(nextHeight / 2);
+            state.xForce.x(nextWidth / 2);
+            state.yForce.y(nextHeight / 2);
+            state.simulation.alpha(0.4).restart();
         });
         state.resizeObserver.observe(canvas);
+
         state.themeObserver = new MutationObserver(() => {
-            state.colors = makeColors();
-            requestDraw(state);
+            state.colors = getThemeColors();
+            for (const label of state.labels.values()) {
+                label.style = {
+                    fontFamily: 'Segoe UI, sans-serif',
+                    fontSize: 12,
+                    fill: colorToNumber(state.colors.text, 0xdddddd),
+                    stroke: colorToNumber(state.colors.surface, 0x242424),
+                    strokeThickness: 3,
+                    lineJoin: 'round'
+                };
+            }
+            drawScene(state);
         });
         state.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
-        installInteractions(state);
-        animate(state);
     }
 
     function setForces(canvas, forces) {
@@ -451,7 +464,9 @@ window.tagGraph = (() => {
             linkStrength: Number(forces.linkStrength),
             linkDistance: Number(forces.linkDistance)
         };
-        reheat(state, 0.9);
+        state.chargeForce.strength(-state.forces.repulsion * 520);
+        state.linkForce.strength(state.forces.linkStrength).distance(state.forces.linkDistance);
+        state.simulation.alpha(0.75).restart();
     }
 
     function destroy(canvas) {
