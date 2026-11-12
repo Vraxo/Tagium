@@ -14,6 +14,7 @@ public class Settings
 
     public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
     public EmojiSet EmojiPreference { get; set; } = EmojiSet.SystemDefault;
+    public bool MacOSAppearance { get; set; } = false;
     public InterfaceCornerStyle CornerStyle { get; set; } = InterfaceCornerStyle.Default;
     public int ThumbnailSize { get; set; } = 120;
     public SortBy FileSortBy { get; set; } = SortBy.DateAdded;

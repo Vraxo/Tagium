@@ -1,0 +1,25 @@
+{
+  "Name": "macOS Dark",
+  "Version": 1,
+  "Colors": {
+    "--bg-color": "#1e1e1e",
+    "--panel-bg": "#29292b",
+    "--surface-bg": "#38383a",
+    "--surface-hover": "rgba(255, 255, 255, 0.09)",
+    "--media-bg": "#111111",
+    "--border-color": "#49494b",
+    "--text-color": "#f5f5f7",
+    "--text-muted": "#b0b0b5",
+    "--primary-color": "#0a84ff",
+    "--primary-hover": "#409cff",
+    "--primary-tint": "rgba(10, 132, 255, 0.25)",
+    "--text-on-primary": "#ffffff",
+    "--danger-color": "#ff453a",
+    "--danger-hover": "#d73127",
+    "--text-on-danger": "#ffffff",
+    "--success-color": "#30d158",
+    "--folder-color": "#64b5ff",
+    "--warning-color": "#ffb340",
+    "--appearance-color": "#da8fff"
+  }
+}

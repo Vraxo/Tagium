@@ -44,6 +44,9 @@
                     document.documentElement.style.setProperty(key, value);
                 }
             },
+            applyMacOSAppearance: function (enabled) {
+                document.documentElement.dataset.interfaceStyle = enabled ? 'macos' : 'default';
+            },
             applyCornerStyle: function (style) {
                 const styles = ['sharp', 'subtle', 'default', 'rounded'];
                 const normalized = String(style || 'Default').toLowerCase();

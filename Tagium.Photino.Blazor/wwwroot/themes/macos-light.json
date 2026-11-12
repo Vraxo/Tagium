@@ -1,0 +1,25 @@
+{
+  "Name": "macOS Light",
+  "Version": 1,
+  "Colors": {
+    "--bg-color": "#ffffff",
+    "--panel-bg": "#f1f1f3",
+    "--surface-bg": "#ffffff",
+    "--surface-hover": "rgba(0, 0, 0, 0.07)",
+    "--media-bg": "#e6e6e8",
+    "--border-color": "#d1d1d6",
+    "--text-color": "#1d1d1f",
+    "--text-muted": "#626267",
+    "--primary-color": "#007aff",
+    "--primary-hover": "#0066d6",
+    "--primary-tint": "rgba(0, 122, 255, 0.16)",
+    "--text-on-primary": "#ffffff",
+    "--danger-color": "#d92d32",
+    "--danger-hover": "#b91c23",
+    "--text-on-danger": "#ffffff",
+    "--success-color": "#248a3d",
+    "--folder-color": "#007aff",
+    "--warning-color": "#a45e00",
+    "--appearance-color": "#8944ab"
+  }
+}

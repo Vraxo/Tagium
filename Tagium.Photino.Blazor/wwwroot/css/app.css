@@ -483,3 +483,37 @@ button:focus-visible,
         flex-wrap: wrap;
     }
 }
+
+/* A macOS-inspired web UI, independent of the selected palette and corner style.
+   Native window chrome and file dialogs are still supplied by the host OS. */
+:root[data-interface-style="macos"] body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-interface-style="macos"] {
+    --toolbar-height: 48px;
+    --toolbar-icon-size: 30px;
+}
+
+:root[data-interface-style="macos"] .app-toolbar {
+    background: var(--panel-bg);
+    padding-inline: 16px;
+}
+
+:root[data-interface-style="macos"] .sidebar-header h4 {
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: var(--font-size-sm);
+}
+
+:root[data-interface-style="macos"] .folder-row {
+    height: 28px;
+}
+
+:root[data-interface-style="macos"] .icon-button:hover {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="macos"] .segmented-control {
+    background: var(--surface-bg);
+}
