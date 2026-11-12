@@ -42,11 +42,12 @@ window.tagGraph = (() => {
     function makeNodeEmoji(node) {
         const emoji = new PIXI.Text(node.emoji ?? '', {
             fontFamily: 'Segoe UI Emoji, Apple Color Emoji, sans-serif',
-            fontSize: 24,
+            fontSize: 32,
             fill: 0xffffff
         });
         emoji.anchor.set(0.5);
-        emoji.resolution = Math.min(window.devicePixelRatio || 1, 2);
+        // Rasterize emoji at higher resolution than body labels so deep zooms don't magnify a tiny texture.
+        emoji.resolution = Math.min(Math.max(4, Math.round((window.devicePixelRatio || 1) * 4)), 8);
         return emoji;
     }
 
@@ -138,7 +139,7 @@ window.tagGraph = (() => {
             emojiBackingGraphics.drawCircle(node.x, node.y, badgeRadius);
             emojiBackingGraphics.endFill();
             emoji.position.set(node.x, node.y);
-            emoji.scale.set(clamp(node.r * 1.05, 12, 30) / 24);
+            emoji.scale.set(clamp(node.r * 1.05, 12, 30) / 32);
         }
 
         if (state.emptyLabel) {
