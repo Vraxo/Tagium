@@ -123,15 +123,15 @@ public partial class TagGraphView
     }
 
     [JSInvokable]
-    public Task BrowseTag(string tagId)
+    public async Task BrowseTag(string tagId)
     {
         Tag? tag = _data.Nodes.FirstOrDefault(candidate => candidate.Id.ToString() == tagId);
         if (tag != null)
         {
-            AppState.SetSearch($"tag:{tag.Name}");
+            string query = $"tag:{tag.Name}";
+            await JS.InvokeVoidAsync("tagiumNavigation.openGraphBrowse", query);
+            AppState.SetSearch(query);
         }
-
-        return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()

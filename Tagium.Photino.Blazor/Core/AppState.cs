@@ -15,6 +15,7 @@ public class AppState : IDisposable
     private List<FileEntry> _currentFiles = [];
 
     public AppView CurrentView { get; private set; } = AppView.Files;
+    public bool IsTagGraphView { get; private set; }
     public string SearchText { get; private set; } = "";
     public bool IsMissingOnly { get; private set; }
     public string? CurrentFolderPath { get; private set; }
@@ -167,6 +168,29 @@ public class AppState : IDisposable
 
         CurrentView = view;
         NotifyStateChanged();
+    }
+
+    public void SetTagGraphView(bool isGraphView)
+    {
+        if (IsTagGraphView == isGraphView)
+        {
+            return;
+        }
+
+        IsTagGraphView = isGraphView;
+        NotifyStateChanged();
+    }
+
+    public void ReturnToTagGraph()
+    {
+        bool hasChanged = CurrentView != AppView.Tags || !IsTagGraphView;
+        CurrentView = AppView.Tags;
+        IsTagGraphView = true;
+
+        if (hasChanged)
+        {
+            NotifyStateChanged();
+        }
     }
 
     public void Undo()
