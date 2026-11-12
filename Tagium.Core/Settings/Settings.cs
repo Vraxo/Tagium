@@ -14,18 +14,18 @@ public class Settings
 
     public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
     public EmojiSet EmojiPreference { get; set; } = EmojiSet.SystemDefault;
-    public InterfaceStyle InterfaceStyle { get; set; } = InterfaceStyle.Classic;
+    public InterfaceStyle InterfaceStyle { get; set; } = Tagium.Core.Settings.InterfaceStyle.Classic;
 
     // Reads legacy settings files written before InterfaceStyle was introduced.
     // False is intentionally a no-op so it cannot overwrite a newer non-macOS style.
     public bool MacOSAppearance
     {
-        get => InterfaceStyle == InterfaceStyle.MacOS;
+        get => InterfaceStyle == Tagium.Core.Settings.InterfaceStyle.MacOS;
         set
         {
             if (value)
             {
-                InterfaceStyle = InterfaceStyle.MacOS;
+                InterfaceStyle = Tagium.Core.Settings.InterfaceStyle.MacOS;
             }
         }
     }
