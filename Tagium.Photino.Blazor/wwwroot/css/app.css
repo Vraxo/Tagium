@@ -319,7 +319,9 @@ button:focus-visible,
     top: calc(100% + 6px);
     right: 0;
     display: grid;
-    width: 270px;
+    width: 330px;
+    max-height: min(70vh, 620px);
+    overflow-y: auto;
     gap: var(--space-sm);
     padding: var(--space-md);
     border: 1px solid var(--border-color);
@@ -330,14 +332,46 @@ button:focus-visible,
 
 .tag-graph-force-options label {
     display: grid;
-    grid-template-columns: 88px minmax(60px, 1fr) 42px;
+    grid-template-columns: 128px minmax(60px, 1fr) 42px;
     align-items: center;
     gap: var(--space-xs);
     color: var(--text-muted);
 }
 
+.tag-graph-setting-group {
+    display: grid;
+    gap: var(--space-xs);
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.tag-graph-setting-group + .tag-graph-setting-group {
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border-color);
+}
+
+.tag-graph-setting-group h5 {
+    margin: 0 0 var(--space-2xs);
+    color: var(--text-color);
+    font-size: var(--font-size-xs);
+    font-weight: 650;
+}
+
 .tag-graph-force-options input[type="range"] {
     width: 100%;
+    accent-color: var(--primary-color);
+}
+
+.tag-graph-force-options .tag-graph-toggle-setting {
+    display: flex;
+    grid-template-columns: none;
+    justify-content: flex-start;
+    gap: var(--space-xs);
+    color: var(--text-color);
+}
+
+.tag-graph-force-options .tag-graph-toggle-setting input {
     accent-color: var(--primary-color);
 }
 
