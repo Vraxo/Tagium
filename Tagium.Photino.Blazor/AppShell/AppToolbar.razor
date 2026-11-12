@@ -3,6 +3,15 @@
 @inject SettingsManager Settings
 
 <div class="app-toolbar">
+    @if (Settings.Current.MacOSAppearance)
+    {
+        <div class="finder-title" aria-hidden="true">@(AppState.CurrentView switch
+            {
+                AppView.Folders => "Folders",
+                AppView.Tags => "Tags",
+                _ => "Library"
+            })</div>
+    }
     <!-- Left Section: Scope selector -->
     <div class="toolbar-left">
         <div class="segmented-control">
@@ -35,19 +44,37 @@
     <div class="toolbar-right">
         @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
-            <button class="btn-icon"
-                    @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
-                    title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")"
-                    aria-label="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
-                @if (Settings.Current.FileViewMode == FileViewMode.Grid)
-                {
-                    <i class="fa-solid fa-list"></i>
-                }
-                else
-                {
-                    <i class="fa-solid fa-table-cells"></i>
-                }
-            </button>
+            @if (Settings.Current.MacOSAppearance)
+            {
+                <div class="finder-view-switch" role="group" aria-label="File view">
+                    <button type="button" class="finder-view-button @(Settings.Current.FileViewMode == FileViewMode.Grid ? "active" : "")"
+                            @onclick="() => SetViewMode(FileViewMode.Grid)" aria-label="Grid view" title="Grid view"
+                            aria-pressed="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "true" : "false")">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="3" width="5.5" height="5.5" rx="1"/><rect x="3" y="11.5" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1"/></svg>
+                    </button>
+                    <button type="button" class="finder-view-button @(Settings.Current.FileViewMode == FileViewMode.List ? "active" : "")"
+                            @onclick="() => SetViewMode(FileViewMode.List)" aria-label="List view" title="List view"
+                            aria-pressed="@(Settings.Current.FileViewMode == FileViewMode.List ? "true" : "false")">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12"/></svg>
+                    </button>
+                </div>
+            }
+            else
+            {
+                <button class="btn-icon"
+                        @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
+                        title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")"
+                        aria-label="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+                    @if (Settings.Current.FileViewMode == FileViewMode.Grid)
+                    {
+                        <i class="fa-solid fa-list"></i>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-table-cells"></i>
+                    }
+                </button>
+            }
 
             <div class="view-options-wrapper">
                 <button class="btn-icon @(IsMenuOpen ? "active" : "")"
