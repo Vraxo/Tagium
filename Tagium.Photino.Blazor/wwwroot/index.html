@@ -10,6 +10,7 @@
     <!-- Required for Blazor CSS Isolation (MainLayout.razor.css, etc.) -->
     <link href="Tagium.styles.css" rel="stylesheet" />
     <link href="css/macos.css" rel="stylesheet" />
+    <link href="css/windows11.css" rel="stylesheet" />
     <style>
         html, body {
             height: 100%;
@@ -46,7 +47,11 @@
                 }
             },
             applyMacOSAppearance: function (enabled) {
-                document.documentElement.dataset.interfaceStyle = enabled ? 'macos' : 'default';
+                document.documentElement.dataset.interfaceStyle = enabled ? 'macos' : 'classic';
+            },
+            applyInterfaceStyle: function (style) {
+                const styles = { Classic: 'classic', MacOS: 'macos', Windows11: 'windows11' };
+                document.documentElement.dataset.interfaceStyle = styles[style] || 'classic';
             },
             applyCornerStyle: function (style) {
                 const styles = ['sharp', 'subtle', 'default', 'rounded'];

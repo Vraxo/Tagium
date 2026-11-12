@@ -6,7 +6,7 @@
 <div class="sidebar-container">
     <div class="sidebar-header">
         <div class="sidebar-header-row">
-            <h4>@(Settings.Current.MacOSAppearance ? "Filters" : "Tags")</h4>
+            <h4>@(Settings.Current.InterfaceStyle != InterfaceStyle.Classic ? "Filters" : "Tags")</h4>
             <button @ref="_tagSearchToggle"
                     type="button"
                     class="tag-search-toggle @(IsTagSearchOpen ? "active" : "")"
@@ -73,7 +73,7 @@
             <i class="fa-solid fa-triangle-exclamation icon warning-accent fa-fw" aria-hidden="true"></i> Missing Files
         </div>
 
-        @if (Settings.Current.MacOSAppearance)
+        @if (Settings.Current.InterfaceStyle != InterfaceStyle.Classic)
         {
             <div class="finder-section-label">Tags</div>
         }
@@ -110,7 +110,7 @@
                      @onclick="() => SetSearch(tag.Name)"
                      @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))"
                      style="--tag-color: @tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(tag.ColorHex);">
-                    <TagIcon Tag="@tag" ShowColor="@Settings.Current.MacOSAppearance" />
+                    <TagIcon Tag="@tag" ShowColor="@(Settings.Current.InterfaceStyle != InterfaceStyle.Classic)" />
                     <span class="name" title="@tag.Name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
                 </div>
