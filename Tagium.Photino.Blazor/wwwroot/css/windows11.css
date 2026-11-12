@@ -649,3 +649,102 @@
         animation-iteration-count: 1 !important;
     }
 }
+
+
+/* Full-window native Mica is enabled only by the Windows host for this
+   interface mode. The transparent WebView reveals DWM's system backdrop. */
+:root[data-interface-style="windows11"][data-native-mica="active"] {
+    --fluent-layer-1: color-mix(in srgb, var(--panel-bg) 76%, transparent);
+    --fluent-layer-2: color-mix(in srgb, var(--surface-bg) 84%, transparent);
+    --fluent-layer-3: color-mix(in srgb, var(--surface-bg) 90%, transparent);
+}
+
+:root[data-interface-style="windows11"][data-native-mica="active"],
+:root[data-interface-style="windows11"][data-native-mica="active"] body,
+:root[data-interface-style="windows11"][data-native-mica="active"] #app {
+    background: transparent !important;
+}
+
+:root[data-interface-style="windows11"][data-native-mica="active"] .main-layout,
+:root[data-interface-style="windows11"][data-native-mica="active"] .content-panel,
+:root[data-interface-style="windows11"][data-native-mica="active"] .view-container {
+    background: transparent !important;
+}
+
+:root[data-interface-style="windows11"] .main-layout.mica-window-chrome {
+    padding-top: 32px;
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar {
+    position: fixed;
+    z-index: 10001;
+    top: 0;
+    right: 0;
+    left: 0;
+    display: flex;
+    height: 32px;
+    align-items: stretch;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--fluent-divider);
+    background: var(--fluent-layer-1);
+    color: var(--text-color);
+    font-family: var(--fluent-font);
+    font-size: 12px;
+    user-select: none;
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar-drag {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 9px;
+    padding-left: 12px;
+    cursor: default;
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar-appmark {
+    display: inline-flex;
+    width: 16px;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-color);
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar-controls {
+    display: flex;
+    flex: 0 0 auto;
+    height: 32px;
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar-controls button {
+    display: inline-flex;
+    width: 46px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-color);
+    font-family: var(--fluent-font);
+    font-size: 15px;
+    font-weight: 400;
+    cursor: default;
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar-controls button:hover {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar-controls .mica-close-button:hover {
+    background: var(--danger-color);
+    color: var(--text-on-danger);
+}
+
+:root[data-interface-style="windows11"] .mica-titlebar-controls button:focus-visible {
+    outline: 1px solid var(--primary-color);
+    outline-offset: -2px;
+    box-shadow: none;
+}

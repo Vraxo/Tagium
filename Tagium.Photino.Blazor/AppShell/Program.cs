@@ -13,6 +13,12 @@ public class Program
 {
     public static PhotinoWindow? MainWindow { get; set; }
 
+    public static InterfaceStyle StartupInterfaceStyle { get; private set; }
+
+    public static bool SupportsNativeMica { get; private set; }
+
+    public static bool UsesMicaChrome { get; private set; }
+
     [STAThread]
     [Obsolete]
     private static void Main(string[] args)
@@ -49,16 +55,24 @@ public class Program
             // Load saved zoom factor on startup
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             int savedZoom = settings.Current.Zoom;
-            bool supportsNativeMica = PhotinoWindow.IsWindowsPlatform
+            StartupInterfaceStyle = settings.Current.InterfaceStyle;
+            SupportsNativeMica = PhotinoWindow.IsWindowsPlatform
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+            UsesMicaChrome = SupportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
 
-            if (supportsNativeMica)
+            bool useFullWindowMica = UsesMicaChrome;
+
+            if (useFullWindowMica)
             {
-                // Explicitly clear the DWM backdrop in Classic and macOS modes;
-                // Windows' automatic backdrop policy must not enable Mica for them.
-                bool useNativeMica = settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
-                app.MainWindow.WindowCreatedHandler += (_, _) =>
-                    WindowsMicaWindow.SetEnabled(app.MainWindow, useNativeMica);
+                // Photino's transparent WebView path requires a chromeless native window.
+                // Keep this opt-in to the Windows 11 interface and configure it before Run()
+                // creates the native HWND.
+                app.MainWindow.Chromeless = true;
+                app.MainWindow.Transparent = true;
+                app.MainWindow.SetResizable(true);
+                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(app.MainWindow);
+                app.MainWindow.WebMessageReceivedHandler += (_, message) =>
+                    WindowsMicaWindow.HandleWebMessage(app.MainWindow, message);
             }
 
             _ = app.MainWindow
