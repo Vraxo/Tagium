@@ -1,6 +1,12 @@
 @namespace Tagium.Photino.Blazor.AppShell
 @inherits LayoutComponentBase
 
+@{
+    InterfaceStyle activeInterfaceStyle = Program.UsesMicaChrome
+        ? Program.StartupInterfaceStyle
+        : SettingsManager.Current.InterfaceStyle;
+}
+
 <style>
     /* 1. Force the main container to be a rigid, full-screen horizontal row that never wraps */
     .main-layout {
@@ -152,7 +158,7 @@
         </div>
     }
     <div class="sidebar-panel" id="sidebar-panel" style="width: @(SettingsManager.Current.LeftSidebarWidth)px;">
-        @if (Program.StartupInterfaceStyle == InterfaceStyle.MacOS)
+        @if (activeInterfaceStyle == InterfaceStyle.MacOS)
         {
             <nav class="finder-navigation" aria-label="Library views">
                 <div class="finder-navigation-heading">Library</div>
@@ -170,7 +176,7 @@
                 </button>
             </nav>
         }
-        else if (Program.StartupInterfaceStyle == InterfaceStyle.Windows11)
+        else if (activeInterfaceStyle == InterfaceStyle.Windows11)
         {
             <nav class="fluent-navigation" aria-label="Library views">
                 <div class="fluent-navigation-heading">Library</div>
