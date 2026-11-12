@@ -1,8 +1,6 @@
 name: CI
 
-# Only run once per change: pull_request covers branch pushes for branches with an
-# open PR (testing the merge ref against main), and push covers main after merges.
-# Pushes to branches without a PR intentionally run nothing — open a PR to get CI.
+# Run for PRs targeting main and pushes to main; branch pushes without a PR are ignored.
 on:
   push:
     branches:
@@ -15,8 +13,7 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded runs: all runs for the same PR share one group, so a new push
-# to a PR branch cancels its queued/stale runs instead of wasting runner time
+# Cancel stale runs for the same PR or ref.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -29,8 +26,7 @@ env:
 jobs:
   build-and-test:
     name: Build app & run tests
-    # ubuntu is the fastest runner image; the win-x64 desktop app still cross-compiles here,
-    # so no Windows runner is needed just to verify the build.
+    # Ubuntu can cross-build the win-x64 app; no Windows runner is needed for CI.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -47,8 +43,7 @@ jobs:
       - name: Restore
         run: dotnet restore Tagium.slnx
 
-      # Builds the whole solution once (Tagium.Core, Tagium.Core.Tests and the
-      # win-x64 Photino app), so the test step below can skip restore and build.
+      # Build once so the test step can skip restore and build.
       - name: Build solution
         run: dotnet build Tagium.slnx --no-restore
 
