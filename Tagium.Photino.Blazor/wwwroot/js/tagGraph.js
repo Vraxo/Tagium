@@ -24,7 +24,7 @@ window.tagGraph = (() => {
 
     function makeNodeLabel(node, state) {
         const label = new PIXI.Text(
-            `${node.emoji ? `${node.emoji} ` : ''}${node.name}`,
+            node.name,
             {
                 fontFamily: 'Segoe UI, sans-serif',
                 fontSize: 12,
@@ -37,6 +37,17 @@ window.tagGraph = (() => {
         label.anchor.set(0, 0.5);
         label.resolution = Math.min(window.devicePixelRatio || 1, 2);
         return label;
+    }
+
+    function makeNodeEmoji(node) {
+        const emoji = new PIXI.Text(node.emoji ?? '', {
+            fontFamily: 'Segoe UI Emoji, Apple Color Emoji, sans-serif',
+            fontSize: 24,
+            fill: 0xffffff
+        });
+        emoji.anchor.set(0.5);
+        emoji.resolution = Math.min(window.devicePixelRatio || 1, 2);
+        return emoji;
     }
 
     function drawDashedLink(graphics, x1, y1, x2, y2, dashLength) {
@@ -55,7 +66,7 @@ window.tagGraph = (() => {
 
     function drawScene(state) {
         if (state.disposed) return;
-        const { linksGraphics, nodesGraphics, world, app, nodes, links, zoom } = state;
+        const { linksGraphics, nodesGraphics, emojiBackingGraphics, emojiContainer, world, app, nodes, links, zoom } = state;
         linksGraphics.clear();
 
         for (const edge of links) {
@@ -96,6 +107,7 @@ window.tagGraph = (() => {
         }
 
         nodesGraphics.clear();
+        emojiBackingGraphics.clear();
         const primary = colorToNumber(state.colors.primary, 0x4b8bf4);
         const surface = colorToNumber(state.colors.surface, 0x242424);
         for (const node of nodes) {
@@ -111,6 +123,22 @@ window.tagGraph = (() => {
             const fadeStart = 0.2 + state.settings.textFadeThreshold * 1.2;
             label.alpha = highlighted ? 1 : clamp((zoom - fadeStart) / 0.4, 0, 1);
             label.visible = label.alpha > 0.02;
+        }
+
+        for (const node of nodes) {
+            const emoji = state.emojis.get(node.id);
+            if (!emoji) continue;
+            const showEmoji = node.r >= 12;
+            emoji.visible = showEmoji;
+            if (!showEmoji) continue;
+
+            const badgeRadius = node.r * 0.62;
+            emojiBackingGraphics.lineStyle(1, surface, 0.35);
+            emojiBackingGraphics.beginFill(surface, 0.42);
+            emojiBackingGraphics.drawCircle(node.x, node.y, badgeRadius);
+            emojiBackingGraphics.endFill();
+            emoji.position.set(node.x, node.y);
+            emoji.scale.set(clamp(node.r * 1.05, 12, 30) / 24);
         }
 
         if (state.emptyLabel) {
@@ -275,7 +303,7 @@ window.tagGraph = (() => {
         canvas.removeEventListener('pointercancel', state.onPointerUp);
         canvas.removeEventListener('wheel', state.onWheel);
         canvas.removeEventListener('keydown', state.onKeyDown);
-        if (state.app) state.app.destroy(false, { children: true, texture: false, baseTexture: false });
+        if (state.app) state.app.destroy(false, { children: true, texture: true, baseTexture: true });
     }
 
     function selectGraph(data, minSharedFiles, search) {
@@ -345,8 +373,10 @@ window.tagGraph = (() => {
         const world = new PIXI.Container();
         const linksGraphics = new PIXI.Graphics();
         const nodesGraphics = new PIXI.Graphics();
+        const emojiBackingGraphics = new PIXI.Graphics();
+        const emojiContainer = new PIXI.Container();
         const labelsContainer = new PIXI.Container();
-        world.addChild(linksGraphics, nodesGraphics, labelsContainer);
+        world.addChild(linksGraphics, nodesGraphics, emojiBackingGraphics, emojiContainer, labelsContainer);
         app.stage.addChild(world);
 
         const state = {
@@ -355,8 +385,11 @@ window.tagGraph = (() => {
             world,
             linksGraphics,
             nodesGraphics,
+            emojiBackingGraphics,
+            emojiContainer,
             labelsContainer,
             labels: new Map(),
+            emojis: new Map(),
             nodes,
             links,
             simulation: null,
@@ -386,6 +419,11 @@ window.tagGraph = (() => {
             const label = makeNodeLabel(node, state);
             state.labels.set(node.id, label);
             labelsContainer.addChild(label);
+            if (node.emoji) {
+                const emoji = makeNodeEmoji(node);
+                state.emojis.set(node.id, emoji);
+                emojiContainer.addChild(emoji);
+            }
         }
         if (!nodes.length) {
             const emptyText = query ? 'No matching tags or relationships.' : 'No relationships match this threshold.';

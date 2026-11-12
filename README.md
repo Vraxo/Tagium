@@ -13,7 +13,7 @@ Desktop media library and file tagger for Windows, built with [.NET 10](https://
 - Sort the library by date added, name, path, size, modified time, or rating (ascending/descending)
 - Filter with a query language — `tag:`, `rating:`, `size:`, `ext:`, `added:`, `modified:`, `has:`, `missing:`, `untagged`, the `artist:`/`series:`/… category filters and `-` to negate — with an in-app syntax reference on the search box and the last ten queries recalled from a dropdown under it
 - Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes
-- Explore up to 120 of the most-used tags in an interactive graph, rendered locally with PixiJS and laid out with D3 force simulation; nodes scale by file count, links show shared files or explicit hierarchy, neighbors keep responding to forces as you drag, and Obsidian-style node-size, link-thickness, text-fade, center/repel/link-force, and link-distance controls tune the graph
+- Explore up to 120 of the most-used tags in an interactive graph, rendered locally with PixiJS and laid out with D3 force simulation; tag emojis appear inside larger nodes, nodes scale by file count, links show shared files or explicit hierarchy, neighbors respond to forces while dragging, and Obsidian-style display/force controls tune the graph
 - Read embedded metadata (`Subject`, `Keywords`, `Title`, `Description`, `Rating`) on scan and sync tag updates back to files via ExifTool
 - Rate files with a 1–5 star rating from the inspector (single or multi-select), searchable with `rating:` and undoable; ratings sync back to files via ExifTool
 - Inspect read-only file details in the inspector: type, size, added/modified dates, content hash, and embedded metadata (title, description)
