@@ -64,6 +64,7 @@ public partial class MainLayout : IDisposable
             "splitter-right");
 
         await JS.InvokeVoidAsync("globalShortcuts.init", _objRef);
+        await JS.InvokeVoidAsync("tagiumNavigation.init", _objRef);
         await JS.InvokeVoidAsync("zoomTracker.init", _objRef, SettingsManager.Current.Zoom);
 
         // Safely boot theme configurations after the DOM is fully loaded and interactive
@@ -116,6 +117,18 @@ public partial class MainLayout : IDisposable
     public void HandleWheelZoom(int direction)
     {
         AdjustZoom(direction);
+    }
+
+    [JSInvokable]
+    public void ReturnToTagGraph()
+    {
+        AppState.ReturnToTagGraph();
+    }
+
+    [JSInvokable]
+    public void RestoreTagBrowse(string query)
+    {
+        AppState.SetSearch(query);
     }
 
     [JSInvokable]

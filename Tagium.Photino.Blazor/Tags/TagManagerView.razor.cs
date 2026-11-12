@@ -11,7 +11,7 @@ public partial class TagManagerView
     private string NewTagName = "";
     private string TagSearch = "";
     private bool UnusedOnly;
-    private bool IsGraphView;
+    private bool IsGraphView => AppState.IsTagGraphView;
     private bool _isLoading = true;
     private bool _isDisposed;
     private Guid? ActiveColorPickerId;
@@ -204,7 +204,7 @@ public partial class TagManagerView
 
     private void SetGraphView(bool graphView)
     {
-        IsGraphView = graphView;
+        AppState.SetTagGraphView(graphView);
     }
 
     private void ClearSearch()

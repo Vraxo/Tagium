@@ -172,10 +172,10 @@
                     <PaginationControls />
                 </div>
             }
-            else if (AppState.CurrentView == AppView.Tags)
-            {
+
+            <div class="tag-manager-host" style="display: @(AppState.CurrentView == AppView.Tags ? "flex" : "none"); flex: 1; min-width: 0; min-height: 0; overflow: hidden;">
                 <TagManagerView />
-            }
+            </div>
         </div>
 
         <StatusBar />
