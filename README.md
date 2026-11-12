@@ -54,13 +54,13 @@ Build outputs are written to `artifacts/bin/`. On first launch, open **Settings 
 
 ## 🧹 Formatting
 
-Before pushing a change, apply the repository's C# formatting rules with:
+Actions automatically formats pull requests from branches in this repository and commits any fixes to the same PR branch. When it changes the branch, it dispatches Build & test on the formatted commit; merging still waits for that check to pass.
+
+For quick local feedback, or for pull requests from forks (where GitHub gives Actions a read-only token), apply the formatting rules with:
 
 ```powershell
 dotnet format Tagium.slnx
 ```
-
-CI checks formatting before building and testing, so format the files and include the changes in your branch before opening or updating a PR.
 
 ## 🧪 Tests
 
