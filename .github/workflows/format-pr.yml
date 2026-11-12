@@ -1,0 +1,75 @@
+name: Format pull requests
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: format-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    # Fork PRs receive a read-only token, so their authors must apply formatting locally.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    name: Apply formatting to PR branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false
+
+      - name: Set up .NET 10 SDK with NuGet cache
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      - name: Restore
+        run: dotnet restore Tagium.slnx
+
+      - name: Apply formatting and commit changes
+        id: format
+        run: |
+          set -euo pipefail
+          dotnet format Tagium.slnx --no-restore
+
+          if git diff --quiet; then
+            echo "No formatting changes needed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "style: apply dotnet format"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push formatted commit to PR branch
+        if: steps.format.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$PR_BRANCH"
+
+      - name: Run Build & test on formatted commit
+        if: steps.format.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: gh workflow run ci.yml --ref "$PR_BRANCH" --repo "$GITHUB_REPOSITORY"
