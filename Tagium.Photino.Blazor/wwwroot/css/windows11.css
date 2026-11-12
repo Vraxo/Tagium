@@ -36,9 +36,16 @@
     border-bottom: 1px solid var(--border-color);
 }
 
-:root[data-interface-style="windows11"] .toolbar-left,
+:root[data-interface-style="windows11"] .toolbar-left {
+    display: none;
+}
+
 :root[data-interface-style="windows11"] .toolbar-right {
     gap: 8px;
+}
+
+:root[data-interface-style="windows11"] .toolbar-center {
+    flex: 1 1 auto;
 }
 
 :root[data-interface-style="windows11"] .toolbar-center {
@@ -218,6 +225,13 @@
 
 :root[data-interface-style="windows11"] .sidebar-header {
     padding: 14px 16px 8px;
+}
+
+:root[data-interface-style="windows11"] .finder-section-label {
+    padding: 12px 8px 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
 }
 
 :root[data-interface-style="windows11"] .sidebar-header h4 {
