@@ -93,6 +93,17 @@
                 </div>
 
                 <div class="appearance-section">
+                    <h5>Interface Style</h5>
+                    <label>
+                        <input type="checkbox" checked="@Settings.Current.MacOSAppearance" @onchange="UpdateMacOSAppearance" />
+                        macOS-inspired interface
+                    </label>
+                    <p class="section-hint">Restyles the interface without changing your theme or corner preference. Try a macOS theme below for a matching palette. The window frame and dialogs remain native to Windows.</p>
+                </div>
+
+                <hr />
+
+                <div class="appearance-section">
                     <h5>Application Theme</h5>
                     <p class="section-hint">Select a dynamic JSON theme loaded from your local AppData folder.</p>
                     <select class="theme-select" value="@Settings.Current.SelectedTheme" @onchange="OnThemeChanged">

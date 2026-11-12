@@ -175,6 +175,13 @@ public partial class SettingsModal : IDisposable
         Settings.Update(s => s.TagSidebarStyle = mode);
     }
 
+    private async Task UpdateMacOSAppearance(ChangeEventArgs args)
+    {
+        bool enabled = args.Value is bool value && value;
+        Settings.Update(s => s.MacOSAppearance = enabled);
+        await JS.InvokeVoidAsync("themeManager.applyMacOSAppearance", enabled);
+    }
+
     private async Task UpdateCornerStyle(InterfaceCornerStyle style)
     {
         Settings.Update(s => s.CornerStyle = style);
