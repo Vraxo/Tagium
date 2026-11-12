@@ -94,11 +94,12 @@
 
                 <div class="appearance-section">
                     <h5>Interface Style</h5>
-                    <label>
-                        <input type="checkbox" checked="@Settings.Current.MacOSAppearance" @onchange="UpdateMacOSAppearance" />
-                        macOS-inspired interface
-                    </label>
-                    <p class="section-hint">Restyles the interface without changing your theme or corner preference. Try a macOS theme below for a matching palette. The window frame and dialogs remain native to Windows.</p>
+                    <p class="section-hint">Choose the visual language used throughout Tagium. This is independent of your color theme and corner preference.</p>
+                    <select class="theme-select" value="@Settings.Current.InterfaceStyle" @onchange="UpdateInterfaceStyle">
+                        <option value="Classic">Classic</option>
+                        <option value="MacOS">macOS-inspired</option>
+                        <option value="Windows11">Windows 11 (Fluent)</option>
+                    </select>
                 </div>
 
                 <hr />
