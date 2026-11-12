@@ -1,9 +1,9 @@
-name: Format code after merge
+name: Periodic code formatting
 
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
 
 permissions:
   actions: write
@@ -11,7 +11,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: format-after-merge
+  group: periodic-code-format
   cancel-in-progress: false
 
 env:
@@ -21,7 +21,7 @@ env:
 
 jobs:
   format:
-    name: Format and open cleanup PR
+    name: Format and propose cleanup
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -50,11 +50,11 @@ jobs:
           token: ${{ github.token }}
           branch: automation/dotnet-format
           commit-message: 'style: apply dotnet format'
-          title: 'Apply dotnet format after merge'
+          title: 'Periodic .NET formatting cleanup'
           body: |
             This PR contains formatting changes produced by `dotnet format Tagium.slnx` using the repository's `.editorconfig`.
 
-            It was created automatically after a merge to `main`. The cleanup is proposed in a separate PR so it cannot bypass the protected `main` branch.
+            The formatter runs weekly or on manual dispatch. The cleanup is proposed in a separate PR so it cannot bypass the protected `main` branch.
 
       # PRs created with GITHUB_TOKEN don't trigger pull_request workflows, so dispatch CI explicitly.
       - name: Run CI for the formatting PR
