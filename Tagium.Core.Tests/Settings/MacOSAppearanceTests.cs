@@ -5,28 +5,47 @@ using System.Text.Json;
 
 namespace Tagium.Core.Tests.Settings;
 
-public class MacOSAppearanceTests
+public class InterfaceStyleTests
 {
     [Fact]
-    public void OlderSettings_DefaultToOriginalAppearance()
+    public void OlderSettings_DefaultToClassicInterface()
     {
         AppSettings? settings = JsonSerializer.Deserialize<AppSettings>("{ \"ThumbnailSize\": 160 }");
+
         settings.Should().NotBeNull();
-        settings!.MacOSAppearance.Should().BeFalse();
+        settings!.InterfaceStyle.Should().Be(InterfaceStyle.Classic);
         settings.ThumbnailSize.Should().Be(160);
     }
 
     [Fact]
-    public void AppearancePreference_IsSavedAndRestored()
+    public void LegacyMacOSPreference_MigratesToInterfaceStyle()
     {
-        string path = Path.Combine(Path.GetTempPath(), $"tagium-appearance-{Guid.NewGuid():N}.json");
+        AppSettings? settings = JsonSerializer.Deserialize<AppSettings>("{ \"MacOSAppearance\": true }");
+
+        settings.Should().NotBeNull();
+        settings!.InterfaceStyle.Should().Be(InterfaceStyle.MacOS);
+    }
+
+    [Fact]
+    public void LegacyFalsePreference_DoesNotOverrideNewInterfaceStyle()
+    {
+        AppSettings? settings = JsonSerializer.Deserialize<AppSettings>(
+            "{ \"InterfaceStyle\": \"Windows11\", \"MacOSAppearance\": false }");
+
+        settings.Should().NotBeNull();
+        settings!.InterfaceStyle.Should().Be(InterfaceStyle.Windows11);
+    }
+
+    [Fact]
+    public void InterfaceStyle_IsSavedAndRestored()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"tagium-interface-style-{Guid.NewGuid():N}.json");
         try
         {
             SettingsManager manager = new(path);
-            manager.Update(s => s.MacOSAppearance = true);
-            new SettingsManager(path).Current.MacOSAppearance.Should().BeTrue();
-            manager.Update(s => s.MacOSAppearance = false);
-            new SettingsManager(path).Current.MacOSAppearance.Should().BeFalse();
+            manager.Update(s => s.InterfaceStyle = InterfaceStyle.Windows11);
+
+            new SettingsManager(path).Current.InterfaceStyle.Should().Be(InterfaceStyle.Windows11);
         }
         finally
         {
