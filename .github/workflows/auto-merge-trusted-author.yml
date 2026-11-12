@@ -1,75 +1,40 @@
 name: Auto-merge trusted author PRs
 
 on:
-  workflow_run:
-    workflows:
-      - CI
+  pull_request_target:
+    branches:
+      - main
     types:
-      - completed
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
 
 permissions:
-  actions: write
   contents: write
   pull-requests: write
 
 jobs:
-  merge-and-format:
-    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
-    name: Merge trusted PR and dispatch formatter
+  enable-auto-merge:
+    if: ${{ github.event.pull_request.user.login == 'Vraxo' && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
-      - name: Merge trusted PR after successful CI
-        id: merge
+      # This workflow intentionally does not check out or execute code from the PR.
+      - name: Enable native auto-merge
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
         run: |
-          set -euo pipefail
-          pr_number="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
-          run_sha="$(jq -r '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")"
-          if [[ -z "$pr_number" ]]; then
-            pr_number="$(gh api "repos/$GITHUB_REPOSITORY/commits/$run_sha/pulls" \
-              --jq '[.[] | select(.base.ref == "main" and .user.login == "Vraxo")][0].number // empty')"
-          fi
-          if [[ -z "$pr_number" ]]; then
-            echo "The completed CI run is not associated with an eligible pull request; skipping."
+          auto_merge_state="$(gh api graphql \
+            -F pullRequestId="$PR_NODE_ID" \
+            -f query='query($pullRequestId: ID!) { node(id: $pullRequestId) { ... on PullRequest { state isDraft autoMergeRequest { enabledAt } } } }' \
+            --jq '.data.node | if .state == "OPEN" and (.isDraft | not) and .autoMergeRequest == null then "enable" else "skip" end')"
+
+          if [[ "$auto_merge_state" != "enable" ]]; then
+            echo "PR is closed, draft, or already has auto-merge enabled; nothing to do."
             exit 0
           fi
 
-          pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number")"
-          author="$(jq -r '.user.login' <<< "$pr")"
-          base="$(jq -r '.base.ref' <<< "$pr")"
-          head_sha="$(jq -r '.head.sha' <<< "$pr")"
-          state="$(jq -r '.state' <<< "$pr")"
-          draft="$(jq -r '.draft' <<< "$pr")"
-          merged="$(jq -r '.merged' <<< "$pr")"
-
-          if [[ "$author" != "Vraxo" || "$base" != "main" || "$draft" != "false" || "$head_sha" != "$run_sha" ]]; then
-            echo "PR is not an eligible Vraxo PR for the exact CI-tested commit; skipping."
-            exit 0
-          fi
-
-          if [[ "$state" == "open" ]]; then
-            gh pr merge "$pr_number" --merge --match-head-commit "$run_sha" --repo "$GITHUB_REPOSITORY"
-          elif [[ "$merged" != "true" ]]; then
-            echo "PR is closed without being merged; skipping."
-            exit 0
-          fi
-
-          # Confirm the merge is visible before dispatching the formatter against main.
-          for attempt in $(seq 1 30); do
-            pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number")"
-            if [[ "$(jq -r '.merged' <<< "$pr")" == "true" ]]; then
-              echo "merged=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "PR $pr_number did not reach the merged state." >&2
-          exit 1
-
-      - name: Dispatch formatter after merge
-        if: steps.merge.outputs.merged == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run format-code.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh api graphql \
+            -F pullRequestId="$PR_NODE_ID" \
+            -f query='mutation($pullRequestId: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: MERGE }) { pullRequest { number autoMergeRequest { enabledAt } } } }'
