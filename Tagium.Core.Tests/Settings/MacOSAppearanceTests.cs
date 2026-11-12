@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Tagium.Core.Settings;
 using AppSettings = Tagium.Core.Settings.Settings;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Tagium.Core.Tests.Settings;
 
@@ -29,8 +30,13 @@ public class InterfaceStyleTests
     [Fact]
     public void LegacyFalsePreference_DoesNotOverrideNewInterfaceStyle()
     {
+        JsonSerializerOptions options = new()
+        {
+            Converters = { new JsonStringEnumConverter() }
+        };
         AppSettings? settings = JsonSerializer.Deserialize<AppSettings>(
-            "{ \"InterfaceStyle\": \"Windows11\", \"MacOSAppearance\": false }");
+            "{ \"InterfaceStyle\": \"Windows11\", \"MacOSAppearance\": false }",
+            options);
 
         settings.Should().NotBeNull();
         settings!.InterfaceStyle.Should().Be(InterfaceStyle.Windows11);
