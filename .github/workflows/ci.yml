@@ -1,6 +1,6 @@
 name: CI
 
-# Run for PRs targeting main and pushes to main; branch pushes without a PR are ignored.
+# Run for PRs targeting main and direct pushes to main.
 on:
   push:
     branches:
@@ -42,6 +42,10 @@ jobs:
 
       - name: Restore
         run: dotnet restore Tagium.slnx
+
+      # Developers apply formatting with `dotnet format Tagium.slnx` before pushing.
+      - name: Check formatting
+        run: dotnet format Tagium.slnx --verify-no-changes --no-restore
 
       # Build once so the test step can skip restore and build.
       - name: Build solution

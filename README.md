@@ -52,6 +52,16 @@ dotnet run --project Tagium.Photino.Blazor
 
 Build outputs are written to `artifacts/bin/`. On first launch, open **Settings > Library Folders** to add folders and run an initial scan.
 
+## 🧹 Formatting
+
+Before pushing a change, apply the repository's C# formatting rules with:
+
+```powershell
+dotnet format Tagium.slnx
+```
+
+CI checks formatting before building and testing, so format the files and include the changes in your branch before opening or updating a PR.
+
 ## 🧪 Tests
 
 Unit tests live in [`Tagium.Core.Tests/`](Tagium.Core.Tests) and use [xUnit v3](https://xunit.net/) with [AwesomeAssertions](https://awesomeassertions.org) for fluent assertions:
