@@ -1,8 +1,9 @@
-name: Periodic code formatting
+name: Format code on main updates
 
 on:
-  schedule:
-    - cron: '0 9 * * 1'
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -10,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: periodic-code-format
+  group: format-on-main-update
   cancel-in-progress: false
 
 env:
