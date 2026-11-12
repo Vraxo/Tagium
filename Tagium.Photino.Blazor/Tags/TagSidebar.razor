@@ -90,7 +90,7 @@
                      @onclick="() => SetSearch(tag.Name)"
                      @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))">
                     <TagIcon Tag="@tag" />
-                    <span class="name">@tag.Name</span>
+                    <span class="name" title="@tag.Name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
                 </div>
             }
@@ -104,7 +104,7 @@
                      @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))"
                      style="--tag-color: @tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(tag.ColorHex);">
                     <TagIcon Tag="@tag" ShowColor="false" />
-                    <span class="name">@tag.Name</span>
+                    <span class="name" title="@tag.Name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
                 </div>
             }
