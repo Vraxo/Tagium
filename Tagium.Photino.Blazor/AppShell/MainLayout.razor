@@ -136,9 +136,23 @@
     }
 </style>
 
-<div class="main-layout">
+<div class="main-layout @(Program.UsesMicaChrome ? "mica-window-chrome" : "")">
+    @if (Program.UsesMicaChrome)
+    {
+        <div class="mica-titlebar">
+            <div class="mica-titlebar-drag" data-window-drag="true">
+                <span class="mica-titlebar-appmark"><i class="fa-regular fa-images" aria-hidden="true"></i></span>
+                <span>Tagium</span>
+            </div>
+            <div class="mica-titlebar-controls">
+                <button type="button" aria-label="Minimize" title="Minimize" data-window-action="minimize">−</button>
+                <button type="button" aria-label="Maximize or restore" title="Maximize or restore" data-window-action="maximize">□</button>
+                <button type="button" class="mica-close-button" aria-label="Close" title="Close" data-window-action="close">×</button>
+            </div>
+        </div>
+    }
     <div class="sidebar-panel" id="sidebar-panel" style="width: @(SettingsManager.Current.LeftSidebarWidth)px;">
-        @if (SettingsManager.Current.InterfaceStyle == InterfaceStyle.MacOS)
+        @if (Program.StartupInterfaceStyle == InterfaceStyle.MacOS)
         {
             <nav class="finder-navigation" aria-label="Library views">
                 <div class="finder-navigation-heading">Library</div>
@@ -156,7 +170,7 @@
                 </button>
             </nav>
         }
-        else if (SettingsManager.Current.InterfaceStyle == InterfaceStyle.Windows11)
+        else if (Program.StartupInterfaceStyle == InterfaceStyle.Windows11)
         {
             <nav class="fluent-navigation" aria-label="Library views">
                 <div class="fluent-navigation-heading">Library</div>
