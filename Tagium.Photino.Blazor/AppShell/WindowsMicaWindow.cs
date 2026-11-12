@@ -16,6 +16,15 @@ internal static class WindowsMicaWindow
     private const int WmNcDestroy = 0x0082;
     private const int WmNcLButtonDown = 0x00A1;
     private const int HtCaption = 2;
+    private const int GwlStyle = -16;
+    private const long WsThickFrame = 0x00040000;
+    private const long WsMinimizeBox = 0x00020000;
+    private const long WsMaximizeBox = 0x00010000;
+    private const long WsSysMenu = 0x00080000;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpFrameChanged = 0x0020;
     private const int HtLeft = 10;
     private const int HtRight = 11;
     private const int HtTop = 12;
@@ -45,6 +54,20 @@ internal static class WindowsMicaWindow
         }
 
         _windowHandle = window.WindowHandle;
+
+        // Photino creates chromeless windows with WS_POPUP, which has no resize frame.
+        // Add the native sizing/system-menu styles while keeping the window captionless.
+        long windowStyle = GetWindowLongPtr(_windowHandle, GwlStyle).ToInt64();
+        windowStyle |= WsThickFrame | WsMinimizeBox | WsMaximizeBox | WsSysMenu;
+        _ = SetWindowLongPtr(_windowHandle, GwlStyle, new IntPtr(windowStyle));
+        _ = SetWindowPos(
+            _windowHandle,
+            IntPtr.Zero,
+            0,
+            0,
+            0,
+            0,
+            SwpNoSize | SwpNoMove | SwpNoZOrder | SwpFrameChanged);
 
         int backdropType = DwmsbtMainWindow;
         int result = DwmSetWindowAttribute(
@@ -184,6 +207,23 @@ internal static class WindowsMicaWindow
         uint message,
         IntPtr wParam,
         IntPtr lParam);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr windowHandle, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr windowHandle, int index, IntPtr newValue);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        IntPtr windowHandle,
+        IntPtr insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
