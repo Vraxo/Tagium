@@ -117,6 +117,70 @@ public class TagRepository
         conn.Execute("DELETE FROM TagHierarchy WHERE ParentTagId = @Parent AND ChildTagId = @Child", new { Parent = parentId, Child = childId });
     }
 
+    public TagGraphData GetGraphData(int maxNodes = 120)
+    {
+        using SqliteConnection conn = _db.GetConnection();
+        List<Tag> nodes = conn.Query<Tag>(@"
+            SELECT T.Id, T.Name, T.ColorHex, T.Emoji, COUNT(FT.FileId) AS FileCount, T.Category
+            FROM Tags T
+            LEFT JOIN cache.FileTags FT ON T.Id = FT.TagId
+            GROUP BY T.Id
+            ORDER BY FileCount DESC, T.Name COLLATE NOCASE ASC
+            LIMIT @Limit", new { Limit = maxNodes }).ToList();
+
+        if (nodes.Count == 0)
+        {
+            return new TagGraphData(nodes, []);
+        }
+
+        List<Guid> nodeIds = nodes.Select(node => node.Id).ToList();
+        Dictionary<(Guid Source, Guid Target), (int SharedCount, bool IsHierarchy, Guid DirectedSource, Guid DirectedTarget)> edgeMap = [];
+
+        IEnumerable<dynamic> overlaps = conn.Query(@"
+            SELECT A.TagId AS SourceTagId, B.TagId AS TargetTagId, COUNT(DISTINCT A.FileId) AS SharedFileCount
+            FROM cache.FileTags A
+            INNER JOIN cache.FileTags B ON A.FileId = B.FileId AND A.TagId < B.TagId
+            WHERE A.TagId IN @TagIds AND B.TagId IN @TagIds
+            GROUP BY A.TagId, B.TagId", new { TagIds = nodeIds });
+
+        foreach (dynamic row in overlaps)
+        {
+            Guid source = Guid.Parse(Convert.ToString(row.SourceTagId)!);
+            Guid target = Guid.Parse(Convert.ToString(row.TargetTagId)!);
+            edgeMap[(source, target)] = (Convert.ToInt32(row.SharedFileCount), false, source, target);
+        }
+
+        IEnumerable<dynamic> hierarchy = conn.Query(@"
+            SELECT ParentTagId AS SourceTagId, ChildTagId AS TargetTagId
+            FROM TagHierarchy
+            WHERE ParentTagId IN @TagIds AND ChildTagId IN @TagIds", new { TagIds = nodeIds });
+
+        foreach (dynamic row in hierarchy)
+        {
+            Guid source = Guid.Parse(Convert.ToString(row.SourceTagId)!);
+            Guid target = Guid.Parse(Convert.ToString(row.TargetTagId)!);
+            (Guid, Guid) pair = CompareIds(source, target);
+            int shared = edgeMap.TryGetValue(pair, out var existing) ? existing.SharedCount : 0;
+            edgeMap[pair] = (shared, true, source, target);
+        }
+
+        List<TagGraphEdge> edges = edgeMap
+            .Select(edge => new TagGraphEdge(
+                edge.Value.IsHierarchy ? edge.Value.DirectedSource : edge.Key.Source,
+                edge.Value.IsHierarchy ? edge.Value.DirectedTarget : edge.Key.Target,
+                edge.Value.SharedCount,
+                edge.Value.IsHierarchy))
+            .ToList();
+        return new TagGraphData(nodes, edges);
+    }
+
+    private static (Guid Source, Guid Target) CompareIds(Guid first, Guid second)
+    {
+        return string.CompareOrdinal(first.ToString("N"), second.ToString("N")) <= 0
+            ? (first, second)
+            : (second, first);
+    }
+
     public List<Guid> GetChildren(Guid parentId)
     {
         using SqliteConnection conn = _db.GetConnection();

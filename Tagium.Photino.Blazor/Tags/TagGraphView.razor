@@ -1,0 +1,60 @@
+@namespace Tagium.Photino.Blazor.Tags
+@implements IAsyncDisposable
+@inject LibraryService Library
+@inject AppState AppState
+@inject IJSRuntime JS
+
+<div class="tag-graph-view">
+    <div class="tag-graph-toolbar">
+        <label class="tag-graph-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search"
+                   placeholder="Find a tag in the graph..."
+                   aria-label="Find a tag in the graph"
+                   @bind="SearchText"
+                   @bind:event="oninput"
+                   @bind:after="MarkGraphDirty" />
+        </label>
+        <label class="tag-graph-threshold">
+            <span>Shared files</span>
+            <select @bind="MinSharedFiles" @bind:after="MarkGraphDirty" aria-label="Minimum shared files for a relationship">
+                <option value="1">1 or more</option>
+                <option value="2">2 or more</option>
+                <option value="3">3 or more</option>
+                <option value="5">5 or more</option>
+            </select>
+        </label>
+        <span class="tag-graph-summary">@GraphSummary</span>
+    </div>
+
+    <div class="tag-graph-canvas" aria-label="Interactive tag relationship graph">
+        @if (_isLoading)
+        {
+            <div class="tag-graph-placeholder">Loading tag relationships…</div>
+        }
+        else if (_data.Nodes.Count == 0)
+        {
+            <div class="tag-graph-placeholder">
+                <i class="fa-solid fa-circle-nodes" aria-hidden="true"></i>
+                <strong>No tags to graph yet</strong>
+                <span>Create tags and assign them to files to see their relationships.</span>
+            </div>
+        }
+        else
+        {
+            <svg @ref="_svg"
+                 class="tag-graph-svg"
+                 role="img"
+                 aria-label="Tag graph. Node size represents the number of files with that tag. Click a tag to browse its files; drag nodes to rearrange and scroll to zoom.">
+                <text class="tag-graph-empty-label" x="50%" y="50%">No relationships match these filters.</text>
+            </svg>
+        }
+    </div>
+
+    <div class="tag-graph-legend">
+        <span><i class="legend-node" aria-hidden="true"></i> Node size = files with tag</span>
+        <span><i class="legend-line" aria-hidden="true"></i> Shared files</span>
+        <span><i class="legend-line hierarchy" aria-hidden="true"></i> Tag hierarchy</span>
+        <span class="legend-hint">Click a tag to browse · Drag to arrange · Scroll to zoom</span>
+    </div>
+</div>
