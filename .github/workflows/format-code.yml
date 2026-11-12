@@ -8,7 +8,6 @@ on:
 permissions:
   actions: write
   contents: write
-  pull-requests: write
 
 concurrency:
   group: periodic-code-format
@@ -21,9 +20,10 @@ env:
 
 jobs:
   format:
-    name: Format and propose cleanup
+    if: github.ref == 'refs/heads/main'
+    name: Format, test, and promote cleanup
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout main
         uses: actions/checkout@v7
@@ -40,25 +40,87 @@ jobs:
       - name: Restore
         run: dotnet restore Tagium.slnx
 
-      - name: Apply formatting
-        run: dotnet format Tagium.slnx --no-restore
+      - name: Apply formatting and prepare candidate commit
+        id: candidate
+        env:
+          CANDIDATE_BRANCH: automation/dotnet-format-candidate
+        run: |
+          set -euo pipefail
+          base_sha="$(git rev-parse HEAD)"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
 
-      - name: Create or update formatting PR
-        id: formatting-pr
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ github.token }}
-          branch: automation/dotnet-format
-          commit-message: 'style: apply dotnet format'
-          title: 'Periodic .NET formatting cleanup'
-          body: |
-            This PR contains formatting changes produced by `dotnet format Tagium.slnx` using the repository's `.editorconfig`.
+          dotnet format Tagium.slnx --no-restore
 
-            The formatter runs weekly or on manual dispatch. The cleanup is proposed in a separate PR so it cannot bypass the protected `main` branch.
+          if git diff --quiet; then
+            echo "No formatting changes needed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-      # PRs created with GITHUB_TOKEN don't trigger pull_request workflows, so dispatch CI explicitly.
-      - name: Run CI for the formatting PR
-        if: steps.formatting-pr.outputs.pull-request-operation == 'created' || steps.formatting-pr.outputs.pull-request-operation == 'updated'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$CANDIDATE_BRANCH"
+          git add -u
+          git commit -m "style: apply dotnet format"
+          candidate_sha="$(git rev-parse HEAD)"
+          git push --force origin "HEAD:refs/heads/$CANDIDATE_BRANCH"
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Run required CI on candidate commit
+        if: steps.candidate.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --ref automation/dotnet-format --repo "$GITHUB_REPOSITORY"
+          CANDIDATE_BRANCH: automation/dotnet-format-candidate
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          dispatch_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ci.yml --ref "$CANDIDATE_BRANCH" --repo "$GITHUB_REPOSITORY"
+
+          run_id=""
+          for attempt in $(seq 1 60); do
+            run_id="$(gh run list \
+              --workflow ci.yml \
+              --branch "$CANDIDATE_BRANCH" \
+              --limit 20 \
+              --json databaseId,headSha,event,createdAt \
+              --jq ".[] | select(.headSha == \"$CANDIDATE_SHA\" and .event == \"workflow_dispatch\" and .createdAt >= \"$dispatch_time\") | .databaseId" | head -n 1)"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ -z "$run_id" ]]; then
+            echo "Could not find the dispatched CI run for $CANDIDATE_SHA." >&2
+            exit 1
+          fi
+
+          run_sha="$(gh run view "$run_id" --json headSha --jq '.headSha')"
+          if [[ "$run_sha" != "$CANDIDATE_SHA" ]]; then
+            echo "CI run $run_id tested $run_sha instead of $CANDIDATE_SHA." >&2
+            exit 1
+          fi
+          gh run watch "$run_id" --exit-status
+
+      - name: Promote tested cleanup commit to main
+        if: steps.candidate.outputs.changed == 'true'
+        env:
+          BASE_SHA: ${{ steps.candidate.outputs.base_sha }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+          CANDIDATE_BRANCH: automation/dotnet-format-candidate
+        run: |
+          set -euo pipefail
+          current_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ "$current_main_sha" != "$BASE_SHA" ]]; then
+            echo "main advanced while formatting was tested; refusing to promote the candidate."
+            exit 1
+          fi
+
+          # Normal fast-forward push only. Branch rules still require the passing Build & test check.
+          git push origin "$CANDIDATE_SHA:refs/heads/main"
+          if ! git push origin --delete "$CANDIDATE_BRANCH"; then
+            echo "Candidate branch cleanup failed; main was promoted successfully."
+          fi
