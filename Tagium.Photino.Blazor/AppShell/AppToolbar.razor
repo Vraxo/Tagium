@@ -12,25 +12,47 @@
                 _ => "Library"
             })</div>
     }
-    <!-- Left Section: Scope selector -->
+
     <div class="toolbar-left">
-        <div class="segmented-control">
-            <button class="segment-btn @(AppState.CurrentView == AppView.Files ? "active" : "")"
-                    @onclick="() => AppState.SwitchView(AppView.Files)">
-                <i class="fa-solid fa-images"></i> Files
-            </button>
-            <button class="segment-btn @(AppState.CurrentView == AppView.Folders ? "active" : "")"
-                    @onclick="() => AppState.SwitchView(AppView.Folders)">
-                <i class="fa-solid fa-folder-tree"></i> Folders
-            </button>
-            <button class="segment-btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
-                    @onclick="() => AppState.SwitchView(AppView.Tags)">
-                <i class="fa-solid fa-tags"></i> Tags
-            </button>
-        </div>
+        @if (Settings.Current.InterfaceStyle == InterfaceStyle.Windows11)
+        {
+            <div class="fluent-page-heading">
+                <span class="fluent-page-title">@(AppState.CurrentView switch
+                    {
+                        AppView.Folders => "Folders",
+                        AppView.Tags => "Tags",
+                        _ => "Files"
+                    })</span>
+                <span class="fluent-page-subtitle">@(AppState.CurrentView switch
+                    {
+                        AppView.Folders => "Browse your media by folder",
+                        AppView.Tags => "Organize and explore with tags",
+                        _ => "Browse and organize your media library"
+                    })</span>
+            </div>
+        }
+        else
+        {
+            <div class="segmented-control">
+                <button type="button" class="segment-btn @(AppState.CurrentView == AppView.Files ? "active" : "")"
+                        aria-pressed="@(AppState.CurrentView == AppView.Files ? "true" : "false")"
+                        @onclick="() => AppState.SwitchView(AppView.Files)">
+                    <i class="fa-solid fa-images" aria-hidden="true"></i> Files
+                </button>
+                <button type="button" class="segment-btn @(AppState.CurrentView == AppView.Folders ? "active" : "")"
+                        aria-pressed="@(AppState.CurrentView == AppView.Folders ? "true" : "false")"
+                        @onclick="() => AppState.SwitchView(AppView.Folders)">
+                    <i class="fa-solid fa-folder-tree" aria-hidden="true"></i> Folders
+                </button>
+                <button type="button" class="segment-btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
+                        aria-pressed="@(AppState.CurrentView == AppView.Tags ? "true" : "false")"
+                        @onclick="() => AppState.SwitchView(AppView.Tags)">
+                    <i class="fa-solid fa-tags" aria-hidden="true"></i> Tags
+                </button>
+            </div>
+        }
     </div>
 
-    <!-- Center Section: Dynamic query input -->
     <div class="toolbar-center">
         @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
@@ -40,7 +62,6 @@
         }
     </div>
 
-    <!-- Right Section: Media grid controls & Settings triggers -->
     <div class="toolbar-right">
         @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
@@ -61,28 +82,29 @@
             }
             else
             {
-                <button class="btn-icon"
+                <button type="button" class="btn-icon"
                         @onclick="() => SetViewMode(Settings.Current.FileViewMode == FileViewMode.Grid ? FileViewMode.List : FileViewMode.Grid)"
                         title="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")"
-                        aria-label="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")">
+                        aria-label="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "Switch to List View" : "Switch to Grid View")"
+                        aria-pressed="@(Settings.Current.FileViewMode == FileViewMode.Grid ? "true" : "false")">
                     @if (Settings.Current.FileViewMode == FileViewMode.Grid)
                     {
-                        <i class="fa-solid fa-list"></i>
+                        <i class="fa-solid fa-list" aria-hidden="true"></i>
                     }
                     else
                     {
-                        <i class="fa-solid fa-table-cells"></i>
+                        <i class="fa-solid fa-table-cells" aria-hidden="true"></i>
                     }
                 </button>
             }
 
             <div class="view-options-wrapper">
-                <button class="btn-icon @(IsMenuOpen ? "active" : "")"
+                <button type="button" class="btn-icon @(IsMenuOpen ? "active" : "")"
                         @onclick="ToggleMenu"
-                        title="View Options"
-                        aria-label="View Options"
+                        title="View options"
+                        aria-label="View options"
                         aria-expanded="@(IsMenuOpen ? "true" : "false")">
-                    <i class="fa-solid fa-eye"></i>
+                    <i class="fa-solid fa-eye" aria-hidden="true"></i>
                 </button>
 
                 @if (IsMenuOpen)
@@ -90,21 +112,21 @@
                     <div class="view-menu-overlay" @onclick="CloseMenu"></div>
                     <div class="view-menu-dropdown">
                         <div class="menu-section">
-                            <label>Sort By</label>
+                            <label>Sort by</label>
                             <SortControls />
                         </div>
                         <hr />
                         <div class="menu-section">
-                            <label>Thumbnail Size</label>
+                            <label>Thumbnail size</label>
                             <ThumbnailSizeSlider />
                         </div>
                         <hr />
                         <div class="menu-section">
-                            <button class="menu-action" @onclick="ShowDuplicates">
-                                <i class="fa-solid fa-copy"></i> Find Duplicates
+                            <button type="button" class="menu-action" @onclick="ShowDuplicates">
+                                <i class="fa-solid fa-copy" aria-hidden="true"></i> Find duplicates
                             </button>
-                            <button class="menu-action" @onclick="ShowStats">
-                                <i class="fa-solid fa-chart-simple"></i> Library Statistics
+                            <button type="button" class="menu-action" @onclick="ShowStats">
+                                <i class="fa-solid fa-chart-simple" aria-hidden="true"></i> Library statistics
                             </button>
                         </div>
                     </div>
@@ -114,8 +136,8 @@
             <div class="vertical-divider"></div>
         }
 
-        <button class="btn-icon" @onclick="OpenSettings" title="Settings & Preferences" aria-label="Settings & Preferences">
-            <i class="fa-solid fa-gear"></i>
+        <button type="button" class="btn-icon" @onclick="OpenSettings" title="Settings" aria-label="Settings">
+            <i class="fa-solid fa-gear" aria-hidden="true"></i>
         </button>
     </div>
 </div>
