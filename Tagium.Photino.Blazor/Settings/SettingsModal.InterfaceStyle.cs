@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor.AppShell;
+using Tagium.Photino.Blazor.Notifications;
 
 namespace Tagium.Photino.Blazor.Settings;
 
