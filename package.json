@@ -1,0 +1,12 @@
+{
+  "name": "tagium-local-graph-vendors",
+  "private": true,
+  "scripts": {
+    "build:tag-graph": "node scripts/buildTagGraphVendors.mjs"
+  },
+  "devDependencies": {
+    "d3-force": "3.0.0",
+    "esbuild": "0.28.2",
+    "pixi.js": "7.4.3"
+  }
+}
