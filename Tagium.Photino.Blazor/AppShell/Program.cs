@@ -13,12 +13,6 @@ public class Program
 {
     public static PhotinoWindow? MainWindow { get; set; }
 
-    public static bool SupportsNativeMica { get; private set; }
-
-    public static bool UsesMicaChrome { get; private set; }
-
-    public static InterfaceStyle StartupInterfaceStyle { get; private set; }
-
     [STAThread]
     [Obsolete]
     private static void Main(string[] args)
@@ -55,21 +49,15 @@ public class Program
             // Load saved zoom factor on startup
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             int savedZoom = settings.Current.Zoom;
-            StartupInterfaceStyle = settings.Current.InterfaceStyle;
-            SupportsNativeMica = PhotinoWindow.IsWindowsPlatform
-                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
-            UsesMicaChrome = SupportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
+            bool useNativeMica = PhotinoWindow.IsWindowsPlatform
+                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621)
+                && settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
 
-            if (UsesMicaChrome)
+            if (useNativeMica)
             {
-                // Photino requires chromeless mode for a transparent WebView on Windows.
-                // The custom title bar and native resize hit-testing are enabled only for
-                // this Windows 11 interface configuration.
-                app.MainWindow.Chromeless = true;
-                app.MainWindow.Transparent = true;
-                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(app.MainWindow);
-                app.MainWindow.WebMessageReceivedHandler += (_, message) =>
-                    WindowsMicaWindow.HandleWebMessage(app.MainWindow, message);
+                // Keep Photino's native title bar and window behavior. DWM supplies
+                // the genuine Mica system backdrop on supported Windows 11 builds.
+                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Apply(app.MainWindow);
             }
 
             _ = app.MainWindow
