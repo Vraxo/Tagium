@@ -1,6 +1,6 @@
 {
   "Name": "macOS Light",
-  "Version": 1,
+  "Version": 2,
   "Colors": {
     "--bg-color": "#ffffff",
     "--panel-bg": "#f1f1f3",
@@ -10,7 +10,7 @@
     "--border-color": "#d1d1d6",
     "--text-color": "#1d1d1f",
     "--text-muted": "#626267",
-    "--primary-color": "#007aff",
+    "--primary-color": "#006edb",
     "--primary-hover": "#0066d6",
     "--primary-tint": "rgba(0, 122, 255, 0.16)",
     "--text-on-primary": "#ffffff",
