@@ -1,0 +1,64 @@
+name: Format code after merge
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: format-after-merge
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+jobs:
+  format:
+    name: Format and open cleanup PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Set up .NET 10 SDK with NuGet cache
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      - name: Restore
+        run: dotnet restore Tagium.slnx
+
+      - name: Apply formatting
+        run: dotnet format Tagium.slnx --no-restore
+
+      - name: Create or update formatting PR
+        id: formatting-pr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          branch: automation/dotnet-format
+          commit-message: 'style: apply dotnet format'
+          title: 'Apply dotnet format after merge'
+          body: |
+            This PR contains formatting changes produced by `dotnet format Tagium.slnx` using the repository's `.editorconfig`.
+
+            It was created automatically after a merge to `main`. The cleanup is proposed in a separate PR so it cannot bypass the protected `main` branch.
+
+      # PRs created with GITHUB_TOKEN don't trigger pull_request workflows, so dispatch CI explicitly.
+      - name: Run CI for the formatting PR
+        if: steps.formatting-pr.outputs.pull-request-operation == 'created' || steps.formatting-pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --ref automation/dotnet-format --repo "$GITHUB_REPOSITORY"

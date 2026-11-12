@@ -43,9 +43,6 @@ jobs:
       - name: Restore
         run: dotnet restore Tagium.slnx
 
-      - name: Verify formatting
-        run: dotnet format Tagium.slnx --verify-no-changes --no-restore
-
       # Build once so the test step can skip restore and build.
       - name: Build solution
         run: dotnet build Tagium.slnx --no-restore
