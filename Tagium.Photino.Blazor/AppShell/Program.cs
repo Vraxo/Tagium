@@ -13,6 +13,8 @@ public class Program
 {
     public static PhotinoWindow? MainWindow { get; set; }
 
+    public static bool UsesMicaChrome { get; private set; }
+
     [STAThread]
     [Obsolete]
     private static void Main(string[] args)
@@ -49,6 +51,21 @@ public class Program
             // Load saved zoom factor on startup
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             int savedZoom = settings.Current.Zoom;
+            UsesMicaChrome = PhotinoWindow.IsWindowsPlatform
+                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621)
+                && settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
+
+            if (UsesMicaChrome)
+            {
+                // Photino requires chromeless mode for a transparent WebView on Windows.
+                // The custom title bar and native resize hit-testing are enabled only for
+                // this Windows 11 interface configuration.
+                app.MainWindow.Chromeless = true;
+                app.MainWindow.Transparent = true;
+                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(app.MainWindow);
+                app.MainWindow.WebMessageReceivedHandler += (_, message) =>
+                    WindowsMicaWindow.HandleWebMessage(app.MainWindow, message);
+            }
 
             _ = app.MainWindow
                 .SetTitle("Tagium")
