@@ -72,21 +72,23 @@ window.tagGraph = (() => {
             const startY = source.y + uy * source.r;
             const stroke = edge.isHierarchy ? colorToNumber(state.colors.primary, 0x4b8bf4) : colorToNumber(state.colors.muted, 0x888888);
             const alpha = edge.isHierarchy ? 0.9 : 0.2 + Math.min(edge.sharedFileCount, 12) * 0.035;
-            const thickness = edge.isHierarchy ? 1.8 : clamp(0.8 + Math.log2(edge.sharedFileCount + 1) * 0.65, 1, 3.5);
+            const thickness = state.settings.linkThickness;
             linksGraphics.lineStyle(thickness, stroke, alpha);
 
             if (edge.isHierarchy) {
                 drawDashedLink(linksGraphics, startX, startY, tipX, tipY, 5);
-                const angle = Math.atan2(dy, dx);
-                const size = 7;
-                const baseX = tipX - size * Math.cos(angle);
-                const baseY = tipY - size * Math.sin(angle);
-                linksGraphics.beginFill(stroke, alpha);
-                linksGraphics.moveTo(tipX, tipY);
-                linksGraphics.lineTo(baseX + size * 0.55 * Math.sin(angle), baseY - size * 0.55 * Math.cos(angle));
-                linksGraphics.lineTo(baseX - size * 0.55 * Math.sin(angle), baseY + size * 0.55 * Math.cos(angle));
-                linksGraphics.closePath();
-                linksGraphics.endFill();
+                if (state.settings.showArrows) {
+                    const angle = Math.atan2(dy, dx);
+                    const size = 7;
+                    const baseX = tipX - size * Math.cos(angle);
+                    const baseY = tipY - size * Math.sin(angle);
+                    linksGraphics.beginFill(stroke, alpha);
+                    linksGraphics.moveTo(tipX, tipY);
+                    linksGraphics.lineTo(baseX + size * 0.55 * Math.sin(angle), baseY - size * 0.55 * Math.cos(angle));
+                    linksGraphics.lineTo(baseX - size * 0.55 * Math.sin(angle), baseY + size * 0.55 * Math.cos(angle));
+                    linksGraphics.closePath();
+                    linksGraphics.endFill();
+                }
             } else {
                 linksGraphics.moveTo(startX, startY);
                 linksGraphics.lineTo(tipX, tipY);
@@ -106,7 +108,9 @@ window.tagGraph = (() => {
             const label = state.labels.get(node.id);
             label.position.set(node.x + node.r + 5 / zoom, node.y);
             label.scale.set(1 / zoom);
-            label.visible = zoom >= 0.62 || highlighted;
+            const fadeStart = 0.2 + state.settings.textFadeThreshold * 1.2;
+            label.alpha = highlighted ? 1 : clamp((zoom - fadeStart) / 0.4, 0, 1);
+            label.visible = label.alpha > 0.02;
         }
 
         if (state.emptyLabel) {
@@ -306,7 +310,7 @@ window.tagGraph = (() => {
         return { nodes, edges };
     }
 
-    function render(canvas, data, minSharedFiles, search, forces, dotnetRef) {
+    function render(canvas, data, minSharedFiles, search, settings, dotnetRef) {
         if (!canvas) return;
         destroyState(states.get(canvas));
         const bounds = canvas.getBoundingClientRect();
@@ -321,7 +325,7 @@ window.tagGraph = (() => {
             const radius = Math.max(35, Math.min(width, height) * 0.32) * Math.sqrt((index + 1) / Math.max(1, nodes.length));
             node.x = width / 2 + Math.cos(angle) * radius;
             node.y = height / 2 + Math.sin(angle) * radius;
-            node.r = clamp(6 + Math.sqrt(node.fileCount) * 1.5, 8, 25);
+            node.r = clamp((6 + Math.sqrt(node.fileCount) * 1.5) * Number(settings?.nodeSize ?? 1), 5, 45);
         });
 
         const app = new PIXI.Application({
@@ -362,10 +366,15 @@ window.tagGraph = (() => {
             offsetX: 0,
             offsetY: 0,
             colors: getThemeColors(),
-            forces: {
-                repulsion: Number(forces?.repulsion ?? 0.45),
-                linkStrength: Number(forces?.linkStrength ?? 0.3),
-                linkDistance: Number(forces?.linkDistance ?? 105)
+            settings: {
+                nodeSize: Number(settings?.nodeSize ?? 1),
+                linkThickness: Number(settings?.linkThickness ?? 2),
+                textFadeThreshold: Number(settings?.textFadeThreshold ?? 0.35),
+                showArrows: settings?.showArrows !== false,
+                centerForce: Number(settings?.centerForce ?? 0.3),
+                repelForce: Number(settings?.repelForce ?? 0.45),
+                linkForce: Number(settings?.linkForce ?? 0.3),
+                linkDistance: Number(settings?.linkDistance ?? 105)
             },
             hovered: null,
             gesture: null,
@@ -390,15 +399,15 @@ window.tagGraph = (() => {
         }
 
         const charge = d3.forceManyBody()
-            .strength(-state.forces.repulsion * 520)
+            .strength(-state.settings.repelForce * 520)
             .distanceMax(Math.max(width, height) * 1.5);
         const link = d3.forceLink(links)
             .id(node => node.id)
-            .distance(state.forces.linkDistance)
-            .strength(state.forces.linkStrength);
-        const center = d3.forceCenter(width / 2, height / 2).strength(0.06);
-        const xForce = d3.forceX(width / 2).strength(0.012);
-        const yForce = d3.forceY(height / 2).strength(0.012);
+            .distance(state.settings.linkDistance)
+            .strength(state.settings.linkForce);
+        const center = d3.forceCenter(width / 2, height / 2).strength(state.settings.centerForce * 0.2);
+        const xForce = d3.forceX(width / 2).strength(state.settings.centerForce * 0.04);
+        const yForce = d3.forceY(height / 2).strength(state.settings.centerForce * 0.04);
         const collision = d3.forceCollide().radius(node => node.r + 8).strength(0.85).iterations(2);
         state.simulation = d3.forceSimulation(nodes)
             .alphaDecay(0.035)
@@ -413,6 +422,7 @@ window.tagGraph = (() => {
         state.chargeForce = charge;
         state.linkForce = link;
         state.centerForce = center;
+        state.collisionForce = collision;
         state.xForce = xForce;
         state.yForce = yForce;
 
@@ -456,17 +466,30 @@ window.tagGraph = (() => {
         state.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
     }
 
-    function setForces(canvas, forces) {
+    function setSettings(canvas, settings) {
         const state = states.get(canvas);
         if (!state) return;
-        state.forces = {
-            repulsion: Number(forces.repulsion),
-            linkStrength: Number(forces.linkStrength),
-            linkDistance: Number(forces.linkDistance)
+        state.settings = {
+            nodeSize: Number(settings.nodeSize),
+            linkThickness: Number(settings.linkThickness),
+            textFadeThreshold: Number(settings.textFadeThreshold),
+            showArrows: Boolean(settings.showArrows),
+            centerForce: Number(settings.centerForce),
+            repelForce: Number(settings.repelForce),
+            linkForce: Number(settings.linkForce),
+            linkDistance: Number(settings.linkDistance)
         };
-        state.chargeForce.strength(-state.forces.repulsion * 520);
-        state.linkForce.strength(state.forces.linkStrength).distance(state.forces.linkDistance);
+        for (const node of state.nodes) {
+            node.r = clamp((6 + Math.sqrt(node.fileCount) * 1.5) * state.settings.nodeSize, 5, 45);
+        }
+        state.chargeForce.strength(-state.settings.repelForce * 520);
+        state.linkForce.strength(state.settings.linkForce).distance(state.settings.linkDistance);
+        state.centerForce.strength(state.settings.centerForce * 0.2);
+        state.xForce.strength(state.settings.centerForce * 0.04);
+        state.yForce.strength(state.settings.centerForce * 0.04);
+        state.collisionForce.radius(node => node.r + 8);
         state.simulation.alpha(0.75).restart();
+        drawScene(state);
     }
 
     function destroy(canvas) {
@@ -474,5 +497,5 @@ window.tagGraph = (() => {
         states.delete(canvas);
     }
 
-    return { render, setForces, destroy };
+    return { render, setSettings, destroy };
 })();

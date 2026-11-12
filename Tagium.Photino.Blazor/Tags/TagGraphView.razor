@@ -25,23 +25,53 @@
             </select>
         </label>
         <details class="tag-graph-force-menu">
-            <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i> Forces</summary>
+            <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i> Graph settings</summary>
             <div class="tag-graph-force-options">
-                <label>
-                    <span>Repulsion</span>
-                    <input type="range" min="0" max="100" step="5" @bind="RepulsionStrength" @bind:event="oninput" @bind:after="MarkForcesDirty" />
-                    <output>@RepulsionStrength%</output>
-                </label>
-                <label>
-                    <span>Link strength</span>
-                    <input type="range" min="0" max="100" step="5" @bind="LinkStrength" @bind:event="oninput" @bind:after="MarkForcesDirty" />
-                    <output>@LinkStrength%</output>
-                </label>
-                <label>
-                    <span>Link distance</span>
-                    <input type="range" min="40" max="180" step="5" @bind="LinkDistance" @bind:event="oninput" @bind:after="MarkForcesDirty" />
-                    <output>@LinkDistance px</output>
-                </label>
+                <section class="tag-graph-setting-group" aria-label="Display settings">
+                    <h5>Display</h5>
+                    <label>
+                        <span>Node size</span>
+                        <input type="range" min="50" max="180" step="5" @bind="NodeSize" @bind:event="oninput" @bind:after="MarkSettingsDirty" />
+                        <output>@NodeSize%</output>
+                    </label>
+                    <label>
+                        <span>Link thickness</span>
+                        <input type="range" min="1" max="6" step="1" @bind="LinkThickness" @bind:event="oninput" @bind:after="MarkSettingsDirty" />
+                        <output>@LinkThickness</output>
+                    </label>
+                    <label>
+                        <span>Text fade threshold</span>
+                        <input type="range" min="0" max="100" step="5" @bind="TextFadeThreshold" @bind:event="oninput" @bind:after="MarkSettingsDirty" />
+                        <output>@TextFadeThreshold%</output>
+                    </label>
+                    <label class="tag-graph-toggle-setting">
+                        <input type="checkbox" @bind="ShowArrows" @bind:after="MarkSettingsDirty" />
+                        <span>Hierarchy arrows</span>
+                    </label>
+                </section>
+                <section class="tag-graph-setting-group" aria-label="Force settings">
+                    <h5>Forces</h5>
+                    <label>
+                        <span>Center force</span>
+                        <input type="range" min="0" max="100" step="5" @bind="CenterForce" @bind:event="oninput" @bind:after="MarkSettingsDirty" />
+                        <output>@CenterForce%</output>
+                    </label>
+                    <label>
+                        <span>Repel force</span>
+                        <input type="range" min="0" max="100" step="5" @bind="RepelForce" @bind:event="oninput" @bind:after="MarkSettingsDirty" />
+                        <output>@RepelForce%</output>
+                    </label>
+                    <label>
+                        <span>Link force</span>
+                        <input type="range" min="0" max="100" step="5" @bind="LinkForce" @bind:event="oninput" @bind:after="MarkSettingsDirty" />
+                        <output>@LinkForce%</output>
+                    </label>
+                    <label>
+                        <span>Link distance</span>
+                        <input type="range" min="40" max="180" step="5" @bind="LinkDistance" @bind:event="oninput" @bind:after="MarkSettingsDirty" />
+                        <output>@LinkDistance px</output>
+                    </label>
+                </section>
             </div>
         </details>
         <span class="tag-graph-summary">@GraphSummary</span>
