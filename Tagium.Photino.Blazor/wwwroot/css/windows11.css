@@ -2,7 +2,6 @@
    This is a web-rendered Fluent treatment, not a claim to use native WinUI controls. */
 
 :root[data-interface-style="windows11"] {
-    color-scheme: dark;
     --fluent-font: "Segoe UI Variable", "Segoe UI", sans-serif;
     --fluent-caption: 12px;
     --fluent-body: 14px;
