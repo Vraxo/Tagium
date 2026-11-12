@@ -49,6 +49,16 @@ public class Program
             // Load saved zoom factor on startup
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             int savedZoom = settings.Current.Zoom;
+            bool useNativeMica = PhotinoWindow.IsWindowsPlatform
+                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621)
+                && settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
+
+            if (useNativeMica)
+            {
+                // Keep Photino's native title bar and window behavior. DWM supplies
+                // the genuine Mica system backdrop on supported Windows 11 builds.
+                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Apply(app.MainWindow);
+            }
 
             _ = app.MainWindow
                 .SetTitle("Tagium")
