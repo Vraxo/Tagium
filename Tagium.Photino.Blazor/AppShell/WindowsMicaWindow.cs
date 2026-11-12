@@ -11,35 +11,45 @@ namespace Tagium.Photino.Blazor.AppShell;
 internal static class WindowsMicaWindow
 {
     private const int DwmwaSystemBackdropType = 38;
+    private const int DwmsbtNone = 1;
     private const int DwmsbtMainWindow = 2;
 
     public static bool IsActive { get; private set; }
 
     public static void Apply(PhotinoWindow window)
     {
+        SetEnabled(window, true);
+    }
+
+    public static void SetEnabled(PhotinoWindow window, bool enabled)
+    {
         if (!PhotinoWindow.IsWindowsPlatform
             || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
         {
+            IsActive = false;
             return;
         }
 
-        int backdropType = DwmsbtMainWindow;
+        int backdropType = enabled ? DwmsbtMainWindow : DwmsbtNone;
         int result = DwmSetWindowAttribute(
             window.WindowHandle,
             DwmwaSystemBackdropType,
             ref backdropType,
             sizeof(int));
 
-        IsActive = result >= 0;
-        if (!IsActive)
+        IsActive = enabled && result >= 0;
+        if (result < 0)
         {
             Log.Warning(
-                "Windows Mica could not be enabled. DwmSetWindowAttribute returned HRESULT 0x{HResult:X8}.",
+                "Could not {Action} the Windows 11 Mica backdrop. DwmSetWindowAttribute returned HRESULT 0x{HResult:X8}.",
+                enabled ? "enable" : "disable",
                 result);
         }
         else
         {
-            Log.Information("Enabled the native Windows 11 Mica system backdrop.");
+            Log.Information(
+                "{Action} the native Windows 11 Mica system backdrop.",
+                enabled ? "Enabled" : "Disabled");
         }
     }
 

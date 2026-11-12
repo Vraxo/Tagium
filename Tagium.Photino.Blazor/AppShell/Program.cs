@@ -49,15 +49,16 @@ public class Program
             // Load saved zoom factor on startup
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             int savedZoom = settings.Current.Zoom;
-            bool useNativeMica = PhotinoWindow.IsWindowsPlatform
-                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621)
-                && settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
+            bool supportsNativeMica = PhotinoWindow.IsWindowsPlatform
+                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
 
-            if (useNativeMica)
+            if (supportsNativeMica)
             {
-                // Keep Photino's native title bar and window behavior. DWM supplies
-                // the genuine Mica system backdrop on supported Windows 11 builds.
-                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Apply(app.MainWindow);
+                // Explicitly clear the DWM backdrop in Classic and macOS modes;
+                // Windows' automatic backdrop policy must not enable Mica for them.
+                bool useNativeMica = settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
+                app.MainWindow.WindowCreatedHandler += (_, _) =>
+                    WindowsMicaWindow.SetEnabled(app.MainWindow, useNativeMica);
             }
 
             _ = app.MainWindow
