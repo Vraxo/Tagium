@@ -13,7 +13,11 @@ public class Program
 {
     public static PhotinoWindow? MainWindow { get; set; }
 
+    public static bool SupportsNativeMica { get; private set; }
+
     public static bool UsesMicaChrome { get; private set; }
+
+    public static InterfaceStyle StartupInterfaceStyle { get; private set; }
 
     [STAThread]
     [Obsolete]
@@ -51,9 +55,10 @@ public class Program
             // Load saved zoom factor on startup
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             int savedZoom = settings.Current.Zoom;
-            UsesMicaChrome = PhotinoWindow.IsWindowsPlatform
-                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621)
-                && settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
+            StartupInterfaceStyle = settings.Current.InterfaceStyle;
+            SupportsNativeMica = PhotinoWindow.IsWindowsPlatform
+                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+            UsesMicaChrome = SupportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
 
             if (UsesMicaChrome)
             {
