@@ -15,6 +15,8 @@ public class Program
 
     public static InterfaceStyle StartupInterfaceStyle { get; private set; }
 
+    public static bool SupportsNativeMica { get; private set; }
+
     public static bool UsesMicaChrome { get; private set; }
 
     [STAThread]
@@ -54,9 +56,9 @@ public class Program
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             int savedZoom = settings.Current.Zoom;
             StartupInterfaceStyle = settings.Current.InterfaceStyle;
-            bool supportsNativeMica = PhotinoWindow.IsWindowsPlatform
+            SupportsNativeMica = PhotinoWindow.IsWindowsPlatform
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
-            UsesMicaChrome = supportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
+            UsesMicaChrome = SupportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
 
             bool useFullWindowMica = UsesMicaChrome;
 
