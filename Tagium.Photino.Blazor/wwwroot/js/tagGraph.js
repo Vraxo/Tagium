@@ -67,7 +67,7 @@ window.tagGraph = (() => {
 
     function drawScene(state) {
         if (state.disposed) return;
-        const { linksGraphics, nodesGraphics, emojiBackingGraphics, emojiContainer, world, app, nodes, links, zoom } = state;
+        const { linksGraphics, nodesGraphics, emojiContainer, world, app, nodes, links, zoom } = state;
         linksGraphics.clear();
 
         for (const edge of links) {
@@ -108,7 +108,6 @@ window.tagGraph = (() => {
         }
 
         nodesGraphics.clear();
-        emojiBackingGraphics.clear();
         const primary = colorToNumber(state.colors.primary, 0x4b8bf4);
         const surface = colorToNumber(state.colors.surface, 0x242424);
         for (const node of nodes) {
@@ -133,11 +132,6 @@ window.tagGraph = (() => {
             emoji.visible = showEmoji;
             if (!showEmoji) continue;
 
-            const badgeRadius = node.r * 0.62;
-            emojiBackingGraphics.lineStyle(1, surface, 0.35);
-            emojiBackingGraphics.beginFill(surface, 0.42);
-            emojiBackingGraphics.drawCircle(node.x, node.y, badgeRadius);
-            emojiBackingGraphics.endFill();
             emoji.position.set(node.x, node.y);
             emoji.scale.set(clamp(node.r * 1.05, 12, 30) / 32);
         }
@@ -374,10 +368,9 @@ window.tagGraph = (() => {
         const world = new PIXI.Container();
         const linksGraphics = new PIXI.Graphics();
         const nodesGraphics = new PIXI.Graphics();
-        const emojiBackingGraphics = new PIXI.Graphics();
         const emojiContainer = new PIXI.Container();
         const labelsContainer = new PIXI.Container();
-        world.addChild(linksGraphics, nodesGraphics, emojiBackingGraphics, emojiContainer, labelsContainer);
+        world.addChild(linksGraphics, nodesGraphics, emojiContainer, labelsContainer);
         app.stage.addChild(world);
 
         const state = {
@@ -386,7 +379,6 @@ window.tagGraph = (() => {
             world,
             linksGraphics,
             nodesGraphics,
-            emojiBackingGraphics,
             emojiContainer,
             labelsContainer,
             labels: new Map(),
