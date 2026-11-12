@@ -132,8 +132,11 @@ internal static class WindowsMicaWindow
             int x = unchecked((short)(packedCoordinates & 0xFFFF));
             int y = unchecked((short)((packedCoordinates >> 16) & 0xFFFF));
 
-            int borderX = GetSystemMetrics(SmCxSizeFrame) + GetSystemMetrics(SmCxPaddedBorder);
-            int borderY = GetSystemMetrics(SmCySizeFrame) + GetSystemMetrics(SmCxPaddedBorder);
+            uint dpi = GetDpiForWindow(windowHandle);
+            int borderX = GetSystemMetricsForDpi(SmCxSizeFrame, dpi)
+                + GetSystemMetricsForDpi(SmCxPaddedBorder, dpi);
+            int borderY = GetSystemMetricsForDpi(SmCySizeFrame, dpi)
+                + GetSystemMetricsForDpi(SmCxPaddedBorder, dpi);
 
             bool left = x < bounds.Left + borderX;
             bool right = x >= bounds.Right - borderX;
@@ -230,7 +233,10 @@ internal static class WindowsMicaWindow
     private static extern bool GetWindowRect(IntPtr windowHandle, out NativeRect bounds);
 
     [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(uint index);
+    private static extern uint GetDpiForWindow(IntPtr windowHandle);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetricsForDpi(uint index, uint dpi);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
