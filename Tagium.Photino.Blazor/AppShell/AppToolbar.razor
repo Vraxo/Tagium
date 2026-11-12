@@ -3,7 +3,7 @@
 @inject SettingsManager Settings
 
 <div class="app-toolbar">
-    @if (Settings.Current.MacOSAppearance)
+    @if (Settings.Current.InterfaceStyle == InterfaceStyle.MacOS)
     {
         <div class="finder-title" aria-hidden="true">@(AppState.CurrentView switch
             {
@@ -44,7 +44,7 @@
     <div class="toolbar-right">
         @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
         {
-            @if (Settings.Current.MacOSAppearance)
+            @if (Settings.Current.InterfaceStyle == InterfaceStyle.MacOS)
             {
                 <div class="finder-view-switch" role="group" aria-label="File view">
                     <button type="button" class="finder-view-button @(Settings.Current.FileViewMode == FileViewMode.Grid ? "active" : "")"
