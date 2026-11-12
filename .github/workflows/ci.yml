@@ -25,7 +25,7 @@ env:
 
 jobs:
   build-and-test:
-    name: Build app & run tests
+    name: Build & test
     # Ubuntu can cross-build the win-x64 app; no Windows runner is needed for CI.
     runs-on: ubuntu-latest
     timeout-minutes: 10
