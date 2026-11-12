@@ -52,13 +52,20 @@ public class Program
             bool supportsNativeMica = PhotinoWindow.IsWindowsPlatform
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
 
-            if (supportsNativeMica)
+            bool useFullWindowMica = supportsNativeMica
+                && settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
+
+            if (useFullWindowMica)
             {
-                // Explicitly clear the DWM backdrop in Classic and macOS modes;
-                // Windows' automatic backdrop policy must not enable Mica for them.
-                bool useNativeMica = settings.Current.InterfaceStyle == InterfaceStyle.Windows11;
-                app.MainWindow.WindowCreatedHandler += (_, _) =>
-                    WindowsMicaWindow.SetEnabled(app.MainWindow, useNativeMica);
+                // Photino's transparent WebView path requires a chromeless native window.
+                // Keep this opt-in to the Windows 11 interface and configure it before Run()
+                // creates the native HWND.
+                app.MainWindow.Chromeless = true;
+                app.MainWindow.Transparent = true;
+                app.MainWindow.SetResizable(true);
+                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(app.MainWindow);
+                app.MainWindow.WebMessageReceivedHandler += (_, message) =>
+                    WindowsMicaWindow.HandleWebMessage(app.MainWindow, message);
             }
 
             _ = app.MainWindow
