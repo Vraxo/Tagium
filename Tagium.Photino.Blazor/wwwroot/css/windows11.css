@@ -1,0 +1,399 @@
+/* Fluent 2-inspired Windows 11 interface for Tagium.
+   This is a WebView implementation: surfaces emulate Windows materials, while
+   native window chrome and system dialogs remain owned by the host OS. */
+
+:root[data-interface-style="windows11"] {
+    --fluent-control-height: 32px;
+    --fluent-control-radius: 4px;
+    --fluent-card-radius: 6px;
+}
+
+:root[data-interface-style="windows11"] body {
+    font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+    letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+:root[data-interface-style="windows11"] .main-layout,
+:root[data-interface-style="windows11"] .content-panel {
+    background: var(--bg-color);
+}
+
+:root[data-interface-style="windows11"] .sidebar-panel,
+:root[data-interface-style="windows11"] .app-toolbar {
+    background: var(--panel-bg);
+}
+
+:root[data-interface-style="windows11"] .sidebar-panel {
+    border-right: 1px solid var(--border-color);
+}
+
+:root[data-interface-style="windows11"] .app-toolbar {
+    min-height: 48px;
+    height: 48px;
+    padding: 0 16px;
+    gap: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+:root[data-interface-style="windows11"] .toolbar-left,
+:root[data-interface-style="windows11"] .toolbar-right {
+    gap: 8px;
+}
+
+:root[data-interface-style="windows11"] .toolbar-center {
+    max-width: 560px;
+}
+
+:root[data-interface-style="windows11"] .segmented-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-bg);
+}
+
+:root[data-interface-style="windows11"] .segment-btn {
+    min-height: 30px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background-color .12s ease, color .12s ease;
+}
+
+:root[data-interface-style="windows11"] .segment-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-color);
+}
+
+:root[data-interface-style="windows11"] .segment-btn.active {
+    background: var(--bg-color);
+    color: var(--text-color);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+}
+
+:root[data-interface-style="windows11"] .btn,
+:root[data-interface-style="windows11"] .btn-icon,
+:root[data-interface-style="windows11"] .menu-action {
+    min-height: var(--fluent-control-height);
+    border-radius: var(--fluent-control-radius);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+
+:root[data-interface-style="windows11"] .btn {
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-bg);
+    color: var(--text-color);
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .12);
+}
+
+:root[data-interface-style="windows11"] .btn:hover,
+:root[data-interface-style="windows11"] .btn-icon:hover,
+:root[data-interface-style="windows11"] .menu-action:hover {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="windows11"] .btn-primary {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: var(--text-on-primary);
+}
+
+:root[data-interface-style="windows11"] .btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+:root[data-interface-style="windows11"] .btn-icon {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+}
+
+:root[data-interface-style="windows11"] .btn-icon.active {
+    border-color: var(--border-color);
+    background: var(--surface-bg);
+    color: var(--text-color);
+}
+
+:root[data-interface-style="windows11"] .search-input,
+:root[data-interface-style="windows11"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root[data-interface-style="windows11"] select,
+:root[data-interface-style="windows11"] textarea {
+    min-height: var(--fluent-control-height);
+    border: 1px solid var(--border-color);
+    border-radius: var(--fluent-control-radius);
+    background: var(--surface-bg);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: 12px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .08);
+}
+
+:root[data-interface-style="windows11"] .search-input:focus,
+:root[data-interface-style="windows11"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+:root[data-interface-style="windows11"] select:focus,
+:root[data-interface-style="windows11"] textarea:focus {
+    border-color: var(--primary-color);
+    outline: 1px solid var(--primary-color);
+    outline-offset: -1px;
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 16px 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation-heading {
+    padding: 0 12px 8px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-color);
+    text-align: left;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color .12s ease;
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation-item:hover {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation-item.active {
+    background: var(--surface-bg);
+    font-weight: 600;
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation-item.active::before {
+    position: absolute;
+    top: 9px;
+    bottom: 9px;
+    left: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--primary-color);
+    content: "";
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation-item i {
+    width: 16px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+:root[data-interface-style="windows11"] .fluent-navigation-item.active i {
+    color: var(--primary-color);
+}
+
+:root[data-interface-style="windows11"] .sidebar-header {
+    padding: 14px 16px 8px;
+}
+
+:root[data-interface-style="windows11"] .sidebar-header h4 {
+    color: var(--text-color);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+:root[data-interface-style="windows11"] .tag-list,
+:root[data-interface-style="windows11"] .folder-list {
+    padding: 4px 8px 12px;
+}
+
+:root[data-interface-style="windows11"] .tag-item,
+:root[data-interface-style="windows11"] .folder-row {
+    min-height: 32px;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: background-color .12s ease, color .12s ease;
+}
+
+:root[data-interface-style="windows11"] .tag-item:not(.active):hover,
+:root[data-interface-style="windows11"] .folder-row:not(.active):hover {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="windows11"] .tag-item.active,
+:root[data-interface-style="windows11"] .folder-row.active {
+    background: var(--primary-tint);
+    color: var(--text-color);
+}
+
+:root[data-interface-style="windows11"] .tag-item .count {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+:root[data-interface-style="windows11"] .grid-container {
+    gap: 16px;
+    padding: 16px;
+}
+
+:root[data-interface-style="windows11"] .file-card {
+    border: 1px solid transparent;
+    border-radius: var(--fluent-card-radius);
+    transition: background-color .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+:root[data-interface-style="windows11"] .file-card:hover {
+    border-color: var(--border-color);
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="windows11"] .file-card.selected {
+    border-color: var(--primary-color);
+    background: var(--primary-tint);
+}
+
+:root[data-interface-style="windows11"] .file-card .thumbnail {
+    border-radius: 4px;
+    background: var(--media-bg);
+}
+
+:root[data-interface-style="windows11"] .file-card .filename {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+:root[data-interface-style="windows11"] .file-list thead {
+    background: var(--panel-bg);
+}
+
+:root[data-interface-style="windows11"] .file-list th {
+    padding: 9px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+:root[data-interface-style="windows11"] .file-list td {
+    padding: 8px 12px;
+}
+
+:root[data-interface-style="windows11"] .file-list tbody tr:hover {
+    background: var(--surface-hover);
+}
+
+:root[data-interface-style="windows11"] .inspector-container {
+    background: var(--panel-bg);
+    border-left: 1px solid var(--border-color);
+}
+
+:root[data-interface-style="windows11"] .inspector-file-header .file-name {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+:root[data-interface-style="windows11"] .view-menu-dropdown,
+:root[data-interface-style="windows11"] .search-history,
+:root[data-interface-style="windows11"] .search-help {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-bg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+    backdrop-filter: blur(18px);
+}
+
+:root[data-interface-style="windows11"] .menu-action,
+:root[data-interface-style="windows11"] .search-history-item {
+    min-height: 32px;
+    border-radius: 4px;
+    color: var(--text-color);
+}
+
+:root[data-interface-style="windows11"] .settings-sidebar {
+    background: var(--panel-bg);
+}
+
+:root[data-interface-style="windows11"] .tab-btn {
+    min-height: 36px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+:root[data-interface-style="windows11"] .settings-panel h4 {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+:root[data-interface-style="windows11"] .settings-panel h5 {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+:root[data-interface-style="windows11"] .root-item,
+:root[data-interface-style="windows11"] .maintenance-group,
+:root[data-interface-style="windows11"] .result-box {
+    border-radius: 6px;
+}
+
+:root[data-interface-style="windows11"] .switch .slider {
+    border-radius: 999px;
+}
+
+:root[data-interface-style="windows11"] ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+:root[data-interface-style="windows11"] ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: var(--text-muted);
+    background-clip: padding-box;
+}
+
+:root[data-interface-style="windows11"] ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-color);
+    background-clip: padding-box;
+}
+
+@media (max-width: 900px) {
+    :root[data-interface-style="windows11"] .app-toolbar {
+        padding-inline: 8px;
+        gap: 6px;
+    }
+
+    :root[data-interface-style="windows11"] .fluent-navigation {
+        padding-inline: 6px;
+    }
+
+    :root[data-interface-style="windows11"] .fluent-navigation-item {
+        gap: 8px;
+        padding-inline: 8px;
+    }
+}
