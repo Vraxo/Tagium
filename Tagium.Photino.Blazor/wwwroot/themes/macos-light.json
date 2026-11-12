@@ -1,9 +1,9 @@
 {
   "Name": "macOS Light",
-  "Version": 2,
+  "Version": 3,
   "Colors": {
     "--bg-color": "#ffffff",
-    "--panel-bg": "#f1f1f3",
+    "--panel-bg": "#e5e5e7",
     "--surface-bg": "#ffffff",
     "--surface-hover": "rgba(0, 0, 0, 0.07)",
     "--media-bg": "#e6e6e8",

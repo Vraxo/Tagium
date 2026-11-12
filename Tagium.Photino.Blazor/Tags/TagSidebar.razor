@@ -6,7 +6,7 @@
 <div class="sidebar-container">
     <div class="sidebar-header">
         <div class="sidebar-header-row">
-            <h4>@(Settings.Current.MacOSAppearance ? "Library" : "Tags")</h4>
+            <h4>@(Settings.Current.MacOSAppearance ? "Filters" : "Tags")</h4>
             <button @ref="_tagSearchToggle"
                     type="button"
                     class="tag-search-toggle @(IsTagSearchOpen ? "active" : "")"
@@ -110,7 +110,7 @@
                      @onclick="() => SetSearch(tag.Name)"
                      @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))"
                      style="--tag-color: @tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(tag.ColorHex);">
-                    <TagIcon Tag="@tag" ShowColor="false" />
+                    <TagIcon Tag="@tag" ShowColor="@Settings.Current.MacOSAppearance" />
                     <span class="name" title="@tag.Name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
                 </div>
