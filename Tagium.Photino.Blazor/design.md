@@ -162,10 +162,26 @@ Every interactive surface must be operable without a mouse. Two layers cooperate
 
 The optional Windows 11 interface is a Fluent 2-inspired WebView implementation. It must preserve the application's existing behavior, semantic theme colors, keyboard support, and accessibility contracts.
 
+### Visual hierarchy
+
 * Use Segoe UI Variable with Segoe UI fallback.
-* Prefer 32px standard controls, compact 4px control corners, subtle borders, and restrained hover/pressed states.
-* Navigation uses a persistent left navigation surface with a narrow accent selection indicator.
-* Toolbars use compact command controls; file cards and inspector surfaces remain quiet and information-dense.
-* Menus and flyouts use elevated surfaces, clear separators, and restrained shadows. Do not apply blur indiscriminately.
-* Keep the style independent of JSON color themes and the global corner-style preference.
-* The WebView cannot render actual WinUI controls or system Mica. CSS materials are visual approximations; native window chrome and system dialogs remain host-owned.
+* Use the Windows type ramp as a guide: 12px captions, 14px body text, 18px large body, 20px subtitles, and 28px page titles. Do not globally shrink body copy to 12px.
+* Use a persistent left navigation pane, with a narrow accent indicator and a restrained selected-item surface.
+* The page command bar presents the current page identity, search, and persistent actions in stable positions. Do not duplicate primary navigation in the command bar.
+* Keep the file workspace visually quiet. Selection must be clear without turning every card into a raised tile.
+* Inspector, settings, and dialogs should share the same surface hierarchy and spacing rhythm.
+
+### Controls and surfaces
+
+* Standard controls use a 32px baseline height, 4px control corners, visible focus, and consistent hover, pressed, selected, and disabled states.
+* Use semantic theme tokens as the source of color. Derived Fluent layers may use `color-mix()`, but must not hardcode a second unrelated palette.
+* Elevated menus and dialogs use a restrained shadow and clear separation. Blur is reserved for floating surfaces, never used as a substitute for surface contrast.
+* Keep the Windows 11 style independent of the user's global corner-style setting; its geometry is part of the selected interface language.
+* Respect `prefers-reduced-motion`.
+
+### Platform boundary
+
+* This is a WebView implementation, not actual WinUI. HTML controls must retain native semantics, keyboard behavior, and accessible names.
+* Photino supports chromeless windows, which may enable a custom title bar, but this requires explicit native-window integration, drag handling, resize hit-testing, and caption controls. Do not simulate this with a second HTML title bar while the OS title bar remains visible.
+* Mica is a Windows native backdrop, not a CSS blur. Only describe or enable it after a Windows-specific host implementation has been added and tested.
+* Native title-bar integration and backdrop support are separate follow-up work; do not imply that the current CSS style provides them.
