@@ -29,6 +29,15 @@ public partial class SettingsModal : IDisposable
 
     private List<LibraryRoot> Roots = [];
     private IntegrityScanResult? ScanResult;
+    private bool IsMissingCountLoading;
+    private int MissingFileCount;
+    private bool IsIntegrityScanning;
+    private bool IsPurgingMissing;
+    private bool IsExporting;
+    private bool IsBackingUp;
+    private bool IsRestoring;
+    private bool _disposed;
+    private int _missingCountLoadVersion;
 
     protected override void OnInitialized()
     {
@@ -41,6 +50,41 @@ public partial class SettingsModal : IDisposable
     private void SetTab(SettingsTab tab)
     {
         ActiveTab = tab;
+        if (tab == SettingsTab.Data)
+        {
+            _ = RefreshMissingCountAsync();
+        }
+    }
+
+    private async Task RefreshMissingCountAsync()
+    {
+        int requestVersion = ++_missingCountLoadVersion;
+        IsMissingCountLoading = true;
+        try
+        {
+            int count = await Task.Run(Library.GetMissingFileCount);
+            if (_disposed || requestVersion != _missingCountLoadVersion)
+            {
+                return;
+            }
+
+            MissingFileCount = count;
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed && requestVersion == _missingCountLoadVersion)
+            {
+                Toast.Show($"Could not read missing-file count: {ex.Message}", ToastType.Error);
+            }
+        }
+        finally
+        {
+            if (!_disposed && requestVersion == _missingCountLoadVersion)
+            {
+                IsMissingCountLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
 
     private void OnSettingsChanged()
@@ -113,6 +157,10 @@ public partial class SettingsModal : IDisposable
         {
             LoadRoots();
             StateHasChanged();
+            if (ActiveTab == SettingsTab.Data)
+            {
+                _ = RefreshMissingCountAsync();
+            }
         });
     }
 
@@ -178,65 +226,147 @@ public partial class SettingsModal : IDisposable
 
     private async Task ScanIntegrity()
     {
-        ScanResult = null;
-        ScanResult = await IntegrityService.ScanAsync();
-        Library.Refresh();
-    }
-
-    private void PurgeMissing()
-    {
-        IntegrityService.PurgeMissing();
-        Library.Refresh();
-        ScanResult = null;
-        Toast.Show("Missing files purged.", ToastType.Success);
-    }
-
-    private async Task ExportJson()
-    {
-        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.json");
-        await ExportService.ExportJsonAsync(path);
-        Toast.Show($"Exported to {path}", ToastType.Success);
-    }
-
-    private async Task ExportCsv()
-    {
-        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "tagium_export.csv");
-        await ExportService.ExportCsvAsync(path);
-        Toast.Show($"Exported to {path}", ToastType.Success);
-    }
-
-    private void BackupDb()
-    {
-        string source = DbManager.LibraryDbPath;
-        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
-        File.Copy(source, dest, true);
-        Toast.Show($"Library configuration backup saved to {dest}", ToastType.Success);
-    }
-
-    private void RestoreDb()
-    {
-        string[]? files = FileDialogService.OpenFiles();
-        if (files is null || files.Length == 0)
+        if (IsIntegrityScanning)
         {
             return;
         }
 
+        IsIntegrityScanning = true;
+        ScanResult = null;
+        try
+        {
+            ScanResult = await IntegrityService.ScanAsync();
+            Library.Refresh();
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Integrity scan failed: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            IsIntegrityScanning = false;
+        }
+
+        await RefreshMissingCountAsync();
+    }
+
+    private async Task PurgeMissing()
+    {
+        if (IsPurgingMissing || MissingFileCount == 0)
+        {
+            return;
+        }
+
+        IsPurgingMissing = true;
+        try
+        {
+            await IntegrityService.PurgeMissingAsync();
+            MissingFileCount = 0;
+            ScanResult = null;
+            Library.Refresh();
+            Toast.Show("Missing files purged.", ToastType.Success);
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Purge failed: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            IsPurgingMissing = false;
+        }
+    }
+
+    private async Task ExportJson()
+    {
+        await ExportCatalogAsync("tagium_export.json", ExportService.ExportJsonAsync);
+    }
+
+    private async Task ExportCsv()
+    {
+        await ExportCatalogAsync("tagium_export.csv", ExportService.ExportCsvAsync);
+    }
+
+    private async Task ExportCatalogAsync(string fileName, Func<string, Task> export)
+    {
+        if (IsExporting)
+        {
+            return;
+        }
+
+        IsExporting = true;
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), fileName);
+        try
+        {
+            // Export currently builds a complete catalog and performs per-file tag lookups.
+            await Task.Run(() => export(path));
+            Toast.Show($"Exported to {path}", ToastType.Success);
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Export failed: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            IsExporting = false;
+        }
+    }
+
+    private async Task BackupDb()
+    {
+        if (IsBackingUp)
+        {
+            return;
+        }
+
+        IsBackingUp = true;
+        string source = DbManager.LibraryDbPath;
+        string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tagium_backup_{DateTime.Now:yyyyMMdd}.db");
+        try
+        {
+            await Task.Run(() => File.Copy(source, dest, true));
+            Toast.Show($"Library configuration backup saved to {dest}", ToastType.Success);
+        }
+        catch (Exception ex)
+        {
+            Toast.Show($"Backup failed: {ex.Message}", ToastType.Error);
+        }
+        finally
+        {
+            IsBackingUp = false;
+        }
+    }
+
+    private async Task RestoreDb()
+    {
+        string[]? files = FileDialogService.OpenFiles();
+        if (files is null || files.Length == 0 || IsRestoring)
+        {
+            return;
+        }
+
+        IsRestoring = true;
         string source = files[0];
         string dest = DbManager.LibraryDbPath;
 
         try
         {
-            File.Copy(source, dest, true);
+            await Task.Run(() => File.Copy(source, dest, true));
             Toast.Show("Library database restored. Please restart Tagium.", ToastType.Success);
         }
         catch (Exception ex)
         {
             Toast.Show($"Restore failed: {ex.Message}", ToastType.Error);
         }
+        finally
+        {
+            IsRestoring = false;
+        }
     }
 
     public void Dispose()
     {
+        _disposed = true;
+        _missingCountLoadVersion++;
         ScanService.ScanProgress -= OnScanProgress;
         ScanService.ScanCompleted -= OnScanCompleted;
         Settings.SettingsChanged -= OnSettingsChanged;
