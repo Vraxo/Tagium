@@ -71,8 +71,7 @@ public partial class MainLayout : IDisposable
         await ThemeService.InitializeAsync(JS);
         await ThemeService.ApplyThemeAsync(JS, SettingsManager.Current.SelectedTheme);
         await JS.InvokeVoidAsync("themeManager.applyCornerStyle", SettingsManager.Current.CornerStyle.ToString());
-        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.StartupInterfaceStyle.ToString());
-        await JS.InvokeVoidAsync("themeManager.applyNativeMica", Program.UsesMicaChrome && WindowsMicaWindow.IsActive);
+        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", SettingsManager.Current.InterfaceStyle.ToString());
     }
 
     [JSInvokable]
