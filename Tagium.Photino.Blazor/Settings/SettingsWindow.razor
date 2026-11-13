@@ -1,0 +1,11 @@
+@namespace Tagium.Photino.Blazor.Settings
+@implements IDisposable
+
+<SettingsModal />
+
+@code {
+    public void Dispose()
+    {
+        Tagium.Photino.Blazor.AppShell.Program.SettingsWindowClosed();
+    }
+}
