@@ -1,5 +1,6 @@
-using Windows.Foundation;
-using Windows.UI.ViewManagement;
+using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
 using Serilog;
 
 namespace Tagium.Photino.Blazor.AppShell;
@@ -9,8 +10,13 @@ namespace Tagium.Photino.Blazor.AppShell;
 /// </summary>
 internal sealed class WindowsAccentColorService : IDisposable
 {
-    private UISettings? _settings;
-    private TypedEventHandler<UISettings, object>? _colorValuesChangedHandler;
+    private const string AccentRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent";
+    private const uint RegNotifyChangeLastSet = 0x00000004;
+
+    private RegistryKey? _accentKey;
+    private EventWaitHandle? _changeEvent;
+    private CancellationTokenSource? _watchCancellation;
+    private Task? _watchTask;
     private bool _initialized;
 
     public string CurrentColor { get; private set; } = "#42a5f5";
@@ -28,11 +34,18 @@ internal sealed class WindowsAccentColorService : IDisposable
 
         try
         {
-            _settings = new UISettings();
-            _colorValuesChangedHandler = (_, _) => RefreshAccentColor();
-            _settings.ColorValuesChanged += _colorValuesChangedHandler;
+            _accentKey = Registry.CurrentUser.OpenSubKey(AccentRegistryPath, writable: false);
+            if (_accentKey is null)
+            {
+                Log.Warning("Windows accent registry key is unavailable. Using the default accent.");
+                return;
+            }
+
+            _changeEvent = new EventWaitHandle(false, EventResetMode.AutoReset);
+            _watchCancellation = new CancellationTokenSource();
             _initialized = true;
             RefreshAccentColor();
+            _watchTask = Task.Run(WatchAccentChanges);
 
             Log.Information("Windows system accent color tracking initialized with {AccentColor}.", CurrentColor);
         }
@@ -43,18 +56,50 @@ internal sealed class WindowsAccentColorService : IDisposable
         }
     }
 
+    private void WatchAccentChanges()
+    {
+        if (_accentKey is null || _changeEvent is null || _watchCancellation is null)
+        {
+            return;
+        }
+
+        WaitHandle[] waitHandles = [_changeEvent, _watchCancellation.Token.WaitHandle];
+
+        while (!_watchCancellation.IsCancellationRequested)
+        {
+            int result = RegNotifyChangeKeyValue(
+                _accentKey.Handle,
+                watchSubtree: false,
+                RegNotifyChangeLastSet,
+                _changeEvent.SafeWaitHandle.DangerousGetHandle(),
+                asynchronous: true);
+
+            if (result != 0)
+            {
+                Log.Warning("Windows accent color monitoring stopped. Registry notification returned {ErrorCode}.", result);
+                return;
+            }
+
+            if (WaitHandle.WaitAny(waitHandles) == 1)
+            {
+                return;
+            }
+
+            RefreshAccentColor();
+        }
+    }
+
     private void RefreshAccentColor()
     {
-        if (_settings is null)
+        if (_accentKey is null)
         {
             return;
         }
 
         try
         {
-            Windows.UI.Color color = _settings.GetColorValue(UIColorType.Accent);
-            string hex = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
-            if (string.Equals(CurrentColor, hex, StringComparison.OrdinalIgnoreCase))
+            string? hex = ReadAccentColor(_accentKey);
+            if (hex is null || string.Equals(CurrentColor, hex, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -69,15 +114,54 @@ internal sealed class WindowsAccentColorService : IDisposable
         }
     }
 
-    public void Dispose()
+    private static string? ReadAccentColor(RegistryKey key)
     {
-        if (_settings is not null && _colorValuesChangedHandler is not null)
+        if (key.GetValue("AccentColorMenu") is int accentColor)
         {
-            _settings.ColorValuesChanged -= _colorValuesChangedHandler;
+            byte red = (byte)accentColor;
+            byte green = (byte)(accentColor >> 8);
+            byte blue = (byte)(accentColor >> 16);
+            return $"#{red:X2}{green:X2}{blue:X2}";
         }
 
-        _settings = null;
-        _colorValuesChangedHandler = null;
+        if (key.GetValue("AccentPalette") is byte[] palette && palette.Length >= 15)
+        {
+            return $"#{palette[12]:X2}{palette[13]:X2}{palette[14]:X2}";
+        }
+
+        return null;
+    }
+
+    public void Dispose()
+    {
+        _watchCancellation?.Cancel();
+        _changeEvent?.Set();
+
+        try
+        {
+            _watchTask?.GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Windows accent color watcher stopped during disposal.");
+        }
+
+        _accentKey?.Dispose();
+        _changeEvent?.Dispose();
+        _watchCancellation?.Dispose();
+
+        _accentKey = null;
+        _changeEvent = null;
+        _watchCancellation = null;
+        _watchTask = null;
         _initialized = false;
     }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern int RegNotifyChangeKeyValue(
+        SafeRegistryHandle key,
+        [MarshalAs(UnmanagedType.Bool)] bool watchSubtree,
+        uint notifyFilter,
+        IntPtr eventHandle,
+        [MarshalAs(UnmanagedType.Bool)] bool asynchronous);
 }
