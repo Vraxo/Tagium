@@ -726,3 +726,21 @@
 :root[data-native-mica="true"] .tag-table-container {
     background: var(--fluent-layer-2) !important;
 }
+
+/* Keep the Mica base visually continuous across the workspace.
+   Navigation and inspector are structural regions, not elevated cards:
+   avoid painting a separate panel fill or drawing hard divider rails. */
+:root[data-native-mica="true"] .sidebar-panel,
+:root[data-native-mica="true"] .inspector-panel {
+    background: transparent !important;
+    border-color: transparent !important;
+}
+
+:root[data-native-mica="true"] .sidebar-panel {
+    border-right: 0 !important;
+}
+
+:root[data-native-mica="true"] .inspector-panel,
+:root[data-native-mica="true"] .inspector-container {
+    border-left: 0 !important;
+}
