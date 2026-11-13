@@ -7,11 +7,22 @@
 @inject IJSRuntime JS
 @inject SettingsManager Settings
 @inject ThemeService ThemeService
+@inject AppearanceService Appearance
 @inject WindowsAccentColorService WindowsAccentColor
 
 <SettingsModal />
 
 @code {
+    protected override void OnInitialized()
+    {
+        Appearance.AppearanceChanged += OnAppearanceChanged;
+
+        if (Program.UsesNativeMica)
+        {
+            WindowsAccentColor.ColorChanged += OnWindowsAccentColorChanged;
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
@@ -20,14 +31,30 @@
         }
 
         await ThemeService.InitializeAsync(JS);
+        await ApplyAppearanceAsync();
+    }
+
+    private void OnAppearanceChanged()
+    {
+        _ = InvokeAsync(ApplyAppearanceAsync);
+    }
+
+    private void OnWindowsAccentColorChanged(string color)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (Program.UsesNativeMica)
+            {
+                await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", color);
+            }
+        });
+    }
+
+    private async Task ApplyAppearanceAsync()
+    {
         await ThemeService.ApplyThemeAsync(JS, Settings.Current.SelectedTheme);
         await JS.InvokeVoidAsync("themeManager.applyCornerStyle", Settings.Current.CornerStyle.ToString());
-
-        InterfaceStyle interfaceStyle = Program.UsesNativeMica
-            ? Program.StartupInterfaceStyle
-            : Settings.Current.InterfaceStyle;
-
-        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", interfaceStyle.ToString());
+        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.ActiveInterfaceStyle.ToString());
 
         bool nativeMicaActive = Program.UsesNativeMica && WindowsMicaWindow.IsActive;
         await JS.InvokeVoidAsync("themeManager.applyNativeMica", nativeMicaActive);
@@ -40,6 +67,8 @@
 
     public void Dispose()
     {
+        Appearance.AppearanceChanged -= OnAppearanceChanged;
+        WindowsAccentColor.ColorChanged -= OnWindowsAccentColorChanged;
         Program.SettingsWindowClosed();
     }
 }
