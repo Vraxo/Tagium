@@ -1,11 +1,45 @@
 @namespace Tagium.Photino.Blazor.Settings
+@using Microsoft.JSInterop
+@using Tagium.Core.Settings
+@using Tagium.Photino.Blazor.AppShell
+@using Tagium.Photino.Blazor.Theming
 @implements IDisposable
+@inject IJSRuntime JS
+@inject SettingsManager Settings
+@inject ThemeService ThemeService
+@inject WindowsAccentColorService WindowsAccentColor
 
 <SettingsModal />
 
 @code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await ThemeService.InitializeAsync(JS);
+        await ThemeService.ApplyThemeAsync(JS, Settings.Current.SelectedTheme);
+        await JS.InvokeVoidAsync("themeManager.applyCornerStyle", Settings.Current.CornerStyle.ToString());
+
+        InterfaceStyle interfaceStyle = Program.UsesNativeMica
+            ? Program.StartupInterfaceStyle
+            : Settings.Current.InterfaceStyle;
+
+        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", interfaceStyle.ToString());
+
+        bool nativeMicaActive = Program.UsesNativeMica && WindowsMicaWindow.IsActive;
+        await JS.InvokeVoidAsync("themeManager.applyNativeMica", nativeMicaActive);
+
+        if (Program.UsesNativeMica)
+        {
+            await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", WindowsAccentColor.CurrentColor);
+        }
+    }
+
     public void Dispose()
     {
-        Tagium.Photino.Blazor.AppShell.Program.SettingsWindowClosed();
+        Program.SettingsWindowClosed();
     }
 }
