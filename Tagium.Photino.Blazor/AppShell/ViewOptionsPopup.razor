@@ -1,0 +1,78 @@
+@namespace Tagium.Photino.Blazor.AppShell
+@inject IJSRuntime JS
+@inject SettingsManager Settings
+@inject ThemeService ThemeService
+@inject WindowsAccentColorService WindowsAccentColor
+@inject ModalService ModalService
+
+<style>
+    html,
+    body,
+    #app {
+        background: transparent !important;
+    }
+</style>
+
+<div class="view-options-popup" role="group" aria-label="View options">
+    <div class="menu-section">
+        <label>Sort by</label>
+        <SortControls />
+    </div>
+
+    <hr />
+
+    <div class="menu-section">
+        <label>Thumbnail size</label>
+        <ThumbnailSizeSlider />
+    </div>
+
+    <hr />
+
+    <div class="menu-section">
+        <button type="button" class="menu-action" @onclick="ShowDuplicates">
+            <i class="fa-solid fa-copy" aria-hidden="true"></i>
+            Find duplicates
+        </button>
+        <button type="button" class="menu-action" @onclick="ShowStats">
+            <i class="fa-solid fa-chart-simple" aria-hidden="true"></i>
+            Library statistics
+        </button>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await ThemeService.InitializeAsync(JS);
+        await ThemeService.ApplyThemeAsync(JS, Settings.Current.SelectedTheme);
+        await JS.InvokeVoidAsync("themeManager.applyCornerStyle", Settings.Current.CornerStyle.ToString());
+        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.StartupInterfaceStyle.ToString());
+        await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", WindowsAccentColor.CurrentColor);
+        await JS.InvokeVoidAsync("themeManager.applyNativeAcrylic", WindowsAcrylicWindow.IsActive);
+    }
+
+    private void ShowDuplicates()
+    {
+        Program.CloseViewOptionsWindow();
+        ModalService.Show("Duplicate Files", builder =>
+        {
+            builder.OpenComponent<DuplicatesModal>(0);
+            builder.CloseComponent();
+        });
+    }
+
+    private void ShowStats()
+    {
+        Program.CloseViewOptionsWindow();
+        ModalService.Show("Library Statistics", builder =>
+        {
+            builder.OpenComponent<StatsModal>(0);
+            builder.CloseComponent();
+        });
+    }
+}
