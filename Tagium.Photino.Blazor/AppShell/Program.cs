@@ -113,7 +113,8 @@ public class Program
                         .SetSize(820, 720)
                         .Center()
                         .SetZoom(settings.Current.Zoom)
-                        .SetLogVerbosity(0);
+                        .SetLogVerbosity(0)
+                        .RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
                 });
 
             if (UsesNativeMica)
