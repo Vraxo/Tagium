@@ -61,21 +61,21 @@
 
     private void ShowDuplicates()
     {
-        Program.CloseViewOptionsWindow();
         ModalService.Show("Duplicate Files", builder =>
         {
             builder.OpenComponent<DuplicatesModal>(0);
             builder.CloseComponent();
         });
+        Program.CloseViewOptionsWindow();
     }
 
     private void ShowStats()
     {
-        Program.CloseViewOptionsWindow();
         ModalService.Show("Library Statistics", builder =>
         {
             builder.OpenComponent<StatsModal>(0);
             builder.CloseComponent();
         });
+        Program.CloseViewOptionsWindow();
     }
 }
