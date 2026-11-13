@@ -174,14 +174,14 @@ public partial class SettingsModal : IDisposable
         Settings.Update(s => s.TagSidebarStyle = mode);
     }
 
-    private async Task UpdateMacOSAppearance(ChangeEventArgs args)
+    private void UpdateMacOSAppearance(ChangeEventArgs args)
     {
         bool enabled = args.Value is bool value && value;
         Settings.Update(s => s.MacOSAppearance = enabled);
         Appearance.NotifyChanged();
     }
 
-    private async Task UpdateCornerStyle(InterfaceCornerStyle style)
+    private void UpdateCornerStyle(InterfaceCornerStyle style)
     {
         Settings.Update(s => s.CornerStyle = style);
         Appearance.NotifyChanged();
@@ -209,7 +209,7 @@ public partial class SettingsModal : IDisposable
         Settings.Update(s => s.EmojiPreference = set);
     }
 
-    private async Task OnThemeChanged(ChangeEventArgs e)
+    private void OnThemeChanged(ChangeEventArgs e)
     {
         string? themeName = e.Value?.ToString();
         if (string.IsNullOrEmpty(themeName))
