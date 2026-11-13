@@ -100,6 +100,7 @@
 
             <div class="view-options-wrapper">
                 <button type="button" class="btn-icon @(IsMenuOpen ? "active" : "")"
+                        @ref="ViewOptionsButton"
                         @onclick="ToggleMenu"
                         title="View options"
                         aria-label="View options"
