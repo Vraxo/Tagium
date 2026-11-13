@@ -12,6 +12,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.28000.2957" />
 		<PackageReference Include="NativeFileDialogs.Net" Version="1.3.0.1" />
 		<!-- Downgraded to 3.2.3 to restore RegisterFileDropHandler support -->
 		<PackageReference Include="Photino.Blazor" Version="4.0.13" />
