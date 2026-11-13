@@ -8,6 +8,8 @@ namespace Tagium.Photino.Blazor.AppShell;
 
 public partial class AppToolbar
 {
+    [Inject] private ModalService ModalService { get; set; } = default!;
+
     private SearchInput? SearchInput { get; set; }
     private bool IsMenuOpen = false;
 
