@@ -22,6 +22,7 @@ public partial class MainLayout : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ThemeService ThemeService { get; set; } = default!;
+    [Inject] private WindowsAccentColorService WindowsAccentColor { get; set; } = default!;
     [Inject] private ILogger<MainLayout> Logger { get; set; } = default!;
 
     private bool _showZoomToast = false;
@@ -29,6 +30,7 @@ public partial class MainLayout : IDisposable
     private CancellationTokenSource? _zoomToastCts;
 
     private DotNetObjectReference<MainLayout>? _objRef;
+    private bool _isSubscribedToAccentChanges;
 
     private AppToolbar? AppToolbarRef { get; set; }
 
@@ -73,6 +75,13 @@ public partial class MainLayout : IDisposable
         await JS.InvokeVoidAsync("themeManager.applyCornerStyle", SettingsManager.Current.CornerStyle.ToString());
         await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.StartupInterfaceStyle.ToString());
         await JS.InvokeVoidAsync("themeManager.applyNativeMica", Program.UsesNativeMica && WindowsMicaWindow.IsActive);
+
+        if (Program.UsesNativeMica)
+        {
+            await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", WindowsAccentColor.CurrentColor);
+            WindowsAccentColor.ColorChanged += OnWindowsAccentColorChanged;
+            _isSubscribedToAccentChanges = true;
+        }
     }
 
     [JSInvokable]
@@ -298,8 +307,24 @@ public partial class MainLayout : IDisposable
         Library.Refresh();
     }
 
+    private void OnWindowsAccentColorChanged(string color)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (Program.UsesNativeMica)
+            {
+                await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", color);
+            }
+        });
+    }
+
     public void Dispose()
     {
+        if (_isSubscribedToAccentChanges)
+        {
+            WindowsAccentColor.ColorChanged -= OnWindowsAccentColorChanged;
+        }
+
         SettingsManager.SettingsChanged -= OnSettingsChanged;
         ScanService.ScanCompleted -= ShowScanStatus;
         AppState.OnChange -= StateHasChanged;
