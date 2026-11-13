@@ -58,7 +58,10 @@ internal sealed class WindowsAccentColorService : IDisposable
 
     private void WatchAccentChanges()
     {
-        if (_accentKey is null || _changeEvent is null || _watchCancellation is null)
+        if (!OperatingSystem.IsWindows()
+            || _accentKey is null
+            || _changeEvent is null
+            || _watchCancellation is null)
         {
             return;
         }
@@ -116,6 +119,11 @@ internal sealed class WindowsAccentColorService : IDisposable
 
     private static string? ReadAccentColor(RegistryKey key)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
         if (key.GetValue("AccentColorMenu") is int accentColor)
         {
             byte red = (byte)accentColor;
@@ -146,7 +154,11 @@ internal sealed class WindowsAccentColorService : IDisposable
             Log.Debug(ex, "Windows accent color watcher stopped during disposal.");
         }
 
-        _accentKey?.Dispose();
+        if (OperatingSystem.IsWindows())
+        {
+            _accentKey?.Dispose();
+        }
+
         _changeEvent?.Dispose();
         _watchCancellation?.Dispose();
 
