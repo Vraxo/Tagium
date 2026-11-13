@@ -38,9 +38,9 @@
                 document.documentElement.removeAttribute('style');
                 if (colors) {
                     for (const [key, value] of Object.entries(colors)) {
-                    if (['--radius-sm', '--radius-md', '--radius-lg'].includes(key)) {
-                        continue;
-                    }
+                        if (['--radius-sm', '--radius-md', '--radius-lg'].includes(key)) {
+                            continue;
+                        }
                         document.documentElement.style.setProperty(key, value);
                     }
                 }
@@ -84,9 +84,6 @@
                     }
                 } else {
                     delete document.documentElement.dataset.windowsAccent;
-                    for (const key of ['--windows-accent-color', '--primary-color', '--primary-hover', '--primary-tint', '--text-on-primary']) {
-                        document.documentElement.style.removeProperty(key);
-                    }
                 }
             },
             applyNativeMica: function (enabled) {
