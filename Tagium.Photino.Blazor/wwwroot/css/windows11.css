@@ -649,3 +649,43 @@
         animation-iteration-count: 1 !important;
     }
 }
+
+
+/* Native Mica composition: the decorated HWND stays intact. WebView2's own
+   background is transparent, allowing the DWM system backdrop to show through. */
+:root[data-native-mica="true"] {
+    --fluent-layer-1: color-mix(in srgb, var(--panel-bg) 76%, transparent);
+    --fluent-layer-2: color-mix(in srgb, var(--surface-bg) 80%, transparent);
+    --fluent-layer-3: color-mix(in srgb, var(--surface-bg) 86%, transparent);
+}
+
+:root[data-native-mica="true"],
+:root[data-native-mica="true"] body,
+:root[data-native-mica="true"] #app {
+    background: transparent !important;
+}
+
+:root[data-native-mica="true"] .main-layout,
+:root[data-native-mica="true"] .content-panel,
+:root[data-native-mica="true"] .view-container {
+    background: transparent !important;
+}
+
+:root[data-native-mica="true"] .sidebar-panel,
+:root[data-native-mica="true"] .inspector-panel {
+    background: var(--fluent-layer-1) !important;
+}
+
+:root[data-native-mica="true"] .app-toolbar,
+:root[data-native-mica="true"] .status-bar {
+    background: var(--fluent-layer-1) !important;
+}
+
+:root[data-native-mica="true"] .splitter {
+    background: transparent !important;
+}
+
+:root[data-native-mica="true"] .tag-graph-canvas,
+:root[data-native-mica="true"] .tag-view-toggle {
+    background: var(--fluent-layer-2);
+}
