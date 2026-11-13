@@ -228,6 +228,7 @@ public partial class SettingsModal : IDisposable
         {
             Settings.Update(s => s.Zoom = zoom);
             Program.MainWindow?.SetZoom(zoom);
+            Program.SettingsWindowNative?.SetZoom(zoom);
         }
     }
 
