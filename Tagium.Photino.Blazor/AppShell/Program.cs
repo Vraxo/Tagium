@@ -29,6 +29,16 @@ public class Program
         {
             Log.Information("Starting Tagium Application...");
 
+            // Photino may create its WebView2 controller during app construction.
+            // Configure the transparent default before any WebView2 environment/controller exists.
+            // Other interface styles keep their opaque page backgrounds, so this does not
+            // change their appearance; only Windows 11 Mica mode exposes the host backdrop.
+            if (PhotinoWindow.IsWindowsPlatform
+                && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
+            {
+                Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
+            }
+
             PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
 
             // Register Services
@@ -59,14 +69,6 @@ public class Program
             SupportsNativeMica = PhotinoWindow.IsWindowsPlatform
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
             UsesNativeMica = SupportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
-
-            if (UsesNativeMica)
-            {
-                // WebView2 supports a transparent controller background independently
-                // of the top-level HWND's layered/chromeless window styles.
-                // Set it before Photino creates the WebView2 controller.
-                Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
-            }
 
             if (UsesNativeMica)
             {
