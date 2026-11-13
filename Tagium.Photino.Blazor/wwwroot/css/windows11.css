@@ -820,3 +820,14 @@
     border-color: transparent;
     background: color-mix(in srgb, var(--primary-color) 14%, var(--fluent-layer-1));
 }
+
+/* Native Mica popups should read as tinted Mica surfaces, not blurred Acrylic.
+   Keep the popup legible while allowing the system backdrop to remain visible. */
+:root[data-native-mica="true"] .view-menu-dropdown,
+:root[data-native-mica="true"] .search-history,
+:root[data-native-mica="true"] .search-help {
+    border-color: color-mix(in srgb, var(--border-color) 70%, transparent) !important;
+    background: color-mix(in srgb, var(--panel-bg) 70%, transparent) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
