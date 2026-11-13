@@ -22,6 +22,7 @@ public partial class MainLayout : IDisposable
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ThemeService ThemeService { get; set; } = default!;
+    [Inject] private AppearanceService Appearance { get; set; } = default!;
     [Inject] private WindowsAccentColorService WindowsAccentColor { get; set; } = default!;
     [Inject] private ILogger<MainLayout> Logger { get; set; } = default!;
 
@@ -31,6 +32,7 @@ public partial class MainLayout : IDisposable
 
     private DotNetObjectReference<MainLayout>? _objRef;
     private bool _isSubscribedToAccentChanges;
+    private bool _appearanceInitialized;
 
     private AppToolbar? AppToolbarRef { get; set; }
 
@@ -40,6 +42,7 @@ public partial class MainLayout : IDisposable
     {
         _lastActiveZoom = SettingsManager.Current.Zoom;
         SettingsManager.SettingsChanged += OnSettingsChanged;
+        Appearance.AppearanceChanged += OnAppearanceChanged;
         ScanService.ScanCompleted += ShowScanStatus;
         AppState.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
@@ -69,16 +72,13 @@ public partial class MainLayout : IDisposable
         await JS.InvokeVoidAsync("tagiumNavigation.init", _objRef);
         await JS.InvokeVoidAsync("zoomTracker.init", _objRef, SettingsManager.Current.Zoom);
 
-        // Safely boot theme configurations after the DOM is fully loaded and interactive
+        // Safely boot theme configurations after the DOM is fully loaded and interactive.
         await ThemeService.InitializeAsync(JS);
-        await ThemeService.ApplyThemeAsync(JS, SettingsManager.Current.SelectedTheme);
-        await JS.InvokeVoidAsync("themeManager.applyCornerStyle", SettingsManager.Current.CornerStyle.ToString());
-        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.StartupInterfaceStyle.ToString());
-        await JS.InvokeVoidAsync("themeManager.applyNativeMica", Program.UsesNativeMica && WindowsMicaWindow.IsActive);
+        await ApplyAppearanceAsync();
+        _appearanceInitialized = true;
 
         if (Program.UsesNativeMica)
         {
-            await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", WindowsAccentColor.CurrentColor);
             WindowsAccentColor.ColorChanged += OnWindowsAccentColorChanged;
             _isSubscribedToAccentChanges = true;
         }
@@ -307,6 +307,29 @@ public partial class MainLayout : IDisposable
         Library.Refresh();
     }
 
+    private void OnAppearanceChanged()
+    {
+        if (!_appearanceInitialized)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(ApplyAppearanceAsync);
+    }
+
+    private async Task ApplyAppearanceAsync()
+    {
+        await ThemeService.ApplyThemeAsync(JS, SettingsManager.Current.SelectedTheme);
+        await JS.InvokeVoidAsync("themeManager.applyCornerStyle", SettingsManager.Current.CornerStyle.ToString());
+        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.ActiveInterfaceStyle.ToString());
+        await JS.InvokeVoidAsync("themeManager.applyNativeMica", Program.UsesNativeMica && WindowsMicaWindow.IsActive);
+
+        if (Program.UsesNativeMica)
+        {
+            await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", WindowsAccentColor.CurrentColor);
+        }
+    }
+
     private void OnWindowsAccentColorChanged(string color)
     {
         _ = InvokeAsync(async () =>
@@ -326,6 +349,7 @@ public partial class MainLayout : IDisposable
         }
 
         SettingsManager.SettingsChanged -= OnSettingsChanged;
+        Appearance.AppearanceChanged -= OnAppearanceChanged;
         ScanService.ScanCompleted -= ShowScanStatus;
         AppState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
