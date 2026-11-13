@@ -5,13 +5,16 @@
 @inject WindowsAccentColorService WindowsAccentColor
 @inject ModalService ModalService
 
-<style>
-    html,
-    body,
-    #app {
-        background: transparent !important;
-    }
-</style>
+@if (WindowsAcrylicWindow.IsActive)
+{
+    <style>
+        html,
+        body,
+        #app {
+            background: transparent !important;
+        }
+    </style>
+}
 
 <div class="view-options-popup" role="group" aria-label="View options">
     <div class="menu-section">
