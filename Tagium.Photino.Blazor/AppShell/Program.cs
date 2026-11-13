@@ -16,6 +16,8 @@ public class Program
 
     public static PhotinoBlazorApp? Application { get; private set; }
 
+    public static PhotinoWindow? SettingsWindowNative { get; private set; }
+
     public static InterfaceStyle StartupInterfaceStyle { get; private set; }
 
     public static bool SupportsNativeMica { get; private set; }
@@ -53,8 +55,9 @@ public class Program
             SchemeHandlers.ServiceProvider = app.Services;
 
             PhotinoBlazorWindow mainBlazorWindow = app.MainBlazorWindow;
-            MainWindow = mainBlazorWindow.Window;
-            _ = MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
+            PhotinoWindow mainWindow = mainBlazorWindow.Window;
+            MainWindow = mainWindow;
+            _ = mainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
 
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             StartupInterfaceStyle = settings.Current.InterfaceStyle;
@@ -65,10 +68,10 @@ public class Program
             if (UsesNativeMica)
             {
                 app.Services.GetRequiredService<WindowsAccentColorService>().Initialize();
-                MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(MainWindow);
+                mainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(mainWindow);
             }
 
-            _ = MainWindow
+            _ = mainWindow
                 .SetTitle("Tagium")
                 .SetUseOsDefaultSize(false)
                 .SetSize(1200, 800)
@@ -119,6 +122,7 @@ public class Program
                     WindowsMicaWindow.Initialize(settingsWindow.Window);
             }
 
+            SettingsWindowNative = settingsWindow.Window;
             settingsWindow.Show();
         }
         catch
@@ -130,6 +134,7 @@ public class Program
 
     public static void SettingsWindowClosed()
     {
+        SettingsWindowNative = null;
         _settingsWindowOpen = false;
     }
 
