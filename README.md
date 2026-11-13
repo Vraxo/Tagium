@@ -20,7 +20,7 @@ Desktop media library and file tagger for Windows, built with [.NET 10](https://
 - Find duplicate files by content hash (View Options → Find Duplicates); scans also flag newly imported files that duplicate existing entries
 - See library statistics — file counts, total size, missing/duplicate counts, tags, and a per-extension breakdown — from View Options → Library Statistics
 - Generate cached image and video thumbnails in the background
-- Customize the interface with JSON color themes, macOS-inspired and Windows 11 Fluent interface styles, UI zoom, and resizable sidebars; on supported Windows 11 builds, the Windows 11 style uses the native DWM Mica backdrop across the transparent app window
+- Customize the interface with JSON color themes, macOS-inspired and Windows 11 Fluent interface styles, UI zoom, and resizable sidebars; on supported Windows 11 builds, the Windows 11 style requests the native DWM Mica backdrop while retaining the standard Windows window frame
 - Check library integrity, purge missing entries, export catalogs to JSON or CSV, and back up or restore the database
 
 ## 🖼️ Supported Formats
