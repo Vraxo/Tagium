@@ -3,6 +3,7 @@ using Photino.Blazor;
 using Photino.NET;
 using Serilog;
 using Serilog.Events;
+using System.Drawing;
 using Tagium.Core;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor;
@@ -24,7 +25,13 @@ public class Program
 
     public static bool UsesNativeMica { get; private set; }
 
+    public static bool IsViewOptionsWindowOpen => _viewOptionsWindow is not null;
+
+    public static event Action? ViewOptionsPopupClosed;
+
     private static bool _settingsWindowOpen;
+
+    private static PhotinoBlazorWindow? _viewOptionsWindow;
 
     [STAThread]
     [Obsolete]
@@ -131,6 +138,104 @@ public class Program
             _settingsWindowOpen = false;
             throw;
         }
+    }
+
+    public static bool OpenViewOptionsWindow(ViewOptionsAnchor anchor)
+    {
+        if (!UsesNativeMica
+            || Application is null
+            || MainWindow is null
+            || _viewOptionsWindow is not null)
+        {
+            return false;
+        }
+
+        try
+        {
+            SettingsManager settings = Application.Services.GetRequiredService<SettingsManager>();
+            int zoom = settings.Current.Zoom;
+            int width = (int)Math.Round(296d * zoom / 100d);
+            int height = (int)Math.Round(252d * zoom / 100d);
+            Point location = WindowsPopupPosition.GetViewOptionsLocation(MainWindow, anchor, width, height);
+
+            PhotinoBlazorWindow popup = Application.CreateWindow<ViewOptionsPopup>(
+                "#app",
+                configure: window =>
+                {
+                    window
+                        .SetTitle("Tagium View Options")
+                        .SetUseOsDefaultSize(false)
+                        .SetUseOsDefaultLocation(false)
+                        .SetSize(width, height)
+                        .SetLocation(location)
+                        .SetResizable(false)
+                        .SetChromeless(true)
+                        .SetUseNativeWindowOwner(true)
+                        .SetZoom(zoom)
+                        .SetLogVerbosity(0)
+                        .RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
+                });
+
+            _viewOptionsWindow = popup;
+
+            _ = popup.Window.RegisterCreatedHandler((_, _) =>
+                WindowsAcrylicWindow.Initialize(popup.Window));
+            _ = popup.Window.RegisterDeactivatedHandler((_, _) => CloseViewOptionsWindow());
+            _ = popup.Window.RegisterClosedHandler((_, _) =>
+                OnViewOptionsWindowClosed(popup.Window));
+
+            popup.Show();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Could not open the native View options popup.");
+            PhotinoBlazorWindow? popup = _viewOptionsWindow;
+            _viewOptionsWindow = null;
+
+            if (popup?.Window is { IsInitialized: true, IsClosed: false })
+            {
+                try
+                {
+                    popup.Window.Close();
+                }
+                catch (Exception closeException)
+                {
+                    Log.Warning(closeException, "Could not close the failed View options popup.");
+                }
+            }
+
+            ViewOptionsPopupClosed?.Invoke();
+            return false;
+        }
+    }
+
+    public static void CloseViewOptionsWindow()
+    {
+        PhotinoBlazorWindow? popup = _viewOptionsWindow;
+        if (popup is null)
+        {
+            return;
+        }
+
+        if (popup.Window.IsInitialized && !popup.Window.IsClosed)
+        {
+            popup.Window.Close();
+            return;
+        }
+
+        OnViewOptionsWindowClosed(popup.Window);
+    }
+
+    private static void OnViewOptionsWindowClosed(PhotinoWindow window)
+    {
+        if (_viewOptionsWindow?.Window != window)
+        {
+            return;
+        }
+
+        _viewOptionsWindow = null;
+        ViewOptionsPopupClosed?.Invoke();
     }
 
     public static void SettingsWindowClosed()
