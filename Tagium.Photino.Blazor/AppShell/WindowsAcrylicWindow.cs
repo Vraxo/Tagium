@@ -11,11 +11,14 @@ internal static class WindowsAcrylicWindow
     private const int DwmwaWindowCornerPreference = 33;
     private const int DwmwcpRound = 2;
 
+    public static bool IsActive { get; private set; }
+
     public static bool Initialize(PhotinoWindow window)
     {
         if (!OperatingSystem.IsWindows()
             || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
         {
+            IsActive = false;
             return false;
         }
 
@@ -64,7 +67,8 @@ internal static class WindowsAcrylicWindow
                 cornerResult);
         }
 
-        return frameResult >= 0 && backdropResult >= 0;
+        IsActive = frameResult >= 0 && backdropResult >= 0;
+        return IsActive;
     }
 
     [StructLayout(LayoutKind.Sequential)]
