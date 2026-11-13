@@ -36,7 +36,7 @@ public class Program
         {
             Log.Information("Starting Tagium Application...");
 
-            if (PhotinoWindow.IsWindowsPlatform
+            if (OperatingSystem.IsWindows()
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
             {
                 Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
@@ -68,7 +68,7 @@ public class Program
             if (UsesNativeMica)
             {
                 app.Services.GetRequiredService<WindowsAccentColorService>().Initialize();
-                mainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(mainWindow);
+                _ = mainWindow.RegisterWindowCreatedHandler((_, _) => WindowsMicaWindow.Initialize(mainWindow));
             }
 
             _ = mainWindow
@@ -118,8 +118,8 @@ public class Program
 
             if (UsesNativeMica)
             {
-                settingsWindow.Window.WindowCreatedHandler += (_, _) =>
-                    WindowsMicaWindow.Initialize(settingsWindow.Window);
+                _ = settingsWindow.Window.RegisterWindowCreatedHandler((_, _) =>
+                    WindowsMicaWindow.Initialize(settingsWindow.Window));
             }
 
             SettingsWindowNative = settingsWindow.Window;
