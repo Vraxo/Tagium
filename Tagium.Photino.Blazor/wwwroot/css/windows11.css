@@ -693,3 +693,36 @@
 :root[data-native-mica="true"] .tag-view-toggle {
     background: var(--fluent-layer-2);
 }
+
+
+/* Mica workspace surfaces.
+   Keep full-size view roots clear so the native DWM material can reach the
+   WebView. Structural panels sit above it as translucent Fluent layers. */
+:root[data-native-mica="true"] .grid-container,
+:root[data-native-mica="true"] .list-container,
+:root[data-native-mica="true"] .tag-manager-view {
+    background: transparent !important;
+}
+
+/* These component roots live inside panels which already supply their own
+   tinted surface. Leaving them clear avoids stacking two opaque backgrounds. */
+:root[data-native-mica="true"] .sidebar-container,
+:root[data-native-mica="true"] .inspector-container {
+    background: transparent !important;
+}
+
+/* Toolbar and navigation strips remain distinct, but allow the Mica texture
+   to show through instead of repainting a solid theme panel color. */
+:root[data-native-mica="true"] .files-view-toolbar,
+:root[data-native-mica="true"] .breadcrumbs-container,
+:root[data-native-mica="true"] .pagination-bar,
+:root[data-native-mica="true"] .file-list thead,
+:root[data-native-mica="true"] .tag-table th {
+    background: var(--fluent-layer-1) !important;
+}
+
+/* The tag table is an inset work surface, so it keeps a slightly stronger
+   Fluent layer while remaining translucent over the native backdrop. */
+:root[data-native-mica="true"] .tag-table-container {
+    background: var(--fluent-layer-2) !important;
+}
