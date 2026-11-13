@@ -61,7 +61,7 @@ public partial class AppToolbar : IDisposable
     {
         _ = InvokeAsync(() =>
         {
-            IsMenuOpen = false;
+            IsMenuOpen = Program.IsViewOptionsWindowOpen;
             StateHasChanged();
         });
     }
