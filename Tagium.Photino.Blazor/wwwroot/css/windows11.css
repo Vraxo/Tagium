@@ -680,9 +680,23 @@
     background: var(--fluent-layer-1) !important;
 }
 
+/* Structural headers are part of the continuous Mica workspace, not separate
+   opaque panels. Their controls keep their own translucent Fluent surfaces. */
 :root[data-native-mica="true"] .app-toolbar,
-:root[data-native-mica="true"] .status-bar {
-    background: var(--fluent-layer-1) !important;
+:root[data-native-mica="true"] .status-bar,
+:root[data-native-mica="true"] .fluent-navigation,
+:root[data-native-mica="true"] .sidebar-header,
+:root[data-native-mica="true"] .files-view-toolbar,
+:root[data-native-mica="true"] .breadcrumbs-container,
+:root[data-native-mica="true"] .pagination-bar,
+:root[data-native-mica="true"] .file-list thead,
+:root[data-native-mica="true"] .file-list th,
+:root[data-native-mica="true"] .tag-manager-header,
+:root[data-native-mica="true"] .table-toolbar,
+:root[data-native-mica="true"] .tag-table th,
+:root[data-native-mica="true"] .tag-graph-toolbar,
+:root[data-native-mica="true"] .tag-graph-legend {
+    background: transparent !important;
 }
 
 :root[data-native-mica="true"] .splitter {
