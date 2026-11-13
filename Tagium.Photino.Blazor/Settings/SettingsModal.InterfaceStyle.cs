@@ -20,12 +20,12 @@ public partial class SettingsModal
 
         bool requiresRestart = Program.SupportsNativeMica
             && style != Program.StartupInterfaceStyle
-            && (Program.UsesMicaChrome || style == InterfaceStyle.Windows11);
+            && (Program.UsesNativeMica || style == InterfaceStyle.Windows11);
 
         if (requiresRestart)
         {
             Toast.Show(
-                "Interface style saved. Restart Tagium to apply the Windows 11 window composition changes.",
+                "Interface style saved. Restart Tagium to apply the native Windows 11 backdrop.",
                 ToastType.Info);
             return;
         }
