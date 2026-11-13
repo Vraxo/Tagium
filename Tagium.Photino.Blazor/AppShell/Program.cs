@@ -72,6 +72,8 @@ public class Program
 
             if (UsesNativeMica)
             {
+                app.Services.GetRequiredService<WindowsAccentColorService>().Initialize();
+
                 // Apply the native backdrop without changing Photino's decorated window.
                 // Windows retains ownership of the title bar, caption buttons, and resizing.
                 app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(app.MainWindow);

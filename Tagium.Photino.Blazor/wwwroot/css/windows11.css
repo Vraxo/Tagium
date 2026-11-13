@@ -2,6 +2,10 @@
    This is a web-rendered Fluent treatment, not a claim to use native WinUI controls. */
 
 :root[data-interface-style="windows11"] {
+    --primary-color: var(--windows-accent-color, #42a5f5);
+    --primary-hover: color-mix(in srgb, var(--windows-accent-color, #42a5f5) 82%, black);
+    --primary-tint: color-mix(in srgb, var(--windows-accent-color, #42a5f5) 22%, transparent);
+    --text-on-primary: var(--windows-accent-foreground, #121212);
     --fluent-font: "Segoe UI Variable", "Segoe UI", sans-serif;
     --fluent-caption: 12px;
     --fluent-body: 14px;
