@@ -89,6 +89,27 @@
             applyNativeMica: function (enabled) {
                 document.documentElement.dataset.nativeMica = enabled ? 'true' : 'false';
             },
+            applyNativeAcrylic: function (enabled) {
+                if (enabled) {
+                    document.documentElement.dataset.nativeAcrylic = 'true';
+                } else {
+                    delete document.documentElement.dataset.nativeAcrylic;
+                }
+            },
+            getPopupAnchor: function (element) {
+                if (!element) {
+                    return null;
+                }
+
+                const rect = element.getBoundingClientRect();
+                return {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                    scale: window.devicePixelRatio || 1
+                };
+            },
             applyCornerStyle: function (style) {
                 const styles = ['sharp', 'subtle', 'default', 'rounded'];
                 const normalized = String(style || 'Default').toLowerCase();

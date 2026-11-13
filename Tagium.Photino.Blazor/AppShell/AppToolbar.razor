@@ -100,6 +100,7 @@
 
             <div class="view-options-wrapper">
                 <button type="button" class="btn-icon @(IsMenuOpen ? "active" : "")"
+                        @ref="ViewOptionsButton"
                         @onclick="ToggleMenu"
                         title="View options"
                         aria-label="View options"
@@ -107,7 +108,7 @@
                     <i class="fa-solid fa-eye" aria-hidden="true"></i>
                 </button>
 
-                @if (IsMenuOpen)
+                @if (IsMenuOpen && !Program.UsesNativeMica)
                 {
                     <div class="view-menu-overlay" @onclick="CloseMenu"></div>
                     <div class="view-menu-dropdown">
