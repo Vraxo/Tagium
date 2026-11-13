@@ -53,6 +53,9 @@
                 const styles = { Classic: 'classic', MacOS: 'macos', Windows11: 'windows11' };
                 document.documentElement.dataset.interfaceStyle = styles[style] || 'classic';
             },
+            applyNativeMica: function (enabled) {
+                document.documentElement.dataset.nativeMica = enabled ? 'true' : 'false';
+            },
             applyCornerStyle: function (style) {
                 const styles = ['sharp', 'subtle', 'default', 'rounded'];
                 const normalized = String(style || 'Default').toLowerCase();
