@@ -16,7 +16,7 @@ internal static class WindowsMicaWindow
 
     public static void Initialize(PhotinoWindow window)
     {
-        if (!PhotinoWindow.IsWindowsPlatform
+        if (!OperatingSystem.IsWindows()
             || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
         {
             return;
