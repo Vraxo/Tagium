@@ -62,6 +62,14 @@ public class Program
 
             if (UsesNativeMica)
             {
+                // WebView2 supports a transparent controller background independently
+                // of the top-level HWND's layered/chromeless window styles.
+                // Set it before Photino creates the WebView2 controller.
+                Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
+            }
+
+            if (UsesNativeMica)
+            {
                 // Apply the native backdrop without changing Photino's decorated window.
                 // Windows retains ownership of the title bar, caption buttons, and resizing.
                 app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(app.MainWindow);
