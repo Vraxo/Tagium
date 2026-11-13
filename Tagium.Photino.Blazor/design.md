@@ -186,8 +186,8 @@ The optional Windows 11 interface is a Fluent 2-inspired WebView implementation.
 * Mica is a Windows native backdrop, not a CSS blur. On Windows 11 22H2 (build 22621) and later, the host requests `DWMSBT_MAINWINDOW` through `DWMWA_SYSTEMBACKDROP_TYPE` only when the Windows 11 interface style is selected at startup.
 * Do not enable Photino's `Chromeless` or `Transparent` options to obtain Mica. Photino's transparent path requires a chromeless window, which sacrifices the native frame.
 * The DWM backdrop is requested behind the full top-level window, but the client area must also expose the system material. The Windows 11 Mica path therefore calls `DwmExtendFrameIntoClientArea` with negative margins before applying the backdrop attribute. This extends the DWM frame through the client area without changing Photino's normal `WS_OVERLAPPEDWINDOW` styles or replacing the native caption controls. WebView2's transparent default background then allows the DWM material to show through HTML surfaces that are themselves transparent.
-* The no-redirection style and transparent WebView background are enabled only for the Windows 11 interface style. Classic and macOS-inspired modes keep their ordinary opaque rendering and native window frame.
-* If the native style or DWM backdrop request fails, the application retains opaque Fluent surfaces and the standard decorated window. No custom title bar, resize hit-testing, layered-window fallback, or synthetic caption controls are used.
+* The DWM client-area extension and transparent WebView background are enabled only for the Windows 11 interface style. Classic and macOS-inspired modes keep their ordinary opaque rendering and native window frame.
+* If the DWM client-area extension or backdrop request fails, the application retains opaque Fluent surfaces and the standard decorated window. No custom title bar, resize hit-testing, layered-window fallback, or synthetic caption controls are used.
 * Switching into or out of the Windows 11 Mica configuration requires a restart so the native backdrop is reapplied consistently. Other operating systems and unsupported Windows versions retain opaque UI.
 
 
