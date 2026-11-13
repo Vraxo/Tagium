@@ -1,0 +1,60 @@
+.view-options-popup {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    overflow: hidden;
+    background: transparent;
+    color: var(--text-color);
+}
+
+.menu-section {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.menu-section label {
+    padding: 4px 8px;
+    color: var(--text-muted);
+    font-size: var(--fluent-caption, 12px);
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.view-options-popup hr {
+    flex: 0 0 auto;
+    width: 100%;
+    margin: 2px 0;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+
+.view-options-popup .menu-action {
+    display: flex;
+    min-height: 34px;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--fluent-body, 14px);
+    text-align: left;
+    cursor: pointer;
+}
+
+.view-options-popup .menu-action:hover {
+    background: var(--surface-hover);
+}
+
+.view-options-popup .menu-action:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+}
