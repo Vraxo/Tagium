@@ -61,14 +61,14 @@ public class Program
 
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
             StartupInterfaceStyle = settings.Current.InterfaceStyle;
-            SupportsNativeMica = PhotinoWindow.IsWindowsPlatform
+            SupportsNativeMica = OperatingSystem.IsWindows()
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
             UsesNativeMica = SupportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
 
             if (UsesNativeMica)
             {
                 app.Services.GetRequiredService<WindowsAccentColorService>().Initialize();
-                _ = mainWindow.RegisterWindowCreatedHandler((_, _) => WindowsMicaWindow.Initialize(mainWindow));
+                _ = mainWindow.RegisterCreatedHandler((_, _) => WindowsMicaWindow.Initialize(mainWindow));
             }
 
             _ = mainWindow
@@ -118,7 +118,7 @@ public class Program
 
             if (UsesNativeMica)
             {
-                _ = settingsWindow.Window.RegisterWindowCreatedHandler((_, _) =>
+                _ = settingsWindow.Window.RegisterCreatedHandler((_, _) =>
                     WindowsMicaWindow.Initialize(settingsWindow.Window));
             }
 
