@@ -188,3 +188,11 @@ The optional Windows 11 interface is a Fluent 2-inspired WebView implementation.
 * If DWM rejects the backdrop request, the application continues with its ordinary decorated window and opaque Fluent surfaces. There is no custom title bar, resize hit-testing, layered-window fallback, or synthetic caption controls.
 * Switching into or out of the Windows 11 Mica configuration requires a restart so the native backdrop is reapplied consistently. Classic and macOS-inspired modes retain the same native Photino window frame without the Mica request.
 * Other operating systems, unsupported Windows versions, other interface styles, and DWM failures retain opaque UI. No CSS `backdrop-filter` is used as a substitute for the native material.
+
+
+### Native Mica with the decorated Photino window
+
+* The Windows 11 interface keeps Photino's standard decorated WS_OVERLAPPEDWINDOW; it does not enable Chromeless, Transparent, or WS_EX_LAYERED.
+* Before Photino creates the WebView2 controller, the host sets the documented WEBVIEW2_DEFAULT_BACKGROUND_COLOR=00000000 environment variable. WebView2's transparent default background renders host-window content behind HTML that has transparent backgrounds.
+* DWM receives DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_MAINWINDOW, which requests Mica behind the entire top-level window bounds. The WebView2 background and outer HTML surfaces are transparent only when this native Mica configuration is active.
+* This is a native-composition experiment, not a CSS imitation. It requires Windows 11 runtime validation because CI cannot confirm that the Photino HWND, WebView2 controller, and DWM backdrop compose correctly together. If the transparent WebView path is rejected by the runtime, the application should fall back to the ordinary opaque Fluent surfaces without changing window chrome.
