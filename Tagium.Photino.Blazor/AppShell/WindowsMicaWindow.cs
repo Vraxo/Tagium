@@ -22,21 +22,53 @@ internal static class WindowsMicaWindow
             return;
         }
 
+        IntPtr windowHandle = window.WindowHandle;
+        Margins margins = new()
+        {
+            Left = -1,
+            Right = -1,
+            Top = -1,
+            Bottom = -1
+        };
+
+        int frameResult = DwmExtendFrameIntoClientArea(windowHandle, ref margins);
+        if (frameResult < 0)
+        {
+            Log.Warning(
+                "Windows Mica could not extend the DWM frame into the client area. HRESULT 0x{HResult:X8}.",
+                frameResult);
+        }
+
         int backdropType = DwmsbtMainWindow;
-        int result = DwmSetWindowAttribute(
-            window.WindowHandle,
+        int backdropResult = DwmSetWindowAttribute(
+            windowHandle,
             DwmwaSystemBackdropType,
             ref backdropType,
             sizeof(int));
 
-        IsActive = result >= 0;
-        if (!IsActive)
+        if (backdropResult < 0)
         {
             Log.Warning(
                 "Windows Mica could not be enabled. DwmSetWindowAttribute returned HRESULT 0x{HResult:X8}.",
-                result);
+                backdropResult);
         }
+
+        IsActive = frameResult >= 0 && backdropResult >= 0;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Margins
+    {
+        public int Left;
+        public int Right;
+        public int Top;
+        public int Bottom;
+    }
+
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmExtendFrameIntoClientArea(
+        IntPtr windowHandle,
+        ref Margins margins);
 
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(
