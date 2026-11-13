@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Photino.Blazor;
 using Photino.NET;
 using Serilog;
@@ -6,18 +6,23 @@ using Serilog.Events;
 using Tagium.Core;
 using Tagium.Core.Settings;
 using Tagium.Photino.Blazor;
+using Tagium.Photino.Blazor.Settings;
 
 namespace Tagium.Photino.Blazor.AppShell;
 
 public class Program
 {
-    public static PhotinoWindow? MainWindow { get; set; }
+    public static PhotinoWindow? MainWindow { get; private set; }
+
+    public static PhotinoBlazorApp? Application { get; private set; }
 
     public static InterfaceStyle StartupInterfaceStyle { get; private set; }
 
     public static bool SupportsNativeMica { get; private set; }
 
     public static bool UsesNativeMica { get; private set; }
+
+    private static bool _settingsWindowOpen;
 
     [STAThread]
     [Obsolete]
@@ -29,10 +34,6 @@ public class Program
         {
             Log.Information("Starting Tagium Application...");
 
-            // Photino may create its WebView2 controller during app construction.
-            // Configure the transparent default before any WebView2 environment/controller exists.
-            // Other interface styles keep their opaque page backgrounds, so this does not
-            // change their appearance; only Windows 11 Mica mode exposes the host backdrop.
             if (PhotinoWindow.IsWindowsPlatform
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
             {
@@ -40,31 +41,22 @@ public class Program
             }
 
             PhotinoBlazorAppBuilder appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
-
-            // Register Services
             ServiceRegistrar.ConfigureServices(appBuilder.Services);
-
-            // Register Root Component
             appBuilder.RootComponents.Add<App>("#app");
 
             PhotinoBlazorApp app = appBuilder.Build();
+            Application = app;
 
-            // Serve video previews over loopback HTTP so WebView can seek with byte ranges.
             using LocalVideoServer videoServer = app.Services.GetRequiredService<LocalVideoServer>();
             videoServer.Start();
 
-            // Pass ServiceProvider to static SchemeHandler
             SchemeHandlers.ServiceProvider = app.Services;
 
-            // Pass MainWindow to static property for runtime accessibility
-            MainWindow = app.MainWindow;
+            PhotinoBlazorWindow mainBlazorWindow = app.MainBlazorWindow;
+            MainWindow = mainBlazorWindow.Window;
+            _ = MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
 
-            // Custom Scheme for Thumbnails and Previews
-            _ = app.MainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
-
-            // Load saved zoom factor on startup
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
-            int savedZoom = settings.Current.Zoom;
             StartupInterfaceStyle = settings.Current.InterfaceStyle;
             SupportsNativeMica = PhotinoWindow.IsWindowsPlatform
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
@@ -73,18 +65,15 @@ public class Program
             if (UsesNativeMica)
             {
                 app.Services.GetRequiredService<WindowsAccentColorService>().Initialize();
-
-                // Apply the native backdrop without changing Photino's decorated window.
-                // Windows retains ownership of the title bar, caption buttons, and resizing.
-                app.MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(app.MainWindow);
+                MainWindow.WindowCreatedHandler += (_, _) => WindowsMicaWindow.Initialize(MainWindow);
             }
 
-            _ = app.MainWindow
+            _ = MainWindow
                 .SetTitle("Tagium")
                 .SetUseOsDefaultSize(false)
                 .SetSize(1200, 800)
                 .Center()
-                .SetZoom(savedZoom)
+                .SetZoom(settings.Current.Zoom)
                 .SetLogVerbosity(0);
 
             app.Run();
@@ -97,6 +86,51 @@ public class Program
         {
             Log.CloseAndFlush();
         }
+    }
+
+    public static void OpenSettingsWindow()
+    {
+        if (_settingsWindowOpen || Application is null)
+        {
+            return;
+        }
+
+        _settingsWindowOpen = true;
+
+        try
+        {
+            SettingsManager settings = Application.Services.GetRequiredService<SettingsManager>();
+            PhotinoBlazorWindow settingsWindow = Application.CreateWindow<SettingsWindow>(
+                "#app",
+                configure: window =>
+                {
+                    window
+                        .SetTitle("Tagium Settings")
+                        .SetUseOsDefaultSize(false)
+                        .SetSize(820, 720)
+                        .Center()
+                        .SetZoom(settings.Current.Zoom)
+                        .SetLogVerbosity(0);
+                });
+
+            if (UsesNativeMica)
+            {
+                settingsWindow.Window.WindowCreatedHandler += (_, _) =>
+                    WindowsMicaWindow.Initialize(settingsWindow.Window);
+            }
+
+            settingsWindow.Show();
+        }
+        catch
+        {
+            _settingsWindowOpen = false;
+            throw;
+        }
+    }
+
+    public static void SettingsWindowClosed()
+    {
+        _settingsWindowOpen = false;
     }
 
     private static void InitializeLogger()
