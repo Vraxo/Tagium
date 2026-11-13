@@ -22,7 +22,7 @@ internal static class WindowsMicaWindow
             return;
         }
 
-        IntPtr windowHandle = window.WindowHandle;
+        IntPtr windowHandle = window.HWND;
         Margins margins = new()
         {
             Left = -1,
