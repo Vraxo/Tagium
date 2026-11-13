@@ -7,7 +7,7 @@ namespace Tagium.Photino.Blazor.Settings;
 
 public partial class SettingsModal
 {
-    private async Task UpdateInterfaceStyle(ChangeEventArgs args)
+    private void UpdateInterfaceStyle(ChangeEventArgs args)
     {
         if (!Enum.TryParse(args.Value?.ToString(), out InterfaceStyle style)
             || !Enum.IsDefined(style))
