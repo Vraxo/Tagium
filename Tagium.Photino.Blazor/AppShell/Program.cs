@@ -19,7 +19,12 @@ public class Program
 
     public static PhotinoWindow? SettingsWindowNative { get; private set; }
 
-    public static InterfaceStyle StartupInterfaceStyle { get; private set; }
+    public static InterfaceStyle ActiveInterfaceStyle { get; private set; }
+
+    public static void SetActiveInterfaceStyle(InterfaceStyle style)
+    {
+        ActiveInterfaceStyle = style;
+    }
 
     public static bool SupportsNativeMica { get; private set; }
 
@@ -67,10 +72,10 @@ public class Program
             _ = mainWindow.RegisterCustomSchemeHandler("tagium", SchemeHandlers.HandleTagiumScheme);
 
             SettingsManager settings = app.Services.GetRequiredService<SettingsManager>();
-            StartupInterfaceStyle = settings.Current.InterfaceStyle;
+            ActiveInterfaceStyle = settings.Current.InterfaceStyle;
             SupportsNativeMica = OperatingSystem.IsWindows()
                 && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
-            UsesNativeMica = SupportsNativeMica && StartupInterfaceStyle == InterfaceStyle.Windows11;
+            UsesNativeMica = SupportsNativeMica && ActiveInterfaceStyle == InterfaceStyle.Windows11;
 
             if (UsesNativeMica)
             {

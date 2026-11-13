@@ -54,7 +54,7 @@
         await ThemeService.InitializeAsync(JS);
         await ThemeService.ApplyThemeAsync(JS, Settings.Current.SelectedTheme);
         await JS.InvokeVoidAsync("themeManager.applyCornerStyle", Settings.Current.CornerStyle.ToString());
-        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.StartupInterfaceStyle.ToString());
+        await JS.InvokeVoidAsync("themeManager.applyInterfaceStyle", Program.ActiveInterfaceStyle.ToString());
         await JS.InvokeVoidAsync("themeManager.applyWindowsAccentColor", WindowsAccentColor.CurrentColor);
         await JS.InvokeVoidAsync("themeManager.applyNativeAcrylic", WindowsAcrylicWindow.IsActive);
     }

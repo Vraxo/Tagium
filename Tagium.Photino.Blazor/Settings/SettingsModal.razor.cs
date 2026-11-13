@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Components;
-using Microsoft.JSInterop;
 using Tagium.Core;
 using Tagium.Core.Library;
 using Tagium.Core.Maintenance;
@@ -22,7 +21,7 @@ public partial class SettingsModal : IDisposable
     [Inject] private ToastService Toast { get; set; } = default!;
     [Inject] private ModalService ModalService { get; set; } = default!;
     [Inject] private ThemeService ThemeService { get; set; } = default!;
-    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private AppearanceService Appearance { get; set; } = default!;
 
     private enum SettingsTab { Folders, Appearance, Data }
     private SettingsTab ActiveTab { get; set; } = SettingsTab.Folders;
@@ -175,17 +174,17 @@ public partial class SettingsModal : IDisposable
         Settings.Update(s => s.TagSidebarStyle = mode);
     }
 
-    private async Task UpdateMacOSAppearance(ChangeEventArgs args)
+    private void UpdateMacOSAppearance(ChangeEventArgs args)
     {
         bool enabled = args.Value is bool value && value;
         Settings.Update(s => s.MacOSAppearance = enabled);
-        await JS.InvokeVoidAsync("themeManager.applyMacOSAppearance", enabled);
+        Appearance.NotifyChanged();
     }
 
-    private async Task UpdateCornerStyle(InterfaceCornerStyle style)
+    private void UpdateCornerStyle(InterfaceCornerStyle style)
     {
         Settings.Update(s => s.CornerStyle = style);
-        await JS.InvokeVoidAsync("themeManager.applyCornerStyle", style.ToString());
+        Appearance.NotifyChanged();
     }
 
     private static string GetCornerStylePreviewClass(InterfaceCornerStyle style)
@@ -210,7 +209,7 @@ public partial class SettingsModal : IDisposable
         Settings.Update(s => s.EmojiPreference = set);
     }
 
-    private async Task OnThemeChanged(ChangeEventArgs e)
+    private void OnThemeChanged(ChangeEventArgs e)
     {
         string? themeName = e.Value?.ToString();
         if (string.IsNullOrEmpty(themeName))
@@ -219,7 +218,7 @@ public partial class SettingsModal : IDisposable
         }
 
         Settings.Update(s => s.SelectedTheme = themeName);
-        await ThemeService.ApplyThemeAsync(JS, themeName);
+        Appearance.NotifyChanged();
     }
 
     private void OnZoomChanged(ChangeEventArgs e)

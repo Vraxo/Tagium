@@ -2,9 +2,7 @@
 @inherits LayoutComponentBase
 
 @{
-    InterfaceStyle activeInterfaceStyle = Program.UsesNativeMica
-        ? Program.StartupInterfaceStyle
-        : SettingsManager.Current.InterfaceStyle;
+    InterfaceStyle activeInterfaceStyle = Program.ActiveInterfaceStyle;
 }
 
 <style>
