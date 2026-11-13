@@ -744,3 +744,65 @@
 :root[data-native-mica="true"] .inspector-container {
     border-left: 0 !important;
 }
+
+/* Native Mica control surfaces.
+   Keep interactive controls legible against the shared Mica base, but soften
+   their outlines so they read as Fluent controls rather than boxed cards. */
+:root[data-native-mica="true"] .btn,
+:root[data-native-mica="true"] .search-input,
+:root[data-native-mica="true"] .tag-search-input,
+:root[data-native-mica="true"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root[data-native-mica="true"] select,
+:root[data-native-mica="true"] textarea {
+    border-color: color-mix(in srgb, var(--border-color) 68%, transparent) !important;
+    background: var(--fluent-layer-2) !important;
+    box-shadow: none;
+}
+
+:root[data-native-mica="true"] .btn:hover,
+:root[data-native-mica="true"] .search-input:hover,
+:root[data-native-mica="true"] .tag-search-input:hover,
+:root[data-native-mica="true"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
+:root[data-native-mica="true"] select:hover,
+:root[data-native-mica="true"] textarea:hover {
+    background: var(--fluent-layer-3) !important;
+}
+
+:root[data-native-mica="true"] .btn:active {
+    background: var(--surface-hover) !important;
+}
+
+:root[data-native-mica="true"] .btn:focus-visible,
+:root[data-native-mica="true"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus-visible,
+:root[data-native-mica="true"] select:focus-visible,
+:root[data-native-mica="true"] textarea:focus-visible {
+    border-color: var(--primary-color) !important;
+}
+
+:root[data-native-mica="true"] .btn-primary,
+:root[data-native-mica="true"] .btn-primary:hover {
+    border-color: var(--primary-color) !important;
+    background: var(--primary-color) !important;
+    color: var(--text-on-primary) !important;
+}
+
+:root[data-native-mica="true"] .btn-icon,
+:root[data-native-mica="true"] .menu-action,
+:root[data-native-mica="true"] .page-btn,
+:root[data-native-mica="true"] .tab-btn {
+    border-color: transparent;
+    background: transparent;
+}
+
+:root[data-native-mica="true"] .btn-icon:hover,
+:root[data-native-mica="true"] .menu-action:hover,
+:root[data-native-mica="true"] .page-btn:hover,
+:root[data-native-mica="true"] .tab-btn:hover {
+    background: var(--surface-hover);
+}
+
+:root[data-native-mica="true"] .btn-icon.active,
+:root[data-native-mica="true"] .tab-btn.active {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--primary-color) 14%, var(--fluent-layer-1));
+}
