@@ -25,9 +25,7 @@ internal sealed class WindowsAccentColorService : IDisposable
 
     public void Initialize()
     {
-        if (_initialized
-            || !Photino.NET.PhotinoWindow.IsWindowsPlatform
-            || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
+        if (_initialized || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
         {
             return;
         }
