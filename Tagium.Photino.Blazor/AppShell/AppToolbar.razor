@@ -108,7 +108,7 @@
                     <i class="fa-solid fa-eye" aria-hidden="true"></i>
                 </button>
 
-                @if (IsMenuOpen)
+                @if (IsMenuOpen && !Program.UsesNativeMica)
                 {
                     <div class="view-menu-overlay" @onclick="CloseMenu"></div>
                     <div class="view-menu-dropdown">
