@@ -24,6 +24,7 @@ public partial class TagSelector
     private int _activeIndex = 0;
     private bool _isOpen;
     private bool _isApplying;
+    private bool _scrollActiveAfterRender;
 
     private string _searchText = "";
     public string SearchText
@@ -114,6 +115,24 @@ public partial class TagSelector
         _searchText = "";
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_scrollActiveAfterRender)
+        {
+            return;
+        }
+
+        _scrollActiveAfterRender = false;
+        try
+        {
+            await JS.InvokeVoidAsync("libraryNav.scrollActiveTag");
+        }
+        catch (JSException)
+        {
+            // Scrolling is a convenience; it must not interrupt tag selection.
+        }
+    }
+
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape")
@@ -141,7 +160,7 @@ public partial class TagSelector
             {
                 _activeIndex = maxCount - 1;
             }
-            await ScrollActiveItemIntoView();
+            _scrollActiveAfterRender = true;
         }
         else if (e.Key is "ArrowUp" or "Up")
         {
@@ -150,7 +169,7 @@ public partial class TagSelector
             {
                 _activeIndex = 0;
             }
-            await ScrollActiveItemIntoView();
+            _scrollActiveAfterRender = true;
         }
         else if (e.Key == "Enter")
         {
@@ -162,18 +181,6 @@ public partial class TagSelector
             {
                 await CreateAndSelectTag();
             }
-        }
-    }
-
-    private async Task ScrollActiveItemIntoView()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("libraryNav.scrollActiveTag");
-        }
-        catch
-        {
-            // Gracefully catch evaluation context errors during rapid rendering transitions
         }
     }
 
