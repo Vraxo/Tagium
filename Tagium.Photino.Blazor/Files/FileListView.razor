@@ -34,6 +34,7 @@
                 <tr @key="file.Id"
                     class="file-row @(isSelected ? "selected" : "")"
                     role="row"
+                    aria-haspopup="menu"
                     aria-selected="@(isSelected ? "true" : "false")"
                     tabindex="@(tabStopId == file.Id ? 0 : -1)"
                     data-id="@file.Id"
