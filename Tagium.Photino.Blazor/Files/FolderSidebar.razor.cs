@@ -10,6 +10,7 @@ public partial class FolderSidebar : IDisposable
 {
     [Inject] private AppState AppState { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
+    [Inject] private ContextMenuService ContextMenu { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
     private List<FolderNode> _rootNodes = [];
@@ -178,6 +179,12 @@ public partial class FolderSidebar : IDisposable
     /// </summary>
     private void OnRowKeyDown(KeyboardEventArgs e, FolderNode node)
     {
+        if ((e.Key == "F10" && e.ShiftKey) || e.Key == "ContextMenu")
+        {
+            ContextMenu.ShowFolder(node.Path, node.Name, 0, 0, isKeyboardInvocation: true);
+            return;
+        }
+
         IReadOnlyList<FolderRow> rows = Rows;
 
         switch (e.Key)
@@ -230,6 +237,16 @@ public partial class FolderSidebar : IDisposable
                 SelectFolder(node);
                 break;
         }
+    }
+
+    public void OpenContextMenu(MouseEventArgs e, FolderNode node)
+    {
+        ContextMenu.ShowFolder(
+            node.Path,
+            node.Name,
+            e.ClientX,
+            e.ClientY,
+            isKeyboardInvocation: false);
     }
 
     private void FocusRow(FolderRow? row)
