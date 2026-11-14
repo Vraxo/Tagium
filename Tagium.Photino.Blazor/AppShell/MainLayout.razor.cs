@@ -143,17 +143,12 @@ public partial class MainLayout : IDisposable
     }
 
     [JSInvokable]
-    public async Task FocusTagPicker(string? focusedFileId)
+    public void PrepareTagPicker(string? focusedFileId)
     {
         if (Guid.TryParse(focusedFileId, out Guid fileId)
             && !AppState.SelectedFileIds.Contains(fileId))
         {
             AppState.SelectFile(fileId, multiSelect: false, rangeSelect: false);
-        }
-
-        if (AppState.SelectedFileIds.Count > 0)
-        {
-            await JS.InvokeVoidAsync("libraryNav.focusTagPicker");
         }
     }
 
