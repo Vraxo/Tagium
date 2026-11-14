@@ -257,6 +257,33 @@ window.libraryNav = {
         return false;
     },
 
+    focusPageFile: async function (direction) {
+        for (let attempt = 0; attempt < 12; attempt++) {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+
+            const container = document.querySelector('#file-grid-container, #file-list-container');
+            if (!container) {
+                continue;
+            }
+
+            const selector = container.id === 'file-grid-container' ? '.file-card' : '.file-row';
+            const items = Array.from(container.querySelectorAll(selector))
+                .filter(item => this.isVisible(item));
+
+            if (items.length === 0) {
+                continue;
+            }
+
+            const target = direction > 0 ? items[0] : items[items.length - 1];
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            target.focus();
+            this.lastFileElement = target;
+            return true;
+        }
+
+        return false;
+    },
+
     focusSelectedFile: async function () {
         for (let attempt = 0; attempt < 12; attempt++) {
             await new Promise(resolve => requestAnimationFrame(resolve));
@@ -336,6 +363,19 @@ window.libraryNav = {
         }
 
         if (!target || target === current) {
+            const currentIndex = items.indexOf(current);
+            const isFileList = containerSelector === '#file-list-container';
+
+            if (currentIndex === 0
+                && (key === 'ArrowUp' || (!isFileList && key === 'ArrowLeft'))) {
+                return '__PREVIOUS_PAGE__';
+            }
+
+            if (currentIndex === items.length - 1
+                && (key === 'ArrowDown' || (!isFileList && key === 'ArrowRight'))) {
+                return '__NEXT_PAGE__';
+            }
+
             return null;
         }
 
