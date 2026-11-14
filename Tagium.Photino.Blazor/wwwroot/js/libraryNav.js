@@ -243,7 +243,7 @@ window.libraryNav = {
     },
 
     focusTagPicker: async function () {
-        for (let attempt = 0; attempt < 12; attempt++) {
+        for (let attempt = 0; attempt < 60; attempt++) {
             await new Promise(resolve => requestAnimationFrame(resolve));
             const input = document.querySelector('#inspector-panel .tag-selector-input');
 
