@@ -57,7 +57,11 @@ window.globalShortcuts = {
             if (e.key.toLowerCase() === 't') {
                 e.preventDefault();
                 const focusedFileId = fileItem?.getAttribute('data-id') ?? null;
-                dotNetRef.invokeMethodAsync('FocusTagPicker', focusedFileId);
+                dotNetRef.invokeMethodAsync('PrepareTagPicker', focusedFileId)
+                    .then(() => window.libraryNav?.focusTagPicker())
+                    .catch(() => {
+                        // A closing WebView can invalidate the .NET callback.
+                    });
                 return;
             }
 
