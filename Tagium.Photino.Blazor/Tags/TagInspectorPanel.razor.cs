@@ -21,6 +21,7 @@ public partial class TagInspectorPanel : IDisposable
     private List<Tag> _activeTags = [];
     private List<PartialTagAssignment> _partialTags = [];
     private List<Tag> _availableTags = [];
+    private Dictionary<Guid, int> _assignmentCounts = [];
     private List<Guid> _fileIdsList = [];
 
     protected override void OnInitialized()
@@ -42,6 +43,7 @@ public partial class TagInspectorPanel : IDisposable
             _activeTags = [];
             _partialTags = [];
             _availableTags = [];
+            _assignmentCounts = [];
             return;
         }
 
@@ -50,16 +52,18 @@ public partial class TagInspectorPanel : IDisposable
             List<Tag> allTags = Library.GetTags();
             List<Tag> active;
             List<PartialTagAssignment> partial;
+            Dictionary<Guid, int> assignmentCounts;
 
             if (ids.Count == 1)
             {
                 FileEntry? file = Library.GetFileWithTagsById(ids[0]);
                 active = file?.Tags ?? [];
+                assignmentCounts = active.ToDictionary(tag => tag.Id, _ => 1);
                 partial = [];
             }
             else
             {
-                Dictionary<Guid, int> assignmentCounts = Library.GetTagAssignmentCounts(ids);
+                assignmentCounts = Library.GetTagAssignmentCounts(ids);
                 active = TagOrdering.ByName(allTags.Where(tag => assignmentCounts.GetValueOrDefault(tag.Id) == ids.Count));
 
                 List<Tag> partialTags = TagOrdering.ByName(allTags.Where(tag =>
@@ -69,17 +73,12 @@ public partial class TagInspectorPanel : IDisposable
                     .ToList();
             }
 
-            HashSet<Guid> activeIds = active.Select(tag => tag.Id).ToHashSet();
-            HashSet<Guid> partialIds = partial.Select(assignment => assignment.Tag.Id).ToHashSet();
-            List<Tag> available = allTags
-                .Where(tag => !activeIds.Contains(tag.Id) && !partialIds.Contains(tag.Id))
-                .ToList();
-
             await InvokeAsync(() =>
             {
                 _activeTags = TagOrdering.ByName(active);
                 _partialTags = partial;
-                _availableTags = available;
+                _availableTags = TagOrdering.ByName(allTags);
+                _assignmentCounts = assignmentCounts;
                 StateHasChanged();
             });
         });
@@ -93,9 +92,29 @@ public partial class TagInspectorPanel : IDisposable
     private async Task OnTagSelected(Guid tagId)
     {
         List<Guid> ids = _fileIdsList.ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        int assignedCount = ids.Count == 1
+            ? Library.GetFileWithTagsById(ids[0])?.Tags.Count(tag => tag.Id == tagId) ?? 0
+            : Library.GetTagAssignmentCounts(ids).GetValueOrDefault(tagId);
+
         await Task.Run(() =>
         {
-            if (ids.Count == 1)
+            if (assignedCount == ids.Count)
+            {
+                if (ids.Count == 1)
+                {
+                    Library.RemoveTagFromFile(ids[0], tagId);
+                }
+                else
+                {
+                    Library.RemoveTagFromFiles(ids, tagId);
+                }
+            }
+            else if (ids.Count == 1)
             {
                 Library.AddTagToFile(ids[0], tagId);
             }
