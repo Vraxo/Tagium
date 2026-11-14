@@ -23,6 +23,7 @@ public partial class TagSelector
     private int _recentTagCount;
     private int _activeIndex = 0;
     private bool _isOpen;
+    private bool _isApplying;
 
     private string _searchText = "";
     public string SearchText
@@ -178,10 +179,23 @@ public partial class TagSelector
 
     private async Task SelectTag(Guid id)
     {
-        await OnTagSelected.InvokeAsync(id);
-        Settings.RecordRecentTag(id);
-        SearchText = "";
-        UpdateFilter();
+        if (_isApplying)
+        {
+            return;
+        }
+
+        _isApplying = true;
+        try
+        {
+            await OnTagSelected.InvokeAsync(id);
+            Settings.RecordRecentTag(id);
+            SearchText = "";
+            UpdateFilter();
+        }
+        finally
+        {
+            _isApplying = false;
+        }
     }
 
     private async Task CreateAndSelectTag()
