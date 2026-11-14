@@ -130,6 +130,40 @@ public class AppState : IDisposable
         NotifyStateChanged();
     }
 
+    /// <summary>
+    /// Moves to the adjacent page and selects its first or last file so keyboard focus can
+    /// continue naturally across pagination boundaries.
+    /// </summary>
+    public bool MovePage(int direction)
+    {
+        if (direction == 0 || TotalPages == 0)
+        {
+            return false;
+        }
+
+        int targetPage = Math.Clamp(CurrentPage + Math.Sign(direction), 1, TotalPages);
+        if (targetPage == CurrentPage)
+        {
+            return false;
+        }
+
+        CurrentPage = targetPage;
+        List<FileEntry> pageFiles = GetPagedFiles().ToList();
+        FileEntry? target = direction > 0 ? pageFiles.FirstOrDefault() : pageFiles.LastOrDefault();
+
+        SelectedFileIds.Clear();
+        _selectionAnchor = target?.Id;
+
+        if (target is not null)
+        {
+            _ = SelectedFileIds.Add(target.Id);
+        }
+
+        NotifyStateChanged();
+        NotifySelectionChanged();
+        return target is not null;
+    }
+
     public void SetPageSize(int pageSize)
     {
         if (!FilePagination.IsSupportedPageSize(pageSize) || pageSize == PageSize)
