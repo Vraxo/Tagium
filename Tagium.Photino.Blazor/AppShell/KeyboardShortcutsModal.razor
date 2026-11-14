@@ -1,6 +1,7 @@
 @namespace Tagium.Photino.Blazor.AppShell
 @inject AppState AppState
 @inject ModalService ModalService
+@inject SettingsManager SettingsManager
 
 <div class="keyboard-shortcuts">
     <p class="keyboard-shortcuts-intro">
@@ -23,8 +24,16 @@
         {
             <section class="keyboard-shortcut-group">
                 <h4>File browsing</h4>
-                <div class="keyboard-shortcut-row"><span>Move between files</span><kbd>Arrow keys</kbd></div>
-                <div class="keyboard-shortcut-row"><span>Extend selection</span><kbd>Shift + Arrows</kbd></div>
+                @if (SettingsManager.Current.FileViewMode == FileViewMode.Grid)
+                {
+                    <div class="keyboard-shortcut-row"><span>Move between files</span><kbd>Arrow keys</kbd></div>
+                    <div class="keyboard-shortcut-row"><span>Extend selection</span><kbd>Shift + Arrows</kbd></div>
+                }
+                else
+                {
+                    <div class="keyboard-shortcut-row"><span>Previous / next file</span><kbd>↑ / ↓</kbd></div>
+                    <div class="keyboard-shortcut-row"><span>Extend selection</span><kbd>Shift + ↑ / ↓</kbd></div>
+                }
                 <div class="keyboard-shortcut-row"><span>First / last file on page</span><kbd>Home / End</kbd></div>
                 <div class="keyboard-shortcut-row"><span>Previous / next page</span><kbd>Page Up / Down</kbd></div>
                 <div class="keyboard-shortcut-row"><span>Extend selection across pages</span><kbd>Shift + Page Up / Down</kbd></div>
