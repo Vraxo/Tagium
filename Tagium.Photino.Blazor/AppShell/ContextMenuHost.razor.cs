@@ -77,6 +77,7 @@ public partial class ContextMenuHost : IDisposable
 
     private void HandleShow()
     {
+        _restoreFocusAfterRender = false;
         _focusMenuAfterRender = true;
         _ = InvokeAsync(StateHasChanged);
     }
