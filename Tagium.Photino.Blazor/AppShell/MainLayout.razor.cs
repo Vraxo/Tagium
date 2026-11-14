@@ -104,9 +104,21 @@ public partial class MainLayout : IDisposable
                 }
                 break;
             case "t":
-                AppState.SwitchView(AppState.CurrentView == AppView.Files
+                AppState.SwitchView(AppState.CurrentView == AppView.Tags
                     ? AppView.Files
                     : AppView.Tags);
+                break;
+            case "1":
+                AppState.SwitchView(AppView.Files);
+                await JS.InvokeVoidAsync("libraryNav.focusView", "files");
+                break;
+            case "2":
+                AppState.SwitchView(AppView.Folders);
+                await JS.InvokeVoidAsync("libraryNav.focusView", "folders");
+                break;
+            case "3":
+                AppState.SwitchView(AppView.Tags);
+                await JS.InvokeVoidAsync("libraryNav.focusView", "tags");
                 break;
             case "r":
                 await ScanService.ScanAllAsync();
@@ -128,6 +140,51 @@ public partial class MainLayout : IDisposable
     public void HandleWheelZoom(int direction)
     {
         AdjustZoom(direction);
+    }
+
+    [JSInvokable]
+    public async Task FocusTagPicker(string? focusedFileId)
+    {
+        if (AppState.SelectedFileIds.Count == 0
+            && Guid.TryParse(focusedFileId, out Guid fileId))
+        {
+            AppState.SelectFile(fileId, multiSelect: false, rangeSelect: false);
+        }
+
+        if (AppState.SelectedFileIds.Count > 0)
+        {
+            await JS.InvokeVoidAsync("libraryNav.focusTagPicker");
+        }
+    }
+
+    [JSInvokable]
+    public bool NavigateFilePage(int direction)
+    {
+        return AppState.MovePage(direction);
+    }
+
+    [JSInvokable]
+    public void SetQuickRating(int rating, string? focusedFileId)
+    {
+        if (rating is < 0 or > 5)
+        {
+            return;
+        }
+
+        if (AppState.SelectedFileIds.Count == 0
+            && Guid.TryParse(focusedFileId, out Guid fileId))
+        {
+            AppState.SelectFile(fileId, multiSelect: false, rangeSelect: false);
+        }
+
+        if (AppState.SelectedFileIds.Count == 0)
+        {
+            return;
+        }
+
+        Library.SetRatings(
+            AppState.SelectedFileIds.ToList(),
+            rating == 0 ? null : rating);
     }
 
     [JSInvokable]
