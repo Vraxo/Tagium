@@ -96,9 +96,17 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | `Ctrl+F` | Focus search bar |
 | `Ctrl+R` | Rescan library folders |
 | `Ctrl+Z` | Undo last tag change |
-| `Ctrl+A` | Select all files on current page (grid view) |
-| `Arrow Keys` | Move selection across files (grid view) |
-| `Enter` | Open selected file in default app (grid view) |
+| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Switch to Files, Folders, or Tags |
+| `F6` / `Shift+F6` | Cycle focus through search, sidebar, workspace, and inspector |
+| `T` | Focus the tag picker for the focused or selected file(s) |
+| `Arrow Keys` | Move between files; in the folder tree, navigate and expand/collapse folders |
+| `Shift+Arrow Keys` | Extend file selection while navigating |
+| `Space` | Toggle selection for the focused file |
+| `Page Up` / `Page Down` | Move to the previous or next file page |
+| `1`–`5` / `0` | Set rating / clear rating for the focused file or selection |
+| `Enter` | Open the focused file in its default app |
+| `Escape` | Clear file selection or close the tag picker and return to the file |
+| `Ctrl+Z` | Undo the last tag or rating change |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Zoom in, zoom out, or reset zoom (`Ctrl+Scroll` also supported) |
 
 ## 🗂️ Project Layout
