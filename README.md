@@ -100,9 +100,11 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | `F6` / `Shift+F6` | Cycle focus through search, sidebar, workspace, and inspector |
 | `T` | Focus the tag picker for the focused or selected file(s) |
 | `Arrow Keys` | Move between files; in the folder tree, navigate and expand/collapse folders |
-| `Shift+Arrow Keys` | Extend file selection while navigating |
+| `Shift+Arrow Keys` | Extend file selection continuously, including across pages |
 | `Space` | Toggle selection for the focused file |
 | `Page Up` / `Page Down` | Move to the previous or next file page |
+| `Shift+Page Up` / `Shift+Page Down` | Extend selection across the page boundary |
+| `Arrow Up/Left` at the first file or `Arrow Down/Right` at the last file | Continue into the adjacent file page |
 | `1`–`5` / `0` | Set rating / clear rating for the focused file or selection |
 | `Enter` | Open the focused file in its default app |
 | `Escape` | Clear file selection or close the tag picker and return to the file |

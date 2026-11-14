@@ -132,9 +132,10 @@ public class AppState : IDisposable
 
     /// <summary>
     /// Moves to the adjacent page and selects its first or last file so keyboard focus can
-    /// continue naturally across pagination boundaries.
+    /// continue naturally across pagination boundaries. Shift-navigation extends the existing
+    /// selection anchor across the complete filtered result set.
     /// </summary>
-    public bool MovePage(int direction)
+    public bool MovePage(int direction, bool extendSelection = false)
     {
         if (direction == 0 || TotalPages == 0)
         {
@@ -151,17 +152,15 @@ public class AppState : IDisposable
         List<FileEntry> pageFiles = GetPagedFiles().ToList();
         FileEntry? target = direction > 0 ? pageFiles.FirstOrDefault() : pageFiles.LastOrDefault();
 
-        SelectedFileIds.Clear();
-        _selectionAnchor = target?.Id;
-
-        if (target is not null)
+        if (target is null)
         {
-            _ = SelectedFileIds.Add(target.Id);
+            NotifyStateChanged();
+            return false;
         }
 
+        SelectFile(target.Id, multiSelect: false, rangeSelect: extendSelection);
         NotifyStateChanged();
-        NotifySelectionChanged();
-        return target is not null;
+        return true;
     }
 
     public void SetPageSize(int pageSize)
@@ -309,9 +308,9 @@ public class AppState : IDisposable
 
     /// <summary>
     /// Shift-click: selects everything between the anchor and <paramref name="id"/> in the order the
-    /// current page is showing. Returns <c>false</c> when there is nothing to span — no anchor yet,
-    /// or the anchor has been filtered away or left this page — so the caller falls back to treating
-    /// the click as a plain single selection.
+    /// current filtered result set is showing, including files on other pages. Returns <c>false</c>
+    /// when there is nothing to span — no anchor yet or the anchor has been filtered out — so the
+    /// caller falls back to treating the action as a plain single selection.
     /// </summary>
     private bool TrySelectRange(Guid id, bool addToSelection)
     {
@@ -320,7 +319,7 @@ public class AppState : IDisposable
             return false;
         }
 
-        List<Guid> orderedIds = GetPagedFiles().Select(f => f.Id).ToList();
+        List<Guid> orderedIds = _currentFiles.Select(f => f.Id).ToList();
         IReadOnlyList<Guid> range = SelectionRange.Between(orderedIds, anchor, id);
 
         if (range.Count == 0)

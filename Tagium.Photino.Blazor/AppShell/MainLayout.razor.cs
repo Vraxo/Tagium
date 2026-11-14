@@ -153,9 +153,9 @@ public partial class MainLayout : IDisposable
     }
 
     [JSInvokable]
-    public bool NavigateFilePage(int direction)
+    public bool NavigateFilePage(int direction, bool extendSelection)
     {
-        return AppState.MovePage(direction);
+        return AppState.MovePage(direction, extendSelection);
     }
 
     [JSInvokable]
