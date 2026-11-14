@@ -45,6 +45,9 @@
              data-path="@node.Path"
              @onclick="() => SelectFolder(node)"
              @onclick:stopPropagation="true"
+             @oncontextmenu="e => OpenContextMenu(e, node)"
+             @oncontextmenu:preventDefault="true"
+             @oncontextmenu:stopPropagation="true"
              @onkeydown="e => OnRowKeyDown(e, node)"
              @onkeydown:stopPropagation="true">
 
