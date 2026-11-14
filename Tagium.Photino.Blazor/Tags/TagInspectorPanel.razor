@@ -75,7 +75,11 @@
         @if (_availableTags.Count > 0 || true)
         {
             <div class="add-tag-section">
-                <TagSelector AvailableTags="_availableTags" OnTagSelected="OnTagSelected" OnTagCreated="OnTagCreated" />
+                <TagSelector AvailableTags="_availableTags"
+                             AssignmentCounts="_assignmentCounts"
+                             SelectedCount="_fileIdsList.Count"
+                             OnTagSelected="OnTagSelected"
+                             OnTagCreated="OnTagCreated" />
             </div>
         }
     </div>

@@ -36,6 +36,11 @@
         box-shadow: 0 0 0 2px var(--primary-tint);
     }
 
+    .file-card:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: -3px;
+    }
+
 .thumbnail {
     flex: 1;
     background: var(--media-bg);

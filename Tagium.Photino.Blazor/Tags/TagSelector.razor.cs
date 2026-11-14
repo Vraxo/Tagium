@@ -13,6 +13,8 @@ public partial class TagSelector
     [Inject] private SettingsManager Settings { get; set; } = default!;
 
     [Parameter, EditorRequired] public List<Tag> AvailableTags { get; set; } = [];
+    [Parameter] public Dictionary<Guid, int> AssignmentCounts { get; set; } = [];
+    [Parameter] public int SelectedCount { get; set; } = 1;
     [Parameter, EditorRequired] public EventCallback<Guid> OnTagSelected { get; set; }
     [Parameter] public EventCallback<string> OnTagCreated { get; set; }
 
@@ -21,6 +23,8 @@ public partial class TagSelector
     private int _recentTagCount;
     private int _activeIndex = 0;
     private bool _isOpen;
+    private bool _isApplying;
+    private bool _scrollActiveAfterRender;
 
     private string _searchText = "";
     public string SearchText
@@ -39,6 +43,23 @@ public partial class TagSelector
     private bool ShowCreateOption => OnTagCreated.HasDelegate &&
                                      !string.IsNullOrWhiteSpace(_searchText) &&
                                      TagRepo.ResolveTagId(_searchText) == null;
+
+    private string? GetActiveOptionId()
+    {
+        if (!_isOpen || _activeIndex < 0)
+        {
+            return null;
+        }
+
+        if (_activeIndex < _filteredTags.Count)
+        {
+            return $"tag-option-{_filteredTags[_activeIndex].Id}";
+        }
+
+        return ShowCreateOption && _activeIndex == _filteredTags.Count
+            ? "tag-option-create"
+            : null;
+    }
 
     protected override void OnParametersSet()
     {
@@ -94,8 +115,33 @@ public partial class TagSelector
         _searchText = "";
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_scrollActiveAfterRender)
+        {
+            return;
+        }
+
+        _scrollActiveAfterRender = false;
+        try
+        {
+            await JS.InvokeVoidAsync("libraryNav.scrollActiveTag");
+        }
+        catch (JSException)
+        {
+            // Scrolling is a convenience; it must not interrupt tag selection.
+        }
+    }
+
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
+        if (e.Key == "Escape")
+        {
+            Close();
+            await JS.InvokeVoidAsync("libraryNav.focusLastFile");
+            return;
+        }
+
         if (!_isOpen)
         {
             return;
@@ -114,7 +160,7 @@ public partial class TagSelector
             {
                 _activeIndex = maxCount - 1;
             }
-            await ScrollActiveItemIntoView();
+            _scrollActiveAfterRender = true;
         }
         else if (e.Key is "ArrowUp" or "Up")
         {
@@ -123,7 +169,7 @@ public partial class TagSelector
             {
                 _activeIndex = 0;
             }
-            await ScrollActiveItemIntoView();
+            _scrollActiveAfterRender = true;
         }
         else if (e.Key == "Enter")
         {
@@ -136,30 +182,27 @@ public partial class TagSelector
                 await CreateAndSelectTag();
             }
         }
-        else if (e.Key == "Escape")
-        {
-            Close();
-        }
-    }
-
-    private async Task ScrollActiveItemIntoView()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("eval", "var el = document.querySelector('.tag-dropdown-item.active'); if(el) el.scrollIntoView({block: 'nearest'});");
-        }
-        catch
-        {
-            // Gracefully catch evaluation context errors during rapid rendering transitions
-        }
     }
 
     private async Task SelectTag(Guid id)
     {
-        await OnTagSelected.InvokeAsync(id);
-        Settings.RecordRecentTag(id);
-        SearchText = "";
-        UpdateFilter();
+        if (_isApplying)
+        {
+            return;
+        }
+
+        _isApplying = true;
+        try
+        {
+            await OnTagSelected.InvokeAsync(id);
+            Settings.RecordRecentTag(id);
+            SearchText = "";
+            UpdateFilter();
+        }
+        finally
+        {
+            _isApplying = false;
+        }
     }
 
     private async Task CreateAndSelectTag()

@@ -4,6 +4,14 @@
     <input type="text"
            class="tag-selector-input"
            placeholder="Add tag..."
+           title="Add or remove tags (T to focus)"
+           aria-label="Add or remove tags"
+           aria-keyshortcuts="T ArrowDown ArrowUp Enter Escape"
+           role="combobox"
+           aria-autocomplete="list"
+           aria-controls="tag-selector-options"
+           aria-expanded="@_isOpen"
+           aria-activedescendant="@GetActiveOptionId()"
            autocomplete="off"
            @bind="SearchText"
            @bind:event="oninput"
@@ -13,7 +21,7 @@
 
     @if (_isOpen && (_filteredTags.Count > 0 || ShowCreateOption))
     {
-        <div class="tag-selector-dropdown">
+        <div id="tag-selector-options" class="tag-selector-dropdown" role="listbox" aria-label="Available tags">
             @if (_recentTagCount > 0)
             {
                 <div class="tag-dropdown-section-label">Recently used</div>
@@ -29,18 +37,30 @@
                     <div class="tag-dropdown-section-label">All tags</div>
                 }
 
-                <div class="tag-dropdown-item @(_activeIndex == index ? "active" : "")"
+                <div id="tag-option-@tag.Id"
+                     class="tag-dropdown-item @(_activeIndex == index ? "active" : "")"
+                     role="option"
+                     aria-selected="@(_activeIndex == index)"
                      @onmousedown="() => SelectTag(tag.Id)"
                      @onmousedown:preventDefault="true"
                      @onmouseover="() => _activeIndex = index">
                     <TagIcon Tag="tag" />
                     <span class="tag-name">@tag.Name</span>
+                    @if (AssignmentCounts.TryGetValue(tag.Id, out int assignedCount) && assignedCount > 0)
+                    {
+                        <span class="tag-selector-status">
+                            @(assignedCount == SelectedCount ? "Added" : $"Some ({assignedCount}/{SelectedCount})")
+                        </span>
+                    }
                 </div>
             }
 
             @if (ShowCreateOption)
             {
-                <div class="tag-dropdown-item create-item @(_activeIndex == _filteredTags.Count ? "active" : "")"
+                <div id="tag-option-create"
+                     class="tag-dropdown-item create-item @(_activeIndex == _filteredTags.Count ? "active" : "")"
+                     role="option"
+                     aria-selected="@(_activeIndex == _filteredTags.Count)"
                      @onmousedown="CreateAndSelectTag"
                      @onmousedown:preventDefault="true"
                      @onmouseover="() => _activeIndex = _filteredTags.Count">

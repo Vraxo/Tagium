@@ -69,8 +69,24 @@
         }
 
 .tag-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: var(--font-size-sm);
     color: var(--text-color);
+}
+
+.tag-selector-status {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: var(--space-sm);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+}
+
+.tag-dropdown-item.active .tag-selector-status {
+    color: var(--text-on-primary);
 }
 
 .tag-dropdown-item.create-item {
