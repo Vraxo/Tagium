@@ -10,7 +10,7 @@ window.globalShortcuts = {
         window.libraryNav?.setDotNetRef(dotNetRef);
 
         document.addEventListener('keydown', function (e) {
-            if (document.querySelector('.modal-backdrop')) {
+            if (document.querySelector('.modal-backdrop, .context-menu')) {
                 return;
             }
 
