@@ -53,6 +53,22 @@ public partial class TagSidebar : IDisposable
         }
     }
 
+    private void HandleTagKeyDown(KeyboardEventArgs e, Tag tag)
+    {
+        if ((e.Key == "F10" && e.ShiftKey) || e.Key == "ContextMenu")
+        {
+            ContextMenu.ShowTag(tag.Id, tag.Name, 0, 0, isKeyboardInvocation: true);
+            return;
+        }
+
+        ActivateOnKey(e, () => SetSearch(tag.Name));
+    }
+
+    private void OpenTagContextMenu(MouseEventArgs e, Tag tag)
+    {
+        ContextMenu.ShowTag(tag.Id, tag.Name, e.ClientX, e.ClientY, isKeyboardInvocation: false);
+    }
+
     protected override void OnInitialized()
     {
         RefreshData();

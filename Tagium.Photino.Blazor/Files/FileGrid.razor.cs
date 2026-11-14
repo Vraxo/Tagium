@@ -5,6 +5,7 @@ using Tagium.Core.Files;
 using Tagium.Core.Settings;
 using Tagium.Core.Thumbnails;
 using Tagium.Photino.Blazor;
+using Tagium.Photino.Blazor.AppShell;
 
 namespace Tagium.Photino.Blazor.Files;
 
@@ -12,6 +13,7 @@ public partial class FileGrid : IDisposable
 {
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private SystemLauncherService Launcher { get; set; } = default!;
+    [Inject] private ContextMenuService ContextMenu { get; set; } = default!;
 
     private DotNetObjectReference<FileGrid>? _objRef;
     private bool _isRenderPending = false;
@@ -153,6 +155,12 @@ public partial class FileGrid : IDisposable
 
     private void OnCardKeyDown(KeyboardEventArgs e, FileEntry file)
     {
+        if ((e.Key == "F10" && e.ShiftKey) || e.Key == "ContextMenu")
+        {
+            ShowContextMenu(file, 0, 0, isKeyboardInvocation: true);
+            return;
+        }
+
         switch (e.Key)
         {
             case "Enter":
@@ -179,6 +187,30 @@ public partial class FileGrid : IDisposable
                 _ = MoveFocusAsync(e.Key, e.ShiftKey);
                 break;
         }
+    }
+
+    public void OpenContextMenu(MouseEventArgs e, FileEntry file)
+    {
+        ShowContextMenu(file, e.ClientX, e.ClientY, isKeyboardInvocation: false);
+    }
+
+    private void ShowContextMenu(FileEntry file, double clientX, double clientY, bool isKeyboardInvocation)
+    {
+        if (!AppState.SelectedFileIds.Contains(file.Id))
+        {
+            AppState.SelectFile(file.Id, multiSelect: false, rangeSelect: false);
+        }
+
+        IReadOnlyList<Guid> selectedFileIds = AppState.SelectedFileIds.ToList();
+        ContextMenu.ShowFile(
+            file.Id,
+            file.Name,
+            file.Path,
+            file.IsMissing,
+            selectedFileIds,
+            clientX,
+            clientY,
+            isKeyboardInvocation);
     }
 
     private async Task MoveFocusAsync(string key, bool extendSelection)

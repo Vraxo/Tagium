@@ -60,6 +60,7 @@ public static class ServiceRegistrar
         // UI - Services
         _ = services.AddSingleton<AppState>();
         _ = services.AddSingleton<ModalService>();
+        _ = services.AddSingleton<ContextMenuService>();
         _ = services.AddSingleton<FileDialogService>();
         _ = services.AddSingleton<SystemLauncherService>();
         _ = services.AddSingleton<ToastService>();

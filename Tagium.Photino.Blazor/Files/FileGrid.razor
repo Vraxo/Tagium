@@ -26,6 +26,7 @@
         <div @key="file.Id"
              class="file-card @(isSelected ? "selected" : "")"
              role="option"
+             aria-haspopup="menu"
              aria-selected="@(isSelected ? "true" : "false")"
              aria-label="@GetCardLabel(file)"
              tabindex="@(tabStopId == file.Id ? 0 : -1)"
@@ -33,6 +34,9 @@
              @onclick="e => OnCardClick(e, file.Id)"
              @ondblclick="e => OnCardDoubleClick(e, file)"
              @onkeydown="e => OnCardKeyDown(e, file)"
+             @oncontextmenu="e => OpenContextMenu(e, file)"
+             @oncontextmenu:preventDefault="true"
+             @oncontextmenu:stopPropagation="true"
              @onclick:stopPropagation="true">
 
             <div class="thumbnail @(hasThumb ? "" : "broken")">

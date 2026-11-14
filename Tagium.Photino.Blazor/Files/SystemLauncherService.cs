@@ -57,4 +57,24 @@ public class SystemLauncherService
             _logger.LogError(ex, "Failed to show file in explorer: {Path}", path);
         }
     }
+
+    public void OpenFolder(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            _logger.LogWarning("Cannot open folder. Folder does not exist at path: {Path}", path);
+            return;
+        }
+
+        try
+        {
+            _logger.LogInformation("Opening folder in Explorer: {Path}", path);
+            _ = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open folder: {Path}", path);
+        }
+    }
+
 }

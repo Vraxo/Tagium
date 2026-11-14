@@ -2,6 +2,7 @@
 @inject LibraryService Library
 @inject AppState AppState
 @inject SettingsManager Settings
+@inject ContextMenuService ContextMenu
 
 <div class="sidebar-container">
     <div class="sidebar-header">
@@ -91,11 +92,16 @@
             if (Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)
             {
                 <div class="tag-item legacy @(isActive ? "active" : "")"
+                     data-context-id="@tag.Id"
                      role="button"
+                     aria-haspopup="menu"
                      tabindex="0"
                      aria-current="@(isActive ? "true" : "false")"
                      @onclick="() => SetSearch(tag.Name)"
-                     @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))">
+                     @onkeydown="e => HandleTagKeyDown(e, tag)"
+                     @oncontextmenu="e => OpenTagContextMenu(e, tag)"
+                     @oncontextmenu:preventDefault="true"
+                     @oncontextmenu:stopPropagation="true">
                     <TagIcon Tag="@tag" />
                     <span class="name" title="@tag.Name">@tag.Name</span>
                     <span class="count">@tag.FileCount</span>
@@ -104,11 +110,16 @@
             else
             {
                 <div class="tag-item pill @(isActive ? "active" : "")"
+                     data-context-id="@tag.Id"
                      role="button"
+                     aria-haspopup="menu"
                      tabindex="0"
                      aria-current="@(isActive ? "true" : "false")"
                      @onclick="() => SetSearch(tag.Name)"
-                     @onkeydown="e => ActivateOnKey(e, () => SetSearch(tag.Name))"
+                     @onkeydown="e => HandleTagKeyDown(e, tag)"
+                     @oncontextmenu="e => OpenTagContextMenu(e, tag)"
+                     @oncontextmenu:preventDefault="true"
+                     @oncontextmenu:stopPropagation="true"
                      style="--tag-color: @tag.ColorHex; --tag-on-color: @TagColorContrast.GetTextColor(tag.ColorHex);">
                     <TagIcon Tag="@tag" ShowColor="@(Settings.Current.InterfaceStyle != InterfaceStyle.Classic)" />
                     <span class="name" title="@tag.Name">@tag.Name</span>
