@@ -235,6 +235,13 @@ window.libraryNav = {
         return false;
     },
 
+    scrollActiveTag: function () {
+        const active = document.querySelector('#tag-selector-options .tag-dropdown-item.active');
+        if (this.isVisible(active)) {
+            active.scrollIntoView({ block: 'nearest' });
+        }
+    },
+
     focusTagPicker: async function () {
         for (let attempt = 0; attempt < 12; attempt++) {
             await new Promise(resolve => requestAnimationFrame(resolve));
