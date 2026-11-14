@@ -1,0 +1,79 @@
+@namespace Tagium.Photino.Blazor.AppShell
+@inject AppState AppState
+@inject ModalService ModalService
+
+<div class="keyboard-shortcuts">
+    <p class="keyboard-shortcuts-intro">
+        Available shortcuts for the current workspace. Text fields keep their normal typing behavior.
+    </p>
+
+    <div class="keyboard-shortcuts-grid">
+        <section class="keyboard-shortcut-group">
+            <h4>Application</h4>
+            <div class="keyboard-shortcut-row"><span>Focus search</span><kbd>Ctrl + F</kbd></div>
+            <div class="keyboard-shortcut-row"><span>Switch Files / Tags</span><kbd>Ctrl + T</kbd></div>
+            <div class="keyboard-shortcut-row"><span>Switch workspace</span><kbd>Ctrl + 1 / 2 / 3</kbd></div>
+            <div class="keyboard-shortcut-row"><span>Cycle interface areas</span><kbd>F6 / Shift + F6</kbd></div>
+            <div class="keyboard-shortcut-row"><span>Undo last change</span><kbd>Ctrl + Z</kbd></div>
+            <div class="keyboard-shortcut-row"><span>Rescan library</span><kbd>Ctrl + R</kbd></div>
+            <div class="keyboard-shortcut-row"><span>Zoom in / out / reset</span><kbd>Ctrl + + / − / 0</kbd></div>
+        </section>
+
+        @if (AppState.CurrentView == AppView.Files)
+        {
+            <section class="keyboard-shortcut-group">
+                <h4>File browsing</h4>
+                <div class="keyboard-shortcut-row"><span>Move between files</span><kbd>Arrow keys</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Extend selection</span><kbd>Shift + Arrows</kbd></div>
+                <div class="keyboard-shortcut-row"><span>First / last file on page</span><kbd>Home / End</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Previous / next page</span><kbd>Page Up / Down</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Extend selection across pages</span><kbd>Shift + Page Up / Down</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Open focused file</span><kbd>Enter</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Toggle file selection</span><kbd>Space</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Clear selection</span><kbd>Esc</kbd></div>
+            </section>
+
+            <section class="keyboard-shortcut-group">
+                <h4>Tagging and ratings</h4>
+                <div class="keyboard-shortcut-row"><span>Open tag picker</span><kbd>T</kbd></div>
+                <p class="keyboard-shortcut-hint">Type to filter, use the arrows, then press Enter. Keep selecting tags without leaving the picker.</p>
+                <div class="keyboard-shortcut-row"><span>Apply tag to all / remove from all</span><kbd>Enter</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Close picker and return to file</span><kbd>Esc</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Set rating</span><kbd>1 – 5</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Clear rating</span><kbd>0</kbd></div>
+            </section>
+        }
+        else if (AppState.CurrentView == AppView.Folders)
+        {
+            <section class="keyboard-shortcut-group">
+                <h4>Folder tree</h4>
+                <div class="keyboard-shortcut-row"><span>Previous / next visible folder</span><kbd>↑ / ↓</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Expand folder / enter first child</span><kbd>→</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Collapse folder / move to parent</span><kbd>←</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Select folder</span><kbd>Enter / Space</kbd></div>
+                <div class="keyboard-shortcut-row"><span>First / last visible folder</span><kbd>Home / End</kbd></div>
+            </section>
+        }
+        else if (AppState.CurrentView == AppView.Tags)
+        {
+            <section class="keyboard-shortcut-group">
+                <h4>Tag manager</h4>
+                <div class="keyboard-shortcut-row"><span>Move through controls</span><kbd>Tab / Shift + Tab</kbd></div>
+                <div class="keyboard-shortcut-row"><span>Activate focused button</span><kbd>Enter / Space</kbd></div>
+                <p class="keyboard-shortcut-hint">Search fields, tag names, and other editable controls accept normal typing. Use Tab to move between them.</p>
+            </section>
+        }
+    </div>
+
+    <div class="keyboard-shortcuts-footer">
+        <span>Press <kbd>?</kbd> any time outside a text field to open this reference.</span>
+        <button type="button" class="btn-primary" @onclick="Close">Close</button>
+    </div>
+</div>
+
+@code {
+    private void Close()
+    {
+        ModalService.Close();
+    }
+}
