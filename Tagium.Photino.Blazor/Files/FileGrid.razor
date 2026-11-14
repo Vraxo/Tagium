@@ -33,6 +33,9 @@
              @onclick="e => OnCardClick(e, file.Id)"
              @ondblclick="e => OnCardDoubleClick(e, file)"
              @onkeydown="e => OnCardKeyDown(e, file)"
+             @oncontextmenu="e => OpenContextMenu(e, file)"
+             @oncontextmenu:preventDefault="true"
+             @oncontextmenu:stopPropagation="true"
              @onclick:stopPropagation="true">
 
             <div class="thumbnail @(hasThumb ? "" : "broken")">
