@@ -241,6 +241,7 @@ public partial class FolderSidebar : IDisposable
 
     public void OpenContextMenu(MouseEventArgs e, FolderNode node)
     {
+        _focusedPath = node.Path;
         ContextMenu.ShowFolder(
             node.Path,
             node.Name,
