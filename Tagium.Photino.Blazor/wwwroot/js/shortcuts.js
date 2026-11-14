@@ -79,10 +79,10 @@ window.globalShortcuts = {
                 e.preventDefault();
                 const direction = e.key === 'PageDown' ? 1 : -1;
 
-                dotNetRef.invokeMethodAsync('NavigateFilePage', direction)
+                dotNetRef.invokeMethodAsync('NavigateFilePage', direction, e.shiftKey)
                     .then(moved => {
                         if (moved) {
-                            window.libraryNav?.focusSelectedFile();
+                            window.libraryNav?.focusPageFile(direction);
                         }
                     })
                     .catch(() => {
