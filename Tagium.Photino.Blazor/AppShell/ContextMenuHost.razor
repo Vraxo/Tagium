@@ -1,0 +1,115 @@
+@namespace Tagium.Photino.Blazor.AppShell
+@implements IDisposable
+@inject ContextMenuService ContextMenu
+
+@if (ContextMenu.IsOpen)
+{
+    <div class="context-menu-dismiss"
+         aria-hidden="true"
+         @onclick="Close"
+         @oncontextmenu:preventDefault="true"
+         @oncontextmenu:stopPropagation="true"></div>
+
+    <div class="context-menu"
+         role="menu"
+         aria-label="@GetMenuLabel()"
+         @ref="_menu"
+         @onkeydown="HandleMenuKeyDown"
+         @onclick:stopPropagation="true"
+         @oncontextmenu:preventDefault="true"
+         @oncontextmenu:stopPropagation="true">
+        <div class="context-menu-heading">@GetMenuHeading()</div>
+
+        @if (ContextMenu.Kind == ContextMenuKind.File)
+        {
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    disabled="@ContextMenu.IsMissing"
+                    @onclick="OpenFile">
+                <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                Open
+            </button>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    disabled="@ContextMenu.IsMissing"
+                    @onclick="ShowFileInExplorer">
+                <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+                Show in Explorer
+            </button>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="CopyPath">
+                <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                Copy path
+            </button>
+            <div class="context-menu-separator"></div>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="OpenTagPicker">
+                <i class="fa-solid fa-tags" aria-hidden="true"></i>
+                Tag selected files…
+            </button>
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-section-label">Set rating</div>
+            <div class="context-menu-rating-group" role="group" aria-label="Set file rating">
+                @for (int rating = 1; rating <= 5; rating++)
+                {
+                    int value = rating;
+                    <button type="button"
+                            class="context-menu-rating-item"
+                            role="menuitem"
+                            title="Set rating to @value stars"
+                            aria-label="Set rating to @value stars"
+                            @onclick="() => SetRating(value)">@value</button>
+                }
+            </div>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="() => SetRating(0)">
+                Clear rating
+            </button>
+        }
+        else if (ContextMenu.Kind == ContextMenuKind.Folder)
+        {
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="BrowseFolder">
+                <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+                Browse folder
+            </button>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="OpenFolderInExplorer">
+                <i class="fa-regular fa-folder" aria-hidden="true"></i>
+                Open in Explorer
+            </button>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="CopyPath">
+                <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                Copy path
+            </button>
+        }
+        else if (ContextMenu.Kind == ContextMenuKind.Tag)
+        {
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="FilterFilesByTag">
+                <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                Find files with this tag
+            </button>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="ManageTags">
+                <i class="fa-solid fa-tags" aria-hidden="true"></i>
+                Manage tags
+            </button>
+            <button type="button" class="context-menu-item"
+                    role="menuitem"
+                    @onclick="CopyTagName">
+                <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                Copy tag name
+            </button>
+        }
+    </div>
+}
