@@ -5,6 +5,7 @@ using Tagium.Core.Files;
 using Tagium.Core.Settings;
 using Tagium.Core.Thumbnails;
 using Tagium.Photino.Blazor;
+using Tagium.Photino.Blazor.AppShell;
 
 namespace Tagium.Photino.Blazor.Files;
 
