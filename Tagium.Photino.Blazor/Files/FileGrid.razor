@@ -26,6 +26,7 @@
         <div @key="file.Id"
              class="file-card @(isSelected ? "selected" : "")"
              role="option"
+             aria-haspopup="menu"
              aria-selected="@(isSelected ? "true" : "false")"
              aria-label="@GetCardLabel(file)"
              tabindex="@(tabStopId == file.Id ? 0 : -1)"
