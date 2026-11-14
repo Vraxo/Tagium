@@ -1,0 +1,101 @@
+.keyboard-shortcuts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    color: var(--text-color);
+}
+
+.keyboard-shortcuts-intro {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.keyboard-shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-md);
+    align-items: start;
+}
+
+.keyboard-shortcut-group {
+    min-width: 0;
+}
+
+.keyboard-shortcut-group h4 {
+    margin: 0 0 var(--space-xs);
+    padding-bottom: var(--space-2xs);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.keyboard-shortcut-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    min-height: 30px;
+    font-size: var(--font-size-sm);
+}
+
+.keyboard-shortcut-row span {
+    min-width: 0;
+}
+
+.keyboard-shortcuts kbd {
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+}
+
+.keyboard-shortcut-hint {
+    margin: 0 0 var(--space-xs);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.45;
+}
+
+.keyboard-shortcuts-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.keyboard-shortcuts-footer .btn-primary {
+    flex-shrink: 0;
+    padding: 5px 14px;
+    border: 1px solid var(--primary-color);
+    border-radius: var(--radius-sm);
+    background: var(--primary-color);
+    color: var(--text-on-primary);
+    cursor: pointer;
+}
+
+.keyboard-shortcuts-footer .btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+@media (max-width: 560px) {
+    .keyboard-shortcuts-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .keyboard-shortcuts-footer {
+        align-items: flex-end;
+    }
+}
