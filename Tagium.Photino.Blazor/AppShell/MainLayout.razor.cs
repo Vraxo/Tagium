@@ -19,6 +19,7 @@ public partial class MainLayout : IDisposable
     [Inject] public SettingsManager SettingsManager { get; set; } = default!;
     [Inject] public ToastService Toast { get; set; } = default!;
     [Inject] private LibraryScanService ScanService { get; set; } = default!;
+    [Inject] private ModalService ModalService { get; set; } = default!;
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private ThemeService ThemeService { get; set; } = default!;
@@ -140,6 +141,21 @@ public partial class MainLayout : IDisposable
     public void HandleWheelZoom(int direction)
     {
         AdjustZoom(direction);
+    }
+
+    [JSInvokable]
+    public void ShowKeyboardShortcuts()
+    {
+        if (ModalService.Content is not null)
+        {
+            return;
+        }
+
+        ModalService.Show("Keyboard Shortcuts", builder =>
+        {
+            builder.OpenComponent<KeyboardShortcutsModal>(0);
+            builder.CloseComponent();
+        });
     }
 
     [JSInvokable]
