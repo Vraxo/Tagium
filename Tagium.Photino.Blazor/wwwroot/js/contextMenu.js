@@ -11,12 +11,19 @@ window.libraryContextMenu = {
         // Menus keep keyboard focus inside their own commands until Escape or an action closes them.
         document.addEventListener('keydown', event => {
             const menu = document.querySelector('.context-menu');
-            if (!menu || event.key !== 'Tab') {
+            if (!menu) {
                 return;
             }
 
-            event.preventDefault();
-            this.moveFocus(menu, event.shiftKey ? -1 : 1);
+            if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                event.preventDefault();
+                return;
+            }
+
+            if (event.key === 'Tab') {
+                event.preventDefault();
+                this.moveFocus(menu, event.shiftKey ? -1 : 1);
+            }
         });
     },
 
