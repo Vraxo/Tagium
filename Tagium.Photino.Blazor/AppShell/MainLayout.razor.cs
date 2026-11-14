@@ -145,8 +145,8 @@ public partial class MainLayout : IDisposable
     [JSInvokable]
     public async Task FocusTagPicker(string? focusedFileId)
     {
-        if (AppState.SelectedFileIds.Count == 0
-            && Guid.TryParse(focusedFileId, out Guid fileId))
+        if (Guid.TryParse(focusedFileId, out Guid fileId)
+            && !AppState.SelectedFileIds.Contains(fileId))
         {
             AppState.SelectFile(fileId, multiSelect: false, rangeSelect: false);
         }
@@ -171,8 +171,8 @@ public partial class MainLayout : IDisposable
             return;
         }
 
-        if (AppState.SelectedFileIds.Count == 0
-            && Guid.TryParse(focusedFileId, out Guid fileId))
+        if (Guid.TryParse(focusedFileId, out Guid fileId)
+            && !AppState.SelectedFileIds.Contains(fileId))
         {
             AppState.SelectFile(fileId, multiSelect: false, rangeSelect: false);
         }
