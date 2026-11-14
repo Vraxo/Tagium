@@ -38,6 +38,7 @@
            the 24px visual row lives inside it and carries the selected/hover styling. *@
         <div class="folder-node"
              role="treeitem"
+             aria-haspopup="menu"
              aria-level="@level"
              aria-expanded="@(isExpandable ? (node.IsExpanded ? "true" : "false") : null)"
              aria-selected="@(isSelected ? "true" : "false")"
