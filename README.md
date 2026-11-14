@@ -98,6 +98,7 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Switch to Files, Folders, or Tags |
 | `Ctrl+T` | Toggle between Files and Tags |
 | `F6` / `Shift+F6` | Cycle focus through search, sidebar, workspace, and inspector |
+| `?` | Open the contextual keyboard shortcut reference |
 | `T` | Focus the tag picker for the focused or selected file(s) |
 | `Arrow Keys` | Move between files; in the folder tree, navigate and expand/collapse folders |
 | `Shift+Arrow Keys` | Extend file selection continuously, including across pages |
