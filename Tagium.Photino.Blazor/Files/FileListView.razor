@@ -39,7 +39,10 @@
                     data-id="@file.Id"
                     @onclick="e => OnRowClick(e, file.Id)"
                     @ondblclick="e => OnRowDoubleClick(e, file)"
-                    @onkeydown="e => OnRowKeyDown(e, file)">
+                    @onkeydown="e => OnRowKeyDown(e, file)"
+                    @oncontextmenu="e => OpenContextMenu(e, file)"
+                    @oncontextmenu:preventDefault="true"
+                    @oncontextmenu:stopPropagation="true">
 
                     <td class="thumbnail-cell" role="gridcell">
                         <div class="thumbnail @(hasThumb ? "" : "broken")">
