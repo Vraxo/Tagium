@@ -13,6 +13,8 @@ public partial class TagSelector
     [Inject] private SettingsManager Settings { get; set; } = default!;
 
     [Parameter, EditorRequired] public List<Tag> AvailableTags { get; set; } = [];
+    [Parameter] public Dictionary<Guid, int> AssignmentCounts { get; set; } = [];
+    [Parameter] public int SelectedCount { get; set; } = 1;
     [Parameter, EditorRequired] public EventCallback<Guid> OnTagSelected { get; set; }
     [Parameter] public EventCallback<string> OnTagCreated { get; set; }
 
@@ -39,6 +41,23 @@ public partial class TagSelector
     private bool ShowCreateOption => OnTagCreated.HasDelegate &&
                                      !string.IsNullOrWhiteSpace(_searchText) &&
                                      TagRepo.ResolveTagId(_searchText) == null;
+
+    private string? GetActiveOptionId()
+    {
+        if (!_isOpen || _activeIndex < 0)
+        {
+            return null;
+        }
+
+        if (_activeIndex < _filteredTags.Count)
+        {
+            return $"tag-option-{_filteredTags[_activeIndex].Id}";
+        }
+
+        return ShowCreateOption && _activeIndex == _filteredTags.Count
+            ? "tag-option-create"
+            : null;
+    }
 
     protected override void OnParametersSet()
     {
@@ -96,6 +115,13 @@ public partial class TagSelector
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
+        if (e.Key == "Escape")
+        {
+            Close();
+            await JS.InvokeVoidAsync("libraryNav.focusLastFile");
+            return;
+        }
+
         if (!_isOpen)
         {
             return;
@@ -136,17 +162,13 @@ public partial class TagSelector
                 await CreateAndSelectTag();
             }
         }
-        else if (e.Key == "Escape")
-        {
-            Close();
-        }
     }
 
     private async Task ScrollActiveItemIntoView()
     {
         try
         {
-            await JS.InvokeVoidAsync("eval", "var el = document.querySelector('.tag-dropdown-item.active'); if(el) el.scrollIntoView({block: 'nearest'});");
+            await JS.InvokeVoidAsync("libraryNav.scrollActiveTag");
         }
         catch
         {
