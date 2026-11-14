@@ -95,8 +95,8 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | :--- | :--- |
 | `Ctrl+F` | Focus search bar |
 | `Ctrl+R` | Rescan library folders |
-| `Ctrl+Z` | Undo last tag change |
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Switch to Files, Folders, or Tags |
+| `Ctrl+T` | Toggle between Files and Tags |
 | `F6` / `Shift+F6` | Cycle focus through search, sidebar, workspace, and inspector |
 | `T` | Focus the tag picker for the focused or selected file(s) |
 | `Arrow Keys` | Move between files; in the folder tree, navigate and expand/collapse folders |
