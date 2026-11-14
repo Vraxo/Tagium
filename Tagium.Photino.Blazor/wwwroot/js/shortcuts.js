@@ -10,6 +10,10 @@ window.globalShortcuts = {
         window.libraryNav?.setDotNetRef(dotNetRef);
 
         document.addEventListener('keydown', function (e) {
+            if (document.querySelector('.modal-backdrop')) {
+                return;
+            }
+
             const target = e.target;
             const isInput = target && (
                 target.tagName === 'INPUT'
@@ -25,6 +29,15 @@ window.globalShortcuts = {
             if (e.key === 'F6' && !e.altKey && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 window.libraryNav?.cycleFocusArea(e.shiftKey);
+                return;
+            }
+
+            if (e.key === '?' && !e.altKey && !e.ctrlKey && !e.metaKey && !isInput) {
+                e.preventDefault();
+                dotNetRef.invokeMethodAsync('ShowKeyboardShortcuts')
+                    .catch(() => {
+                        // A closing WebView can invalidate the .NET callback.
+                    });
                 return;
             }
 
