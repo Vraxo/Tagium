@@ -26,6 +26,16 @@ public class SelectionRangeTests
     }
 
     [Fact]
+    public void Between_AcrossPageBoundary_ReturnsContinuousInclusiveRange()
+    {
+        Guid[] firstPage = [A, B];
+        Guid[] secondPage = [C, D, E];
+        Guid[] orderedResults = [.. firstPage, .. secondPage];
+
+        SelectionRange.Between(orderedResults, B, D).Should().Equal(B, C, D);
+    }
+
+    [Fact]
     public void Between_SameIdTwice_ReturnsSingleItem()
     {
         SelectionRange.Between(Ordered, C, C).Should().Equal(C);
