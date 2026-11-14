@@ -4,6 +4,7 @@ using Microsoft.JSInterop;
 using Tagium.Core.Files;
 using Tagium.Core.Thumbnails;
 using Tagium.Photino.Blazor;
+using Tagium.Photino.Blazor.AppShell;
 
 namespace Tagium.Photino.Blazor.Files;
 
