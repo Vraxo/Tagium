@@ -148,7 +148,14 @@ public partial class FileListView : IDisposable
             int direction = targetId == "__NEXT_PAGE__" ? 1 : -1;
             if (AppState.MovePage(direction, extendSelection))
             {
-                await JS.InvokeVoidAsync("libraryNav.focusPageFile", direction);
+                try
+                {
+                    await JS.InvokeVoidAsync("libraryNav.focusPageFile", direction);
+                }
+                catch (JSException)
+                {
+                    // The page and selection have moved; focus can be recovered with Tab.
+                }
             }
 
             return;
