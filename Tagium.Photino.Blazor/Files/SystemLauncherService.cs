@@ -57,6 +57,7 @@ public class SystemLauncherService
             _logger.LogError(ex, "Failed to show file in explorer: {Path}", path);
         }
     }
+
     public void OpenFolder(string path)
     {
         if (!Directory.Exists(path))
