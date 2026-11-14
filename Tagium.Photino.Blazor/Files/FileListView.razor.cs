@@ -143,6 +143,17 @@ public partial class FileListView : IDisposable
             return;
         }
 
+        if (targetId == "__NEXT_PAGE__" || targetId == "__PREVIOUS_PAGE__")
+        {
+            int direction = targetId == "__NEXT_PAGE__" ? 1 : -1;
+            if (AppState.MovePage(direction, extendSelection))
+            {
+                await JS.InvokeVoidAsync("libraryNav.focusPageFile", direction);
+            }
+
+            return;
+        }
+
         if (Guid.TryParse(targetId, out Guid id))
         {
             // Shift+arrow extends the same range a shift-click would, from the same anchor.
