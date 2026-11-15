@@ -26,4 +26,6 @@ jobs:
 
       - run: dotnet format --verify-no-changes
 
-      - run: dotnet test
+      - run: dotnet build
+
+      - run: dotnet test --no-build
