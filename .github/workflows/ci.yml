@@ -31,6 +31,6 @@ jobs:
           cache: true
           cache-dependency-path: '**/*.csproj'
 
-      - run: dotnet format Tagium.slnx --verify-no-changes
+      - run: dotnet format --verify-no-changes
 
-      - run: dotnet test Tagium.slnx
+      - run: dotnet test
