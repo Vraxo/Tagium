@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Vraxo/Tagium/actions/workflows/ci.yml/badge.svg)](https://github.com/Vraxo/Tagium/actions/workflows/ci.yml)
 
-Desktop media library and file tagger for Windows, built with [.NET 11](https://dotnet.microsoft.com/download/dotnet/11.0), [Photino.Blazor](https://www.tryphotino.io/), and SQLite.
+Desktop media library and file tagger for Windows, built with [.NET 11](https://dotnet.microsoft.com/download/dotnet/11.0), [PhotinoX.Blazor](https://github.com/ivanvoyager/PhotinoX.Blazor), and SQLite.
 
 ## ✨ Features
 
