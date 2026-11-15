@@ -121,6 +121,7 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | [`Tagium.Core/`](Tagium.Core) | SQLite/Dapper repositories, search query compiler, folder scanner, SkiaSharp/FFmpeg thumbnails, ExifTool daemon, JSON/CSV export, and undo |
 | [`Tagium.Photino.Blazor/`](Tagium.Photino.Blazor) | Photino desktop shell, Blazor UI components, custom `tagium://` preview/thumbnail scheme, and themes |
 | [`Tagium.Photino.Blazor/design.md`](Tagium.Photino.Blazor/design.md) | UI design tokens, spacing grid, and component rules |
+| [`Tagium.Photino.Blazor/build-tag-graph-vendors.mjs`](Tagium.Photino.Blazor/build-tag-graph-vendors.mjs) | Regenerates the checked-in PixiJS/d3-force bundle used by the tag graph; only needed to change a library version (requires Node.js) |
 
 ## 💾 Local Data
 
