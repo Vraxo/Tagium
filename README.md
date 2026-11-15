@@ -54,9 +54,9 @@ Build outputs are written to `artifacts/bin/`. On first launch, open **Settings 
 
 ## 🧹 Formatting
 
-Actions automatically formats pull requests from branches in this repository and commits any fixes to the same PR branch. When it changes the branch, it dispatches Build & test on the formatted commit; merging still waits for that check to pass.
+A weekly Actions workflow runs `dotnet format` on `main` and opens a pull request if anything changed. CI does not check formatting, so pull requests are never blocked by it.
 
-For quick local feedback, or for pull requests from forks (where GitHub gives Actions a read-only token), apply the formatting rules with:
+To apply the formatting rules yourself:
 
 ```powershell
 dotnet format Tagium.slnx

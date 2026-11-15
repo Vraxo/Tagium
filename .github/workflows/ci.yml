@@ -24,8 +24,6 @@ jobs:
           cache: true
           cache-dependency-path: '**/*.csproj'
 
-      - run: dotnet format --verify-no-changes
-
       - run: dotnet build
 
       - run: dotnet test --no-build
