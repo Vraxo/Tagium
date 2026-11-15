@@ -121,7 +121,6 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | [`Tagium.Core/`](Tagium.Core) | SQLite/Dapper repositories, search query compiler, folder scanner, SkiaSharp/FFmpeg thumbnails, ExifTool daemon, JSON/CSV export, and undo |
 | [`Tagium.Photino.Blazor/`](Tagium.Photino.Blazor) | Photino desktop shell, Blazor UI components, custom `tagium://` preview/thumbnail scheme, and themes |
 | [`Tagium.Photino.Blazor/design.md`](Tagium.Photino.Blazor/design.md) | UI design tokens, spacing grid, and component rules |
-| [`package.json`](package.json) and [`scripts/`](scripts) | Pinned local PixiJS/D3 force bundle inputs; run `npm ci && npm run build:tag-graph` to regenerate the checked-in offline vendor bundle |
 
 ## 💾 Local Data
 
