@@ -5,13 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # format-pr.yml dispatches this after pushing a formatting commit.
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Cancel stale runs for the same PR or branch.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -21,9 +19,7 @@ env:
 
 jobs:
   build-and-test:
-    # Required status check on main; keep this name in sync with the ruleset.
     name: Build & test
-    # Ubuntu can cross-build the win-x64 app, so no Windows runner is needed.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,5 +33,4 @@ jobs:
 
       - run: dotnet format Tagium.slnx --verify-no-changes
 
-      # Restores and builds the whole solution, then runs the unit tests.
       - run: dotnet test Tagium.slnx
