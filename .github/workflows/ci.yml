@@ -1,63 +1,41 @@
 name: CI
 
-# Run for PRs targeting main and direct pushes to main.
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  # format-pr.yml dispatches this after pushing a formatting commit.
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Cancel stale runs for the same PR or ref.
+# Cancel stale runs for the same PR or branch.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
-  DOTNET_NOLOGO: '1'
-  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
 
 jobs:
   build-and-test:
+    # Required status check on main; keep this name in sync with the ruleset.
     name: Build & test
-    # Ubuntu can cross-build the win-x64 app; no Windows runner is needed for CI.
+    # Ubuntu can cross-build the win-x64 app, so no Windows runner is needed.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      - name: Set up .NET 10 SDK with NuGet cache
-        uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
           cache: true
           cache-dependency-path: '**/*.csproj'
 
-      - name: Restore
-        run: dotnet restore Tagium.slnx
+      - run: dotnet format Tagium.slnx --verify-no-changes
 
-      # Developers apply formatting with `dotnet format Tagium.slnx` before pushing.
-      - name: Check formatting
-        run: dotnet format Tagium.slnx --verify-no-changes --no-restore
-
-      # Build once so the test step can skip restore and build.
-      - name: Build solution
-        run: dotnet build Tagium.slnx --no-restore
-
-      - name: Run unit tests
-        run: dotnet test Tagium.Core.Tests/Tagium.Core.Tests.csproj --no-restore --no-build --logger trx --results-directory ./TestResults
-
-      - name: Upload test results on failure
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: test-results
-          path: ./TestResults
-          retention-days: 7
+      # Restores and builds the whole solution, then runs the unit tests.
+      - run: dotnet test Tagium.slnx

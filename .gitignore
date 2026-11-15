@@ -5,7 +5,7 @@ publish/
 # Local JS vendor bundle build dependencies
 /node_modules/
 
-# TRX test results (written by CI / dotnet test --logger trx)
+# TRX test results (written by dotnet test --logger trx)
 /TestResults/
 
 # Visual Studio local settings
