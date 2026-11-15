@@ -1,0 +1,49 @@
+name: Format
+
+on:
+  schedule:
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - run: dotnet format
+
+      - name: Open a pull request if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automated/format
+        run: |
+          if git diff --quiet; then
+            echo "Nothing to format."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --force-create "$BRANCH"
+          git commit --all --message "style: apply dotnet format"
+          git push --force origin "$BRANCH"
+
+          if [[ -z "$(gh pr list --head "$BRANCH" --json number --jq '.[].number')" ]]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "Apply dotnet format" \
+              --body 'Automated weekly formatting produced by `dotnet format`.'
+          fi
+
+          gh workflow run ci.yml --ref "$BRANCH"
