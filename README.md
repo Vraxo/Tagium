@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Vraxo/Tagium/actions/workflows/ci.yml/badge.svg)](https://github.com/Vraxo/Tagium/actions/workflows/ci.yml)
 
-Desktop media library and file tagger for Windows, built with [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0), [Photino.Blazor](https://www.tryphotino.io/), and SQLite.
+Desktop media library and file tagger for Windows, built with [.NET 11](https://dotnet.microsoft.com/download/dotnet/11.0), [Photino.Blazor](https://www.tryphotino.io/), and SQLite.
 
 ## ✨ Features
 
@@ -35,7 +35,7 @@ Desktop media library and file tagger for Windows, built with [.NET 10](https://
 | Dependency | Status | Notes |
 | :--- | :--- | :--- |
 | Windows (x64) | Required | Targets `win-x64` |
-| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | Required | Builds and runs the solution |
+| [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) | Required | Builds and runs the solution |
 | [ExifTool](https://exiftool.org/) | Optional | `exiftool.exe` on `PATH` to read and write embedded file metadata |
 | [FFmpeg](https://ffmpeg.org/) | Optional | `ffmpeg.exe` and `ffprobe.exe` in the app directory or on `PATH` for video thumbnails |
 
