@@ -10,7 +10,11 @@
     <!-- Required for Blazor CSS Isolation (MainLayout.razor.css, etc.) -->
     <link href="Tagium.styles.css" rel="stylesheet" />
     <link href="css/macos.css" rel="stylesheet" />
-    <link href="css/windows11.css" rel="stylesheet" />
+    <!-- Windows 11: the Fluent visual language, then the native Mica composition
+         layer that refines it. mica.css consumes fluent.css's custom properties, so
+         it must stay after it. -->
+    <link href="css/fluent.css" rel="stylesheet" />
+    <link href="css/mica.css" rel="stylesheet" />
     <style>
         html, body {
             height: 100%;

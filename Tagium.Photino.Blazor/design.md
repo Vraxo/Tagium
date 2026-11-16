@@ -175,6 +175,13 @@ The optional Windows 11 interface is a Fluent 2-inspired WebView implementation.
 * Keep the file workspace visually quiet. Selection must be clear without turning every card into a raised tile.
 * Inspector, settings, and dialogs should share the same surface hierarchy and spacing rhythm.
 
+### Stylesheet layout
+
+* The style ships as two global stylesheets, split by what gates them, not by component: `wwwroot/css/fluent.css` (the visual language, gated on `:root[data-interface-style="windows11"]`) and `wwwroot/css/mica.css` (native composition, gated on `:root[data-native-mica="true"]`).
+* `index.html` loads `fluent.css` before `mica.css`. Mica consumes the Fluent custom properties and deliberately overrides Fluent surfaces, so the order is part of the contract.
+* Do not slice these files per component. Component-local styling belongs in the companion `.razor.css` files; these two are the global override layer for the interface style.
+* Responsive rules stay inside `@media` blocks after the rule they modify. Keeping a rule and its breakpoint override in one file is the reason the split is by concern rather than by size.
+
 ### Controls and surfaces
 
 * Standard controls use a 32px baseline height, 4px control corners, visible focus, and consistent hover, pressed, selected, and disabled states.
