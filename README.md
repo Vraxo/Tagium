@@ -9,7 +9,7 @@ Desktop media library and file tagger for Windows, built with [.NET 11](https://
 - Index multiple local folders in place without moving or copying your files
 - Track renamed and moved files across scans using SHA-256 hashes
 - Browse media in grid or list views, or navigate by folder tree
-- Choose 50, 100 (default), or 250 files per page; the preference is remembered across sessions
+- Choose 50, 100 (default), or 250 files per page, or switch to infinite scroll that appends files as you scroll (Settings → Appearance → File Browsing); the preference is remembered across sessions
 - Sort the library by date added, name, path, size, modified time, or rating (ascending/descending)
 - Filter with a query language — `tag:`, `rating:`, `size:`, `ext:`, `added:`, `modified:`, `has:`, `missing:`, `untagged`, the `artist:`/`series:`/… category filters and `-` to negate — with an in-app syntax reference on the search box and the last ten queries recalled from a dropdown under it
 - Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes
@@ -105,9 +105,9 @@ Space-separated terms combine with `AND`. Prefix any token with `-` to exclude m
 | `Arrow Keys` | Move between files; in the folder tree, navigate and expand/collapse folders |
 | `Shift+Arrow Keys` | Extend file selection continuously, including across pages |
 | `Space` | Toggle selection for the focused file |
-| `Page Up` / `Page Down` | Move to the previous or next file page |
-| `Shift+Page Up` / `Shift+Page Down` | Extend selection across the page boundary |
-| `Arrow Up/Left` at the first file or `Arrow Down/Right` at the last file | Continue into the adjacent file page |
+| `Page Up` / `Page Down` | Move to the previous or next file page, or one screenful in infinite scroll |
+| `Shift+Page Up` / `Shift+Page Down` | Extend selection across the page boundary (or across loaded files in infinite scroll) |
+| `Arrow Up/Left` at the first file or `Arrow Down/Right` at the last file | Continue into the adjacent page, or load the next batch in infinite scroll |
 | `1`–`5` / `0` | Set rating / clear rating for the focused file or selection |
 | `Enter` | Open the focused file in its default app |
 | `Escape` | Clear file selection or close the tag picker and return to the file |

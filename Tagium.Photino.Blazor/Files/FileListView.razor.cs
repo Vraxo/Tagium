@@ -24,6 +24,34 @@ public partial class FileListView : IDisposable
         ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        int index = AppState.ConsumePendingFocusIndex();
+        if (index >= 0)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("libraryScroll.focusPending", index);
+            }
+            catch (JSException)
+            {
+                // Focus can be recovered with Tab; the selection itself already moved.
+            }
+        }
+
+        if (AppState.IsInfiniteScroll)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("libraryScroll.observe");
+            }
+            catch (JSException)
+            {
+                // Without the observer the view still pages with the keyboard.
+            }
+        }
+    }
+
     private void ReloadData()
     {
         _ = InvokeAsync(StateHasChanged);
@@ -177,19 +205,11 @@ public partial class FileListView : IDisposable
 
         if (targetId == "__NEXT_PAGE__" || targetId == "__PREVIOUS_PAGE__")
         {
+            // The destination may not be in the DOM yet (a new page, or a batch that
+            // infinite scroll still has to append); the move records where focus should
+            // land and OnAfterRenderAsync places it once the items exist.
             int direction = targetId == "__NEXT_PAGE__" ? 1 : -1;
-            if (AppState.MovePage(direction, extendSelection))
-            {
-                try
-                {
-                    await JS.InvokeVoidAsync("libraryNav.focusPageFile", direction);
-                }
-                catch (JSException)
-                {
-                    // The page and selection have moved; focus can be recovered with Tab.
-                }
-            }
-
+            _ = AppState.MovePage(direction, extendSelection);
             return;
         }
 

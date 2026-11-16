@@ -29,13 +29,56 @@ public partial class FileGrid : IDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender)
+        if (firstRender)
+        {
+            _objRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
+        }
+
+        await FocusPendingItemAsync();
+    }
+
+    /// <summary>
+    /// Keyboard page moves (Page Up / Page Down, arrows past the end of the loaded files)
+    /// select a file that may only have rendered in this pass — infinite scroll can append a
+    /// batch in the same update — so focus is placed after the DOM exists.
+    /// </summary>
+    private async Task FocusPendingItemAsync()
+    {
+        int index = AppState.ConsumePendingFocusIndex();
+        if (index < 0)
+        {
+            await ObserveInfiniteScrollAsync();
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("libraryScroll.focusPending", index);
+        }
+        catch (JSException)
+        {
+            // Focus can be recovered with Tab; the selection itself already moved.
+        }
+
+        await ObserveInfiniteScrollAsync();
+    }
+
+    private async Task ObserveInfiniteScrollAsync()
+    {
+        if (!AppState.IsInfiniteScroll)
         {
             return;
         }
 
-        _objRef = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("gridInteractions.init", _objRef, "file-grid-container");
+        try
+        {
+            await JS.InvokeVoidAsync("libraryScroll.observe");
+        }
+        catch (JSException)
+        {
+            // Without the observer the view still pages with the keyboard.
+        }
     }
 
     private void ReloadData()
@@ -117,7 +160,7 @@ public partial class FileGrid : IDisposable
     [JSInvokable]
     public void SelectAll()
     {
-        AppState.SetSelection(AppState.GetPagedFiles().Select(f => f.Id));
+        AppState.SetSelection(AppState.GetVisibleFiles().Select(f => f.Id));
     }
 
     [JSInvokable]
@@ -229,19 +272,11 @@ public partial class FileGrid : IDisposable
 
         if (targetId == "__NEXT_PAGE__" || targetId == "__PREVIOUS_PAGE__")
         {
+            // The destination may not be in the DOM yet (a new page, or a batch that
+            // infinite scroll still has to append); the move records where focus should
+            // land and OnAfterRenderAsync places it once the items exist.
             int direction = targetId == "__NEXT_PAGE__" ? 1 : -1;
-            if (AppState.MovePage(direction, extendSelection))
-            {
-                try
-                {
-                    await JS.InvokeVoidAsync("libraryNav.focusPageFile", direction);
-                }
-                catch (JSException)
-                {
-                    // The page and selection have moved; focus can be recovered with Tab.
-                }
-            }
-
+            _ = AppState.MovePage(direction, extendSelection);
             return;
         }
 

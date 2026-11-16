@@ -6,6 +6,10 @@
         {
             <span>No files</span>
         }
+        else if (AppState.IsInfiniteScroll)
+        {
+            <span>Showing @AppState.VisibleFileCount of @AppState.TotalFilesCount @(AppState.TotalFilesCount == 1 ? "file" : "files")@(AppState.HasMoreFiles ? ", scroll for more" : "")</span>
+        }
         else
         {
             <span>Showing @GetStartItemIndex() - @GetEndItemIndex() of @AppState.TotalFilesCount @(AppState.TotalFilesCount == 1 ? "file" : "files")</span>
@@ -13,7 +17,7 @@
     </div>
 
     <label class="page-size-control">
-        <span>Files per page</span>
+        <span>@(AppState.IsInfiniteScroll ? "Files per batch" : "Files per page")</span>
         <select class="page-size-select" value="@AppState.PageSize" @onchange="OnPageSizeChange">
             @foreach (int size in FilePagination.PageSizes)
             {
@@ -22,7 +26,7 @@
         </select>
     </label>
 
-    @if (AppState.TotalPages > 1)
+    @if (!AppState.IsInfiniteScroll && AppState.TotalPages > 1)
     {
         <div class="pagination-buttons">
             <button class="page-btn ctrl-btn"

@@ -1,0 +1,44 @@
+@namespace Tagium.Photino.Blazor.Files
+@implements IDisposable
+@inject AppState AppState
+
+@* Rendered after the last file while infinite scroll still has batches left.
+   window.libraryScroll (wwwroot/js/libraryScroll.js) observes it and asks .NET for the
+   next batch, so scrolling near the end appends files before the user reaches the bottom.
+   It subscribes to AppState itself rather than relying on its parent re-rendering. *@
+@if (AppState.IsInfiniteScroll)
+{
+    @if (AppState.HasMoreFiles)
+    {
+        @* Decorative: the loading state is announced by the library live region. *@
+        <div class="infinite-scroll-sentinel"
+             data-infinite-scroll-sentinel
+             aria-hidden="true">
+            <span class="infinite-scroll-spinner" aria-hidden="true"></span>
+            <span class="infinite-scroll-text">Loading more files…</span>
+        </div>
+    }
+    else if (AppState.TotalFilesCount > 0)
+    {
+        <div class="infinite-scroll-end">
+            End of @AppState.TotalFilesCount @(AppState.TotalFilesCount == 1 ? "file" : "files")
+        </div>
+    }
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        AppState.OnChange += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChange -= OnStateChanged;
+    }
+}

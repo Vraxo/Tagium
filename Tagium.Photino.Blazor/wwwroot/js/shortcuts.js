@@ -92,12 +92,9 @@ window.globalShortcuts = {
                 e.preventDefault();
                 const direction = e.key === 'PageDown' ? 1 : -1;
 
+                // Blazor applies the move and the file views focus the destination once
+                // the new page or batch exists in the DOM.
                 dotNetRef.invokeMethodAsync('NavigateFilePage', direction, e.shiftKey)
-                    .then(moved => {
-                        if (moved) {
-                            window.libraryNav?.focusPageFile(direction);
-                        }
-                    })
                     .catch(() => {
                         // A closing WebView can invalidate the .NET callback.
                     });

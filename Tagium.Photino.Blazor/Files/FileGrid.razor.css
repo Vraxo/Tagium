@@ -89,3 +89,10 @@
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
 }
+
+/* Infinite scroll appends a sentinel (its own component) after the cards; it spans
+   the whole row. ::deep is required because the sentinel carries another scope id. */
+.grid-container ::deep .infinite-scroll-sentinel,
+.grid-container ::deep .infinite-scroll-end {
+    grid-column: 1 / -1;
+}
