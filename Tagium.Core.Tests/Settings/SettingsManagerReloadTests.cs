@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Tagium.Core.Settings;
+using AppSettings = Tagium.Core.Settings.Settings;
 
 namespace Tagium.Core.Tests.Settings;
 
@@ -25,7 +26,7 @@ public class SettingsManagerReloadTests : IDisposable
         SettingsManager main = new(_settingsPath);
         int notifications = 0;
         main.SettingsChanged += () => notifications++;
-        Settings live = main.Current;
+        AppSettings live = main.Current;
 
         // What the Settings window does with its own SettingsManager instance.
         SettingsManager settingsWindow = new(_settingsPath);
@@ -42,7 +43,7 @@ public class SettingsManagerReloadTests : IDisposable
     public void Reload_UpdatesTheLiveInstanceInPlace()
     {
         SettingsManager manager = new(_settingsPath);
-        Settings live = manager.Current;
+        AppSettings live = manager.Current;
 
         SettingsManager other = new(_settingsPath);
         other.Update(s =>
@@ -94,8 +95,8 @@ public class SettingsManagerReloadTests : IDisposable
     [Fact]
     public void CopyFrom_CopiesEveryPersistedPreference()
     {
-        Settings target = new();
-        Settings source = new()
+        AppSettings target = new();
+        AppSettings source = new()
         {
             FilesPerPage = 250,
             FileScrollMode = FileScrollMode.Infinite,
