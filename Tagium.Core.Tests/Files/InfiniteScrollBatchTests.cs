@@ -41,6 +41,76 @@ public class InfiniteScrollBatchTests
     }
 
     [Theory]
+    [InlineData(1, 100, 1000, 0)]
+    [InlineData(4, 100, 1000, 300)]
+    [InlineData(1, 100, 0, 0)]
+    [InlineData(99, 100, 1000, 999)] // a stale page clamps to the final file
+    [InlineData(0, 100, 1000, 0)]
+    public void TopIndex_IsTheFirstFileOnThePage(int page, int pageSize, int totalFiles, int expected)
+    {
+        FilePagination.TopIndex(page, pageSize, totalFiles).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(0, 100, 1000, 1)]
+    [InlineData(99, 100, 1000, 1)]
+    [InlineData(100, 100, 1000, 2)]
+    [InlineData(350, 100, 1000, 4)]
+    [InlineData(999, 100, 1000, 10)]
+    [InlineData(0, 100, 0, 1)]
+    public void PageForIndex_IsThePageHoldingTheFile(int itemIndex, int pageSize, int totalFiles, int expected)
+    {
+        FilePagination.PageForIndex(itemIndex, pageSize, totalFiles).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(0, 100, 1000, 100)]
+    [InlineData(99, 100, 1000, 100)]
+    [InlineData(100, 100, 1000, 200)]
+    [InlineData(350, 100, 1000, 400)]
+    [InlineData(950, 100, 1000, 1000)] // the last, partial batch
+    [InlineData(0, 100, 0, 0)]
+    public void VisibleCountContaining_RendersWholeBatchesThroughTheFile(
+        int itemIndex, int batchSize, int totalFiles, int expected)
+    {
+        FilePagination.VisibleCountContaining(itemIndex, batchSize, totalFiles).Should().Be(expected);
+    }
+
+    [Fact]
+    public void SwitchingModes_KeepsTheUserOnTheSameFile()
+    {
+        const int total = 963;
+        const int size = 100;
+
+        // Every page of a paginated browse returns to itself after a round trip, and the
+        // page is fully rendered beneath the anchor so nothing appears to move.
+        int pageCount = (total + size - 1) / size;
+        for (int page = 1; page <= pageCount; page++)
+        {
+            int top = FilePagination.TopIndex(page, size, total);
+            int visible = FilePagination.VisibleCountContaining(top, size, total);
+            int filesOnPage = Math.Min(page * size, total);
+
+            visible.Should().BeGreaterThanOrEqualTo(filesOnPage);
+            FilePagination.PageForIndex(top, size, total).Should().Be(page);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void PositionMaths_RejectsNonPositiveSizes(int size)
+    {
+        Action top = () => FilePagination.TopIndex(1, size, 100);
+        Action page = () => FilePagination.PageForIndex(1, size, 100);
+        Action visible = () => FilePagination.VisibleCountContaining(1, size, 100);
+
+        top.Should().Throw<ArgumentOutOfRangeException>();
+        page.Should().Throw<ArgumentOutOfRangeException>();
+        visible.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
     [InlineData(300, 50, 1000, 300)] // already loaded more than the new batch: keep it
     [InlineData(300, 250, 1000, 300)] // still above the new batch size
     [InlineData(100, 250, 1000, 250)] // grows to at least one new batch

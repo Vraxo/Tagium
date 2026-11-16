@@ -70,6 +70,59 @@ public static class FilePagination
     public static bool HasMoreFiles(int visibleCount, int totalFiles) => visibleCount < totalFiles;
 
     /// <summary>
+    /// Which file is "in view" while browsing — the item at the top of the rendered viewport.
+    /// Switching between pagination and infinite scroll keeps the user on this file instead of
+    /// throwing away their position.
+    /// </summary>
+    public static int TopIndex(int page, int pageSize, int totalFiles)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+
+        if (totalFiles <= 0)
+        {
+            return 0;
+        }
+
+        long top = (long)(Math.Max(page, 1) - 1) * pageSize;
+        return (int)Math.Min(top, totalFiles - 1);
+    }
+
+    /// <summary>
+    /// The page that starts on (or contains) <paramref name="itemIndex"/>, so returning to
+    /// pagination lands on the item the user was looking at.
+    /// </summary>
+    public static int PageForIndex(int itemIndex, int pageSize, int totalFiles)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+
+        if (totalFiles <= 0 || itemIndex <= 0)
+        {
+            return 1;
+        }
+
+        return (int)(Math.Min(itemIndex, totalFiles - 1) / pageSize) + 1;
+    }
+
+    /// <summary>
+    /// How many files infinite scroll must render to include <paramref name="itemIndex"/> —
+    /// whole batches, clamped to the total. Keeping the anchored item on its batch boundary
+    /// means the page the user returns from is the one still filled below it.
+    /// </summary>
+    public static int VisibleCountContaining(int itemIndex, int batchSize, int totalFiles)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
+
+        if (totalFiles <= 0)
+        {
+            return 0;
+        }
+
+        long index = Math.Clamp(itemIndex, 0, totalFiles - 1);
+        long batches = (index / batchSize) + 1;
+        return (int)Math.Min(batches * batchSize, totalFiles);
+    }
+
+    /// <summary>
     /// Keeps already-loaded files when the batch size changes so the scroll position is
     /// preserved, but always shows at least one batch and never more than the total.
     /// </summary>
