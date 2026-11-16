@@ -163,6 +163,31 @@
                 <hr />
 
                 <div class="appearance-section">
+                    <h5>File Browsing</h5>
+                    <p class="section-hint">
+                        Choose how file results are presented. Pagination shows one page at a time;
+                        infinite scroll keeps appending files as you scroll. The page or batch size
+                        can be changed in the bar under the file view.
+                    </p>
+                    <div class="radio-group" role="radiogroup" aria-label="File browsing mode">
+                        <label>
+                            <input type="radio" name="fileScrollMode"
+                                   checked="@(Settings.Current.FileScrollMode == FileScrollMode.Paginated)"
+                                   @onchange="@(() => UpdateFileScrollMode(FileScrollMode.Paginated))" />
+                            Pagination (one page at a time)
+                        </label>
+                        <label>
+                            <input type="radio" name="fileScrollMode"
+                                   checked="@(Settings.Current.FileScrollMode == FileScrollMode.Infinite)"
+                                   @onchange="@(() => UpdateFileScrollMode(FileScrollMode.Infinite))" />
+                            Infinite scroll (load files as you go)
+                        </label>
+                    </div>
+                </div>
+
+                <hr />
+
+                <div class="appearance-section">
                     <h5>Tag Sidebar Style</h5>
                     <div class="radio-group">
                         <label>

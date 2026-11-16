@@ -161,3 +161,9 @@
     width: 10%;
 }
 /* date */
+
+/* Infinite scroll footer row: no cell padding, no row divider. */
+.file-list ::deep tfoot td {
+    padding: 0;
+    border-top: 0;
+}

@@ -40,6 +40,40 @@ public class SettingsManager
     }
 
 
+    /// <summary>
+    /// Re-reads the settings file after another window saved it. The live <see cref="Current"/>
+    /// instance is updated in place so every subscriber of <see cref="SettingsChanged"/> —
+    /// components, <c>AppState</c>, services — sees one object and one event. A malformed file
+    /// leaves the current values untouched.
+    /// </summary>
+    public void Reload()
+    {
+        Settings? loaded;
+        try
+        {
+            if (!File.Exists(_settingsPath))
+            {
+                return;
+            }
+
+            string json = File.ReadAllText(_settingsPath);
+            loaded = JsonSerializer.Deserialize<Settings>(json, _serializerOptions);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Settings] Error reloading: {ex.Message}. Keeping current values.");
+            return;
+        }
+
+        if (loaded is null)
+        {
+            return;
+        }
+
+        Current.CopyFrom(loaded);
+        SettingsChanged?.Invoke();
+    }
+
     public void Update(Action<Settings> updateAction, bool save = true)
     {
         updateAction(Current);

@@ -64,6 +64,30 @@ public class SettingsManagerFilesPerPageTests : IDisposable
         manager.Current.ThumbnailSize.Should().Be(160);
     }
 
+    [Fact]
+    public void Update_SavesScrollModeAsAReadableString()
+    {
+        SettingsManager manager = new(_settingsPath);
+
+        manager.Update(settings => settings.FileScrollMode = FileScrollMode.Infinite);
+
+        File.ReadAllText(_settingsPath).Should().Contain("\"FileScrollMode\": \"Infinite\"");
+        new SettingsManager(_settingsPath).Current.FileScrollMode.Should().Be(FileScrollMode.Infinite);
+    }
+
+    [Fact]
+    public void Load_SettingsWithoutScrollMode_UsesPagination()
+    {
+        File.WriteAllText(_settingsPath, """
+            { "FilesPerPage": 250, "ThumbnailSize": 160 }
+            """);
+
+        SettingsManager manager = new(_settingsPath);
+
+        manager.Current.FileScrollMode.Should().Be(FileScrollMode.Paginated);
+        manager.Current.FilesPerPage.Should().Be(250);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

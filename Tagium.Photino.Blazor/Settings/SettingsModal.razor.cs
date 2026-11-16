@@ -169,22 +169,47 @@ public partial class SettingsModal : IDisposable
         return dateTime.ToString("g");
     }
 
+    private void UpdateFileScrollMode(FileScrollMode mode)
+    {
+        UpdateAndNotify(() => Settings.Update(s => s.FileScrollMode = mode));
+    }
+
+    /// <summary>
+    /// Saves a preference the main workspace renders from and asks the live window to
+    /// re-read it, because a child window's <see cref="SettingsManager"/> may be a different
+    /// instance from the one the main window's <c>AppState</c> watches.
+    /// </summary>
+    private static void UpdateAndNotify(Action save)
+    {
+        save();
+        WindowEventHub.NotifySettingsSaved();
+    }
+
+    /// <summary>Same as <see cref="UpdateAndNotify"/>, for preferences that also restyle the current window.</summary>
+    private void UpdateAndNotify(Action save, bool notifyAppearance)
+    {
+        UpdateAndNotify(save);
+
+        if (notifyAppearance)
+        {
+            Appearance.NotifyChanged();
+        }
+    }
+
     private void UpdateTagSidebarStyle(TagSidebarDisplayMode mode)
     {
-        Settings.Update(s => s.TagSidebarStyle = mode);
+        UpdateAndNotify(() => Settings.Update(s => s.TagSidebarStyle = mode));
     }
 
     private void UpdateMacOSAppearance(ChangeEventArgs args)
     {
         bool enabled = args.Value is bool value && value;
-        Settings.Update(s => s.MacOSAppearance = enabled);
-        Appearance.NotifyChanged();
+        UpdateAndNotify(() => Settings.Update(s => s.MacOSAppearance = enabled), notifyAppearance: true);
     }
 
     private void UpdateCornerStyle(InterfaceCornerStyle style)
     {
-        Settings.Update(s => s.CornerStyle = style);
-        Appearance.NotifyChanged();
+        UpdateAndNotify(() => Settings.Update(s => s.CornerStyle = style), notifyAppearance: true);
     }
 
     private static string GetCornerStylePreviewClass(InterfaceCornerStyle style)
@@ -206,7 +231,7 @@ public partial class SettingsModal : IDisposable
 
     private void UpdateEmojiSet(EmojiSet set)
     {
-        Settings.Update(s => s.EmojiPreference = set);
+        UpdateAndNotify(() => Settings.Update(s => s.EmojiPreference = set));
     }
 
     private void OnThemeChanged(ChangeEventArgs e)
@@ -217,15 +242,14 @@ public partial class SettingsModal : IDisposable
             return;
         }
 
-        Settings.Update(s => s.SelectedTheme = themeName);
-        Appearance.NotifyChanged();
+        UpdateAndNotify(() => Settings.Update(s => s.SelectedTheme = themeName), notifyAppearance: true);
     }
 
     private void OnZoomChanged(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out int zoom))
         {
-            Settings.Update(s => s.Zoom = zoom);
+            UpdateAndNotify(() => Settings.Update(s => s.Zoom = zoom));
             Program.MainWindow?.SetZoom(zoom);
             Program.SettingsWindowNative?.SetZoom(zoom);
         }

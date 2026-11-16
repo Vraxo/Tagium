@@ -30,6 +30,15 @@ public class AppState : IDisposable
     public int TotalFilesCount => _currentFiles.Count;
     public int TotalPages => (int)Math.Ceiling((double)TotalFilesCount / PageSize);
 
+    // Infinite Scroll State (PageSize doubles as the batch size)
+    public FileScrollMode ScrollMode { get; private set; }
+    public int VisibleFileCount { get; private set; }
+    public bool IsInfiniteScroll => ScrollMode == FileScrollMode.Infinite;
+    public bool HasMoreFiles => IsInfiniteScroll && FilePagination.HasMoreFiles(VisibleFileCount, TotalFilesCount);
+
+    // Index within the visible files to focus after MovePage; -1 when there is nothing to focus.
+    public int PendingFocusIndex { get; private set; } = -1;
+
     public event Action? OnChange;
     public event Action? OnSelectionChange;
 
@@ -42,6 +51,8 @@ public class AppState : IDisposable
         _modalService = modalService;
         _settings = settings;
         PageSize = _settings.Current.FilesPerPage;
+        ScrollMode = _settings.Current.FileScrollMode;
+        VisibleFileCount = PageSize;
         _settings.SettingsChanged += OnSettingsChanged;
         _library.LibraryChanged += OnLibraryChanged;
         _library.DuplicatesDetected += OnDuplicatesDetected;
@@ -50,15 +61,40 @@ public class AppState : IDisposable
 
     private void OnSettingsChanged()
     {
+        bool changed = false;
+        FileScrollMode newMode = _settings.Current.FileScrollMode;
         int newPageSize = _settings.Current.FilesPerPage;
-        if (newPageSize == PageSize)
+
+        if (newMode != ScrollMode)
         {
-            return;
+            // A mode change starts the list from the top: an infinite view cannot reopen
+            // "on page 7" without rendering every file above it, so both directions land
+            // on the first page / first batch instead of jumping.
+            ResetScrollPosition();
+            ScrollMode = newMode;
+            changed = true;
         }
 
-        CurrentPage = FilePagination.PageAfterSizeChange(CurrentPage, PageSize, newPageSize, TotalFilesCount);
-        PageSize = newPageSize;
-        NotifyStateChanged();
+        if (newPageSize != PageSize)
+        {
+            if (ScrollMode == FileScrollMode.Infinite)
+            {
+                VisibleFileCount = FilePagination.VisibleCountAfterBatchSizeChange(
+                    VisibleFileCount, newPageSize, TotalFilesCount);
+            }
+            else
+            {
+                CurrentPage = FilePagination.PageAfterSizeChange(CurrentPage, PageSize, newPageSize, TotalFilesCount);
+            }
+
+            PageSize = newPageSize;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            NotifyStateChanged();
+        }
     }
 
     private void OnLibraryChanged()
@@ -109,6 +145,12 @@ public class AppState : IDisposable
         // Adjust page if it goes out of bounds after a filter or library change.
         CurrentPage = Math.Clamp(CurrentPage, 1, Math.Max(TotalPages, 1));
 
+        // Keep the loaded batches across refreshes of the same result set (thumbnail work,
+        // ratings and tags reload the list); only clamp to the new total and guarantee at
+        // least one batch. A filter change resets the count through ResetScrollPosition.
+        VisibleFileCount = FilePagination.VisibleCountAfterBatchSizeChange(
+            VisibleFileCount, PageSize, TotalFilesCount);
+
         NotifyStateChanged();
     }
 
@@ -117,6 +159,44 @@ public class AppState : IDisposable
         return _currentFiles
             .Skip((CurrentPage - 1) * PageSize)
             .Take(PageSize);
+    }
+
+    /// <summary>
+    /// The files the current view should render: the current page when paginated, or
+    /// the loaded batches from the top when infinite scroll is on.
+    /// </summary>
+    public IEnumerable<FileEntry> GetVisibleFiles()
+    {
+        if (IsInfiniteScroll)
+        {
+            return _currentFiles.Take(Math.Max(VisibleFileCount, 0));
+        }
+
+        return GetPagedFiles();
+    }
+
+    /// <summary>
+    /// Reads and clears the index the view should focus after a cross-batch page move.
+    /// Returns <c>-1</c> when the visible viewport already contains the target.
+    /// </summary>
+    public int ConsumePendingFocusIndex()
+    {
+        int index = PendingFocusIndex;
+        PendingFocusIndex = -1;
+        return index;
+    }
+
+    /// <summary>Appends the next batch in infinite scroll mode. Returns <c>false</c> when there is nothing more to load.</summary>
+    public bool LoadMoreFiles()
+    {
+        if (!HasMoreFiles)
+        {
+            return false;
+        }
+
+        VisibleFileCount = FilePagination.NextVisibleCount(VisibleFileCount, PageSize, TotalFilesCount);
+        NotifyStateChanged();
+        return true;
     }
 
     public void SetPage(int page)
@@ -128,50 +208,6 @@ public class AppState : IDisposable
 
         CurrentPage = page;
         NotifyStateChanged();
-    }
-
-    /// <summary>
-    /// Moves to the adjacent page and selects its first or last file so keyboard focus can
-    /// continue naturally across pagination boundaries. Shift-navigation extends the existing
-    /// selection anchor across the complete filtered result set.
-    /// </summary>
-    public bool MovePage(int direction, bool extendSelection = false)
-    {
-        if (direction == 0 || TotalPages == 0)
-        {
-            return false;
-        }
-
-        int targetPage = Math.Clamp(CurrentPage + Math.Sign(direction), 1, TotalPages);
-        if (targetPage == CurrentPage)
-        {
-            return false;
-        }
-
-        CurrentPage = targetPage;
-        List<FileEntry> pageFiles = GetPagedFiles().ToList();
-        FileEntry? target = direction > 0 ? pageFiles.FirstOrDefault() : pageFiles.LastOrDefault();
-
-        if (target is null)
-        {
-            NotifyStateChanged();
-            return false;
-        }
-
-        SelectFile(target.Id, multiSelect: false, rangeSelect: extendSelection);
-        NotifyStateChanged();
-        return true;
-    }
-
-    public void SetPageSize(int pageSize)
-    {
-        if (!FilePagination.IsSupportedPageSize(pageSize) || pageSize == PageSize)
-        {
-            return;
-        }
-
-        // The settings change handler updates the current page and notifies both file views.
-        _settings.Update(settings => settings.FilesPerPage = pageSize);
     }
 
     public void NextPage()
@@ -190,6 +226,111 @@ public class AppState : IDisposable
             CurrentPage--;
             NotifyStateChanged();
         }
+    }
+
+    public void SetPageSize(int pageSize)
+    {
+        if (!FilePagination.IsSupportedPageSize(pageSize) || pageSize == PageSize)
+        {
+            return;
+        }
+
+        // The settings handler updates the current page or loaded batch count and notifies
+        // both file views, so the two views never disagree about the page size.
+        _settings.Update(settings => settings.FilesPerPage = pageSize);
+    }
+
+    /// <summary>
+    /// Steps to the adjacent item across a viewport boundary — the arrow-key behaviour at
+    /// the end of the rendered files. Paginated views move to the next/previous page;
+    /// infinite scroll appends the next batch when it is needed. Shift extends the selection
+    /// anchor across the complete filtered result set in both modes.
+    /// </summary>
+    public bool MovePage(int direction, bool extendSelection = false)
+    {
+        if (direction == 0 || TotalFilesCount == 0)
+        {
+            return false;
+        }
+
+        return IsInfiniteScroll
+            ? MoveInfinite(direction, extendSelection, step: 1)
+            : MovePaginatedPage(direction, extendSelection);
+    }
+
+    /// <summary>
+    /// Moves one screenful — Page Up / Page Down. Paginated views move a whole page;
+    /// infinite scroll moves <see cref="PageSize"/> files and loads what it needs.
+    /// </summary>
+    public bool MoveBatch(int direction, bool extendSelection = false)
+    {
+        if (direction == 0 || TotalFilesCount == 0)
+        {
+            return false;
+        }
+
+        return IsInfiniteScroll
+            ? MoveInfinite(direction, extendSelection, step: PageSize)
+            : MovePaginatedPage(direction, extendSelection);
+    }
+
+    private bool MovePaginatedPage(int direction, bool extendSelection)
+    {
+        int targetPage = Math.Clamp(CurrentPage + Math.Sign(direction), 1, TotalPages);
+        if (targetPage == CurrentPage)
+        {
+            return false;
+        }
+
+        CurrentPage = targetPage;
+        List<FileEntry> pageFiles = GetPagedFiles().ToList();
+        FileEntry? target = direction > 0 ? pageFiles.FirstOrDefault() : pageFiles.LastOrDefault();
+
+        if (target is null)
+        {
+            NotifyStateChanged();
+            return false;
+        }
+
+        SelectFile(target.Id, multiSelect: false, rangeSelect: extendSelection);
+        PendingFocusIndex = direction > 0 ? 0 : pageFiles.Count - 1;
+        NotifyStateChanged();
+        return true;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="step"/> files through the full result set, appending batches until
+    /// the destination file is rendered. With nothing selected, a move enters the rendered
+    /// files at the top (forward) or the bottom of what is loaded (backward).
+    /// </summary>
+    private bool MoveInfinite(int direction, bool extendSelection, int step)
+    {
+        List<FileEntry> visible = _currentFiles.Take(VisibleFileCount).ToList();
+        int currentIndex = visible.FindIndex(f => SelectedFileIds.Contains(f.Id));
+
+        int anchor = currentIndex >= 0
+            ? currentIndex
+            : (direction > 0 ? 0 : Math.Max(VisibleFileCount - 1, 0));
+        int distance = currentIndex >= 0 ? Math.Sign(direction) * step : 0;
+        int targetIndex = Math.Clamp(anchor + distance, 0, TotalFilesCount - 1);
+
+        if (targetIndex == currentIndex)
+        {
+            return false;
+        }
+
+        // The destination must exist in the DOM before focus can move there.
+        while (targetIndex >= VisibleFileCount
+            && FilePagination.HasMoreFiles(VisibleFileCount, TotalFilesCount))
+        {
+            VisibleFileCount = FilePagination.NextVisibleCount(VisibleFileCount, PageSize, TotalFilesCount);
+        }
+
+        FileEntry target = _currentFiles[targetIndex];
+        SelectFile(target.Id, multiSelect: false, rangeSelect: extendSelection);
+        PendingFocusIndex = targetIndex;
+        NotifyStateChanged();
+        return true;
     }
 
     public void SwitchView(AppView view)
@@ -238,7 +379,7 @@ public class AppState : IDisposable
         CurrentFolderPath = null;
         SelectedFileIds.Clear();
         _selectionAnchor = null;
-        CurrentPage = 1;
+        ResetScrollPosition();
 
         if (CurrentView != AppView.Files)
         {
@@ -255,7 +396,7 @@ public class AppState : IDisposable
         CurrentFolderPath = null;
         SelectedFileIds.Clear();
         _selectionAnchor = null;
-        CurrentPage = 1;
+        ResetScrollPosition();
 
         if (CurrentView != AppView.Files)
         {
@@ -272,7 +413,7 @@ public class AppState : IDisposable
         IsMissingOnly = false;
         SelectedFileIds.Clear();
         _selectionAnchor = null;
-        CurrentPage = 1;
+        ResetScrollPosition();
 
         if (CurrentView != AppView.Folders)
         {
@@ -280,6 +421,17 @@ public class AppState : IDisposable
         }
 
         _ = RefreshFilesAsync();
+    }
+
+    /// <summary>
+    /// A new result set always starts at the top: page one when paginated, first batch
+    /// when infinitely scrolling, so the user never lands mid-scroll in a fresh filter.
+    /// </summary>
+    private void ResetScrollPosition()
+    {
+        CurrentPage = 1;
+        VisibleFileCount = PageSize;
+        PendingFocusIndex = -1;
     }
 
     public void SelectFile(Guid id, bool multiSelect, bool rangeSelect)

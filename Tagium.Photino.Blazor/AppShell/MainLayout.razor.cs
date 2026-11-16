@@ -43,6 +43,7 @@ public partial class MainLayout : IDisposable
     {
         _lastActiveZoom = SettingsManager.Current.Zoom;
         SettingsManager.SettingsChanged += OnSettingsChanged;
+        WindowEventHub.SettingsSaved += OnExternalSettingsSaved;
         Appearance.AppearanceChanged += OnAppearanceChanged;
         ScanService.ScanCompleted += ShowScanStatus;
         AppState.OnChange += StateHasChanged;
@@ -53,6 +54,12 @@ public partial class MainLayout : IDisposable
     {
         if (!firstRender)
         {
+            // Batches appended by infinite scroll start a fresh observation window.
+            if (AppState.IsInfiniteScroll)
+            {
+                await ObserveInfiniteScrollAsync();
+            }
+
             return;
         }
 
@@ -70,6 +77,7 @@ public partial class MainLayout : IDisposable
             "splitter-right");
 
         await JS.InvokeVoidAsync("globalShortcuts.init", _objRef);
+        await JS.InvokeVoidAsync("libraryScroll.setDotNetRef", _objRef);
         await JS.InvokeVoidAsync("tagiumNavigation.init", _objRef);
         await JS.InvokeVoidAsync("zoomTracker.init", _objRef, SettingsManager.Current.Zoom);
 
@@ -82,6 +90,20 @@ public partial class MainLayout : IDisposable
         {
             WindowsAccentColor.ColorChanged += OnWindowsAccentColorChanged;
             _isSubscribedToAccentChanges = true;
+        }
+    }
+
+    // Only the JSInterop call needs guarding; a render must never throw because of it.
+    private async Task ObserveInfiniteScrollAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("libraryScroll.observe");
+        }
+        catch (JSException)
+        {
+            // The observer is progressive enhancement: without it the user can still
+            // page with Page Down and the arrow keys.
         }
     }
 
@@ -171,7 +193,17 @@ public partial class MainLayout : IDisposable
     [JSInvokable]
     public bool NavigateFilePage(int direction, bool extendSelection)
     {
-        return AppState.MovePage(direction, extendSelection);
+        return AppState.MoveBatch(direction, extendSelection);
+    }
+
+    /// <summary>
+    /// Infinite scroll: the sentinel entered the viewport. Loading is idempotent — the
+    /// observer can fire again before the appended batch has rendered.
+    /// </summary>
+    [JSInvokable]
+    public bool LoadMoreFiles()
+    {
+        return AppState.LoadMoreFiles();
     }
 
     [JSInvokable]
@@ -277,6 +309,19 @@ public partial class MainLayout : IDisposable
     {
         SettingsManager.Update(s => s.Zoom = 100);
         Program.MainWindow?.SetZoom(100);
+    }
+
+    /// <summary>
+    /// The Settings window saved: re-read the file so the browsing mode and page/batch size
+    /// apply to the live workspace without a restart.
+    /// </summary>
+    private void OnExternalSettingsSaved()
+    {
+        _ = InvokeAsync(() =>
+        {
+            SettingsManager.Reload();
+            StateHasChanged();
+        });
     }
 
     private void OnSettingsChanged()
@@ -417,6 +462,7 @@ public partial class MainLayout : IDisposable
         }
 
         SettingsManager.SettingsChanged -= OnSettingsChanged;
+        WindowEventHub.SettingsSaved -= OnExternalSettingsSaved;
         Appearance.AppearanceChanged -= OnAppearanceChanged;
         ScanService.ScanCompleted -= ShowScanStatus;
         AppState.OnChange -= StateHasChanged;

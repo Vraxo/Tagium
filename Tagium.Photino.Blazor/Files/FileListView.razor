@@ -6,8 +6,9 @@
 @inject IJSRuntime JS
 
 @{
-    List<FileEntry> pagedFiles = AppState.GetPagedFiles().ToList();
-    Guid? tabStopId = GetTabStopId(pagedFiles);
+    // Paginated: the current page. Infinite scroll: every loaded batch.
+    List<FileEntry> visibleFiles = AppState.GetVisibleFiles().ToList();
+    Guid? tabStopId = GetTabStopId(visibleFiles);
 }
 
 <div id="file-list-container" class="list-container">
@@ -25,7 +26,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach (var file in pagedFiles)
+            @foreach (var file in visibleFiles)
             {
                 bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
                 bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
@@ -71,5 +72,15 @@
                 </tr>
             }
         </tbody>
+        @if (AppState.IsInfiniteScroll)
+        {
+            <tfoot>
+                <tr class="infinite-scroll-row">
+                    <td colspan="5" style="padding: 0; border-top: 0;">
+                        <InfiniteScrollSentinel />
+                    </td>
+                </tr>
+            </tfoot>
+        }
     </table>
 </div>

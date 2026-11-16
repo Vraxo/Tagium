@@ -6,6 +6,10 @@
 <div class="keyboard-shortcuts">
     <p class="keyboard-shortcuts-intro">
         Available shortcuts for the current workspace. Text fields keep their normal typing behavior.
+        @if (AppState.CurrentView is AppView.Files or AppView.Folders)
+        {
+            <text>File results currently use @(SettingsManager.Current.FileScrollMode == FileScrollMode.Infinite ? "infinite scroll" : "pagination") — change this in Settings &gt; Appearance &gt; File Browsing.</text>
+        }
     </p>
 
     <div class="keyboard-shortcuts-grid">
@@ -36,9 +40,19 @@
                     <div class="keyboard-shortcut-row"><span>Previous / next file</span><kbd>↑ / ↓</kbd></div>
                     <div class="keyboard-shortcut-row"><span>Extend selection</span><kbd>Shift + ↑ / ↓</kbd></div>
                 }
-                <div class="keyboard-shortcut-row"><span>First / last file on page</span><kbd>Home / End</kbd></div>
-                <div class="keyboard-shortcut-row"><span>Previous / next page</span><kbd>Page Up / Down</kbd></div>
-                <div class="keyboard-shortcut-row"><span>Extend selection across pages</span><kbd>Shift + Page Up / Down</kbd></div>
+                @if (SettingsManager.Current.FileScrollMode == FileScrollMode.Infinite)
+                {
+                    <div class="keyboard-shortcut-row"><span>First / last file</span><kbd>Home / End</kbd></div>
+                    <div class="keyboard-shortcut-row"><span>Previous / next screenful</span><kbd>Page Up / Down</kbd></div>
+                    <div class="keyboard-shortcut-row"><span>Extend selection across loaded files</span><kbd>Shift + Page Up / Down</kbd></div>
+                    <p class="keyboard-shortcut-hint">Home and End jump to the first or last file that is currently loaded. Keep pressing End (or keep scrolling) to pull in the rest.</p>
+                }
+                else
+                {
+                    <div class="keyboard-shortcut-row"><span>First / last file on page</span><kbd>Home / End</kbd></div>
+                    <div class="keyboard-shortcut-row"><span>Previous / next page</span><kbd>Page Up / Down</kbd></div>
+                    <div class="keyboard-shortcut-row"><span>Extend selection across pages</span><kbd>Shift + Page Up / Down</kbd></div>
+                }
                 <div class="keyboard-shortcut-row"><span>Open focused file</span><kbd>Enter</kbd></div>
                 <div class="keyboard-shortcut-row"><span>Open file actions</span><kbd>Shift + F10</kbd></div>
                 <div class="keyboard-shortcut-row"><span>Toggle file selection</span><kbd>Space</kbd></div>

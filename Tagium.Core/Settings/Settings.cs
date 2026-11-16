@@ -12,6 +12,13 @@ public class Settings
         set => _filesPerPage = FilePagination.NormalizePageSize(value);
     }
 
+    /// <summary>
+    /// How the file views move through a result set. <see cref="FileScrollMode.Paginated"/>
+    /// shows one page at a time with page controls; <see cref="FileScrollMode.Infinite"/>
+    /// appends batches of <see cref="FilesPerPage"/> files as the user scrolls.
+    /// </summary>
+    public FileScrollMode FileScrollMode { get; set; } = FileScrollMode.Paginated;
+
     public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
     public EmojiSet EmojiPreference { get; set; } = EmojiSet.SystemDefault;
     public InterfaceStyle InterfaceStyle { get; set; } = Tagium.Core.Settings.InterfaceStyle.Classic;
@@ -52,5 +59,36 @@ public class Settings
     {
         get => _videoVolume;
         set => _videoVolume = double.IsFinite(value) ? Math.Clamp(value, 0.0, 1.0) : 1.0;
+    }
+
+    /// <summary>
+    /// Copies every persisted preference from a freshly loaded instance into this one.
+    /// <see cref="SettingsManager.Reload"/> uses it so components that hold
+    /// <see cref="SettingsManager.Current"/> keep reading the same object.
+    /// </summary>
+    public void CopyFrom(Settings other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        FilesPerPage = other.FilesPerPage;
+        FileScrollMode = other.FileScrollMode;
+        TagDisplay = other.TagDisplay;
+        EmojiPreference = other.EmojiPreference;
+        InterfaceStyle = other.InterfaceStyle;
+        CornerStyle = other.CornerStyle;
+        ThumbnailSize = other.ThumbnailSize;
+        FileSortBy = other.FileSortBy;
+        FileSortDirection = other.FileSortDirection;
+        TagSidebarStyle = other.TagSidebarStyle;
+        TagSortBy = other.TagSortBy;
+        TagSortDirection = other.TagSortDirection;
+        RecentTagIds = other.RecentTagIds ?? [];
+        RecentSearches = other.RecentSearches ?? [];
+        FileViewMode = other.FileViewMode;
+        SelectedTheme = other.SelectedTheme;
+        LeftSidebarWidth = other.LeftSidebarWidth;
+        RightSidebarWidth = other.RightSidebarWidth;
+        Zoom = other.Zoom;
+        VideoVolume = other.VideoVolume;
     }
 }

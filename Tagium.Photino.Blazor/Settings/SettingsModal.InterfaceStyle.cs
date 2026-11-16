@@ -15,7 +15,7 @@ public partial class SettingsModal
             return;
         }
 
-        Settings.Update(settings => settings.InterfaceStyle = style);
+        UpdateAndNotify(() => Settings.Update(settings => settings.InterfaceStyle = style));
 
         bool requiresRestart = Program.SupportsNativeMica
             && style != Program.ActiveInterfaceStyle
