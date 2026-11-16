@@ -123,6 +123,53 @@ public static class FilePagination
     }
 
     /// <summary>
+    /// The [start, end) slice of the filtered result set a view is rendering: one page when
+    /// paginated, every loaded batch when infinitely scrolling. An empty result set returns
+    /// (0, 0), and a stale page clamps to the end rather than reporting items that do not exist.
+    /// </summary>
+    public static (int Start, int End) RenderedWindow(
+        bool isInfiniteScroll, int currentPage, int pageSize, int visibleCount, int totalFiles)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+
+        if (totalFiles <= 0)
+        {
+            return (0, 0);
+        }
+
+        if (isInfiniteScroll)
+        {
+            return (0, Math.Clamp(visibleCount, 0, totalFiles));
+        }
+
+        long start = (long)(Math.Max(currentPage, 1) - 1) * pageSize;
+        int clampedStart = (int)Math.Min(start, totalFiles);
+        return (clampedStart, Math.Min(clampedStart + pageSize, totalFiles));
+    }
+
+    /// <summary>
+    /// The file the user is focused on within the rendered window: the first selected file in
+    /// that window, otherwise its first file. This is the anchor a mode switch preserves, so a
+    /// selection on another page does not drag the user back to it.
+    /// </summary>
+    public static int AnchorIndex(
+        IReadOnlyList<Guid> orderedIds, IReadOnlySet<Guid> selectedIds, (int Start, int End) window)
+    {
+        ArgumentNullException.ThrowIfNull(orderedIds);
+        ArgumentNullException.ThrowIfNull(selectedIds);
+
+        for (int index = Math.Max(window.Start, 0); index < Math.Min(window.End, orderedIds.Count); index++)
+        {
+            if (selectedIds.Contains(orderedIds[index]))
+            {
+                return index;
+            }
+        }
+
+        return Math.Max(window.Start, 0);
+    }
+
+    /// <summary>
     /// Keeps already-loaded files when the batch size changes so the scroll position is
     /// preserved, but always shows at least one batch and never more than the total.
     /// </summary>
