@@ -36,7 +36,10 @@ public class AppState : IDisposable
     public bool IsInfiniteScroll => ScrollMode == FileScrollMode.Infinite;
     public bool HasMoreFiles => IsInfiniteScroll && FilePagination.HasMoreFiles(VisibleFileCount, TotalFilesCount);
 
-    // Index within the visible files to focus after MovePage; -1 when there is nothing to focus.
+    // Position within the files a view is about to render (not the result set) to focus after
+    // the next render; -1 when the view should not move focus. Infinite scroll can append the
+    // destination batch in the same render as the key press or settings change, so focus is
+    // placed after the DOM exists rather than assumed to be reachable already.
     public int PendingFocusIndex { get; private set; } = -1;
 
     public event Action? OnChange;
@@ -65,13 +68,29 @@ public class AppState : IDisposable
         FileScrollMode newMode = _settings.Current.FileScrollMode;
         int newPageSize = _settings.Current.FilesPerPage;
 
+        int modeAnchorIndex = -1;
+
         if (newMode != ScrollMode)
         {
-            // A mode change starts the list from the top: an infinite view cannot reopen
-            // "on page 7" without rendering every file above it, so both directions land
-            // on the first page / first batch instead of jumping.
-            ResetScrollPosition();
+            // Keep the user where they were. The anchor is the first selected file that is
+            // rendered — the file they are looking at — or, with nothing selected there, the
+            // top of the rendered viewport. Returning to pagination lands on the page holding
+            // the anchor; switching to infinite scroll renders whole batches up to and
+            // including the anchor's batch, so the page they came from is still filled below.
+            modeAnchorIndex = CurrentAnchorIndex();
+
             ScrollMode = newMode;
+
+            if (newMode == FileScrollMode.Infinite)
+            {
+                VisibleFileCount = FilePagination.VisibleCountContaining(
+                    modeAnchorIndex, PageSize, TotalFilesCount);
+            }
+            else
+            {
+                CurrentPage = FilePagination.PageForIndex(modeAnchorIndex, PageSize, TotalFilesCount);
+            }
+
             changed = true;
         }
 
@@ -91,10 +110,74 @@ public class AppState : IDisposable
             changed = true;
         }
 
+        // Do this last: a page-size change above can move the rendered window, and the
+        // anchor has to be focusable in whatever the views are about to render.
+        if (modeAnchorIndex >= 0)
+        {
+            ApplyAnchorAfterModeChange(modeAnchorIndex);
+        }
+
         if (changed)
         {
             NotifyStateChanged();
         }
+    }
+
+    /// <summary>
+    /// The [start, end) slice of the filtered result set the views are currently rendering.
+    /// </summary>
+    private (int Start, int End) RenderedWindow()
+    {
+        if (IsInfiniteScroll)
+        {
+            return (0, Math.Clamp(VisibleFileCount, 0, TotalFilesCount));
+        }
+
+        int start = (int)Math.Min((long)(CurrentPage - 1) * PageSize, TotalFilesCount);
+        return (start, Math.Min(start + PageSize, TotalFilesCount));
+    }
+
+    /// <summary>
+    /// Index of the file the user is focused on: the first selected file inside the rendered
+    /// window, otherwise the first rendered file. Returns <c>0</c> for an empty result set.
+    /// </summary>
+    private int CurrentAnchorIndex()
+    {
+        (int start, int end) = RenderedWindow();
+
+        for (int index = start; index < end; index++)
+        {
+            if (SelectedFileIds.Contains(_currentFiles[index].Id))
+            {
+                return index;
+            }
+        }
+
+        return start;
+    }
+
+    /// <summary>
+    /// A mode change re-renders the list from scratch. When the user has no selection, put the
+    /// anchor — the file they were looking at — back on the keyboard path so the roving tab
+    /// stop and arrow keys resume there. An existing selection is left untouched: it already
+    /// drives the tab stop, and silently replacing it would discard the user's work.
+    /// </summary>
+    private void ApplyAnchorAfterModeChange(int anchorIndex)
+    {
+        PendingFocusIndex = -1;
+
+        if (SelectedFileIds.Count > 0 || _currentFiles.Count == 0)
+        {
+            return;
+        }
+
+        // A page-size change can move the window off the anchor; fall back to its first file.
+        (int start, int end) = RenderedWindow();
+        int targetIndex = Math.Clamp(anchorIndex, start, Math.Max(end - 1, start));
+
+        SelectFile(_currentFiles[targetIndex].Id, multiSelect: false, rangeSelect: false);
+        // PendingFocusIndex is relative to the rendered items, not the result set.
+        PendingFocusIndex = targetIndex - start;
     }
 
     private void OnLibraryChanged()
