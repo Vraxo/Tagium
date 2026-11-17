@@ -1,4 +1,5 @@
 using Tagium.Core.Settings;
+using AppSettings = Tagium.Core.Settings.Settings;
 
 namespace Tagium.Core.Files;
 
@@ -21,7 +22,7 @@ public sealed class FileBrowser : IDisposable
     /// values at construction and is then driven by <see cref="ApplySettings"/>, which keeps it
     /// constructible in tests without touching a settings file on disk.
     /// </summary>
-    public FileBrowser(Settings settings)
+    public FileBrowser(AppSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
 

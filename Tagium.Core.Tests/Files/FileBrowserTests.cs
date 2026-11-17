@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Tagium.Core.Files;
 using Tagium.Core.Settings;
+using AppSettings = Tagium.Core.Settings.Settings;
 
 namespace Tagium.Core.Tests.Files;
 
@@ -10,7 +11,7 @@ public class FileBrowserTests
         [.. Enumerable.Range(0, count).Select(i => new FileEntry { Id = Guid.NewGuid(), Path = $"/lib/file{i}.jpg", Name = $"file{i}.jpg" })];
 
     private static FileBrowser Create(int pageSize = 50, FileScrollMode mode = FileScrollMode.Paginated) =>
-        new(new Settings { FilesPerPage = pageSize, FileScrollMode = mode });
+        new(new AppSettings { FilesPerPage = pageSize, FileScrollMode = mode });
 
     private static FileBrowser Loaded(int total, int pageSize = 50, FileScrollMode mode = FileScrollMode.Paginated)
     {
