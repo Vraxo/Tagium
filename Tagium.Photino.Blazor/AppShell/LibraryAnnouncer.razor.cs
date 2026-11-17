@@ -14,7 +14,7 @@ public partial class LibraryAnnouncer : IDisposable
     // Long enough to swallow arrow-key repeats, short enough to feel immediate.
     private const int AnnounceDelayMs = 400;
 
-    [Inject] public FileBrowser AppState { get; set; } = default!;
+    [Inject] public FileBrowser FileBrowser { get; set; } = default!;
 
     private string _message = "";
     private string? _pendingMessage;

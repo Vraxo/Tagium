@@ -10,7 +10,7 @@ namespace Tagium.Photino.Blazor.Files;
 
 public partial class FolderSidebar : IDisposable
 {
-    [Inject] private NavigationState AppState { get; set; } = default!;
+    [Inject] private NavigationState NavigationState { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
     [Inject] private ContextMenuService ContextMenu { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
@@ -24,11 +24,11 @@ public partial class FolderSidebar : IDisposable
     protected override void OnInitialized()
     {
         LoadRoots();
-        NavigationState.OnChange += OnAppStateChanged;
+        NavigationState.OnChange += OnNavigationChanged;
         Library.LibraryChanged += LoadRoots;
     }
 
-    private void OnAppStateChanged()
+    private void OnNavigationChanged()
     {
         _ = InvokeAsync(StateHasChanged);
     }
@@ -322,7 +322,7 @@ public partial class FolderSidebar : IDisposable
 
     public void Dispose()
     {
-        NavigationState.OnChange -= OnAppStateChanged;
+        NavigationState.OnChange -= OnNavigationChanged;
         Library.LibraryChanged -= LoadRoots;
     }
 }

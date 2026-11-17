@@ -15,7 +15,7 @@ public partial class SearchInput
     // blur that follows it would otherwise tear the list out from under the pointer.
     private const int BlurCloseDelayMilliseconds = 200;
 
-    [Inject] private NavigationState AppState { get; set; } = default!;
+    [Inject] private NavigationState NavigationState { get; set; } = default!;
     [Inject] private SettingsManager Settings { get; set; } = default!;
 
     private CancellationTokenSource? _debounceCts;

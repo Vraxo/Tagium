@@ -12,7 +12,7 @@ namespace Tagium.Photino.Blazor.AppShell;
 public partial class ContextMenuHost : IDisposable
 {
     [Inject] private ContextMenuService ContextMenu { get; set; } = default!;
-    [Inject] private NavigationState AppState { get; set; } = default!;
+    [Inject] private NavigationState NavigationState { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
     [Inject] private SystemLauncherService Launcher { get; set; } = default!;
     [Inject] private ToastService Toast { get; set; } = default!;

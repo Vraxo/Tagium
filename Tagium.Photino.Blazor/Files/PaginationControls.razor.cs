@@ -8,7 +8,7 @@ public record PageItem(int? PageNumber, string DisplayText, bool IsActive);
 
 public partial class PaginationControls : IDisposable
 {
-    [Inject] private FileBrowser AppState { get; set; } = default!;
+    [Inject] private FileBrowser FileBrowser { get; set; } = default!;
 
     protected override void OnInitialized()
     {
