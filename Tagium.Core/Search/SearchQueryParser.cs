@@ -155,7 +155,7 @@ internal static class SearchQueryParser
         return filters;
     }
 
-    private static (SearchComparison Operator, string Rest) SplitOperator(string value)
+    private static (SearchComparison Operator, string Remainder) SplitOperator(string value)
     {
         if (value.StartsWith(">="))
         {
