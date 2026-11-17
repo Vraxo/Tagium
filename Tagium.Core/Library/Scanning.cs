@@ -2,18 +2,25 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using Tagium.Core.Files;
 using Tagium.Core.Maintenance;
-using Tagium.Core.Metadata;
-using Tagium.Core.Tags;
 
 namespace Tagium.Core.Library;
 
+/// <summary>
+/// Runs a library scan: decides the order of the phases, owns the progress and completion events,
+/// and throttles how often the UI hears about progress.
+///
+/// The phases themselves are separate types — <see cref="FileScanner"/> finds candidates,
+/// <see cref="FileRelocator"/> re-points moved files, <see cref="MetadataImporter"/> reads
+/// embedded metadata. This class holds no rules about files; it sequences those and records
+/// what happened in a <see cref="ScanContext"/>.
+/// </summary>
 public class LibraryScanService
 {
     private readonly LibraryRootRepository _rootRepo;
     private readonly FileRepository _fileRepo;
-    private readonly TagRepository _tagRepo;
-    private readonly FileTagRepository _fileTagRepo;
-    private readonly ExifToolService _exifTool;
+    private readonly FileScanner _fileScanner;
+    private readonly FileRelocator _fileRelocator;
+    private readonly MetadataImporter _metadataImporter;
     private readonly FileHasher _fileHasher;
     private readonly LibraryIntegrityService _integrityService;
     private readonly ILogger<LibraryScanService> _logger;
@@ -27,23 +34,21 @@ public class LibraryScanService
     public event Action? FilesImported;
     public event Action<IReadOnlyList<FileEntry>>? DuplicatesDetected;
 
-    private static readonly HashSet<string> SupportedExtensions = SupportedFormats.All;
-
     public LibraryScanService(
         LibraryRootRepository rootRepo,
         FileRepository fileRepo,
-        TagRepository tagRepo,
-        FileTagRepository fileTagRepo,
-        ExifToolService exifTool,
+        FileScanner fileScanner,
+        FileRelocator fileRelocator,
+        MetadataImporter metadataImporter,
         FileHasher fileHasher,
         LibraryIntegrityService integrityService,
         ILogger<LibraryScanService> logger)
     {
         _rootRepo = rootRepo;
         _fileRepo = fileRepo;
-        _tagRepo = tagRepo;
-        _fileTagRepo = fileTagRepo;
-        _exifTool = exifTool;
+        _fileScanner = fileScanner;
+        _fileRelocator = fileRelocator;
+        _metadataImporter = metadataImporter;
         _fileHasher = fileHasher;
         _integrityService = integrityService;
         _logger = logger;
@@ -81,7 +86,7 @@ public class LibraryScanService
                 return;
             }
 
-            DiscoverCandidateFiles(roots, context);
+            context.CandidateFiles.AddRange(_fileScanner.DiscoverFiles(roots));
             LoadDatabaseCache(roots, context);
 
             ProgressTotal = context.CandidateFiles.Count;
@@ -106,94 +111,59 @@ public class LibraryScanService
         }
         finally
         {
-            // Reconcile every catalog record even if candidate scanning failed or was partial.
-            try
-            {
-                IntegrityScanResult integrityResult = await _integrityService.ScanAsync();
-                if (integrityResult.NewlyMissing > 0 || integrityResult.NewlyFound > 0)
-                {
-                    context.HasChanges = true;
-                    _logger.LogInformation(
-                        "Reconciled file availability after scan: {Missing} newly missing, {Found} returned",
-                        integrityResult.NewlyMissing,
-                        integrityResult.NewlyFound);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to reconcile file availability after scan");
-            }
-
-            if (context.HasChanges)
-            {
-                _logger.LogInformation("Library content changes detected. Triggering files imported event");
-                try
-                {
-                    FilesImported?.Invoke();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to notify listeners about library changes");
-                }
-            }
-
-            IsScanning = false;
-            ScanProgress?.Invoke(ProgressTotal, ProgressTotal);
-            _logger.LogInformation("Library scan completed. Resetting state");
-            ScanCompleted?.Invoke();
+            await ReconcileAndNotifyAsync(context);
         }
     }
 
-    private void DiscoverCandidateFiles(List<LibraryRoot> roots, ScanContext context)
+    /// <summary>
+    /// Runs even when the scan failed or was partial, so the catalog still reflects what is on
+    /// disk: availability is reconciled first, then listeners are told if anything changed.
+    /// </summary>
+    private async Task ReconcileAndNotifyAsync(ScanContext context)
     {
-        using LogTiming timer = LogTiming.Start(_logger, "Candidate file discovery in active roots");
-
-        List<LibraryRoot> activeRoots = roots.Where(r => r.IsEnabled).OrderBy(r => r.Path.Length).ToList();
-        List<LibraryRoot> pruned = new();
-
-        foreach (var root in activeRoots)
+        try
         {
-            bool isNested = pruned.Any(p =>
-                root.Path.StartsWith(p.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(root.Path, p.Path, StringComparison.OrdinalIgnoreCase));
-
-            if (!isNested)
+            IntegrityScanResult integrityResult = await _integrityService.ScanAsync();
+            if (integrityResult.NewlyMissing > 0 || integrityResult.NewlyFound > 0)
             {
-                pruned.Add(root);
+                context.HasChanges = true;
+                _logger.LogInformation(
+                    "Reconciled file availability after scan: {Missing} newly missing, {Found} returned",
+                    integrityResult.NewlyMissing,
+                    integrityResult.NewlyFound);
             }
         }
-
-        foreach (LibraryRoot root in pruned)
+        catch (Exception ex)
         {
-            if (!Directory.Exists(root.Path))
-            {
-                _logger.LogWarning("Library root directory does not exist: {Path}", root.Path);
-                continue;
-            }
+            _logger.LogError(ex, "Failed to reconcile file availability after scan");
+        }
 
+        if (context.HasChanges)
+        {
+            _logger.LogInformation("Library content changes detected. Triggering files imported event");
             try
             {
-                using CancellationTokenSource searchCts = new(TimeSpan.FromSeconds(30));
-                _logger.LogInformation("Enumerate files in library root: {Path}", root.Path);
-                IEnumerable<string> files = Directory.EnumerateFiles(root.Path, "*.*", SearchOption.AllDirectories)
-                    .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)));
-
-                context.CandidateFiles.AddRange(files);
+                FilesImported?.Invoke();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error enumerating directory: {Path}", root.Path);
+                _logger.LogError(ex, "Failed to notify listeners about library changes");
             }
         }
+
+        IsScanning = false;
+        ScanProgress?.Invoke(ProgressTotal, ProgressTotal);
+        _logger.LogInformation("Library scan completed. Resetting state");
+        ScanCompleted?.Invoke();
     }
 
     private void LoadDatabaseCache(List<LibraryRoot> roots, ScanContext context)
     {
         _logger.LogInformation("Loading current file definitions from database");
+
         foreach (LibraryRoot root in roots)
         {
-            List<FileEntry> dbFiles = _fileRepo.GetFilesUnderPath(root.Path);
-            foreach (FileEntry dbFile in dbFiles)
+            foreach (FileEntry dbFile in _fileRepo.GetFilesUnderPath(root.Path))
             {
                 context.DbFilesMap[dbFile.Path] = dbFile;
             }
@@ -213,7 +183,6 @@ public class LibraryScanService
             }
 
             await EvaluateSingleFileAsync(filePath, context, cancellationToken);
-
             await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
         }
     }
@@ -222,34 +191,31 @@ public class LibraryScanService
     {
         try
         {
-            FileInfo fileInfo = new(filePath);
-            long size = fileInfo.Length;
-            long modifiedTime = new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeSeconds();
+            FileIdentity identity = FileIdentity.Read(filePath);
 
-            if (context.DbFilesMap.TryGetValue(filePath, out FileEntry? existing))
-            {
-                if (existing.Size == size && existing.ModifiedTime == modifiedTime)
-                {
-                    if (existing.IsMissing)
-                    {
-                        _logger.LogInformation("File returned back to active library state: {Path}", filePath);
-                        existing.IsMissing = false;
-                        _fileRepo.Update(existing);
-                        context.HasChanges = true;
-                    }
-                    _ = context.VerifiedPaths.Add(filePath);
-                    ProgressCurrent++;
-                }
-                else
-                {
-                    _logger.LogInformation("File change detected: {Path}", filePath);
-                    await UpdateChangedFileAsync(existing, filePath, size, modifiedTime, context, cancellationToken);
-                }
-            }
-            else
+            if (!context.DbFilesMap.TryGetValue(filePath, out FileEntry? existing))
             {
                 context.UntrackedFiles.Add(filePath);
+                return;
             }
+
+            if (FileChangeDetector.IsUnchanged(existing, identity))
+            {
+                if (existing.IsMissing)
+                {
+                    _logger.LogInformation("File returned back to active library state: {Path}", filePath);
+                    existing.IsMissing = false;
+                    _fileRepo.Update(existing);
+                    context.HasChanges = true;
+                }
+
+                _ = context.VerifiedPaths.Add(filePath);
+                ProgressCurrent++;
+                return;
+            }
+
+            _logger.LogInformation("File change detected: {Path}", filePath);
+            await UpdateChangedFileAsync(existing, filePath, identity, context, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -257,28 +223,32 @@ public class LibraryScanService
         }
     }
 
-    private async Task UpdateChangedFileAsync(FileEntry existing, string filePath, long size, long modifiedTime, ScanContext context, CancellationToken cancellationToken)
+    private async Task UpdateChangedFileAsync(
+        FileEntry existing,
+        string filePath,
+        FileIdentity identity,
+        ScanContext context,
+        CancellationToken cancellationToken)
     {
         string? hash = await _fileHasher.ComputeSha256Async(filePath);
+
+        // An unreadable file is counted as processed either way: it is one candidate, done with.
         if (hash is not null)
         {
             existing.Hash = hash;
-            existing.Size = size;
-            existing.ModifiedTime = modifiedTime;
+            existing.Size = identity.Size;
+            existing.ModifiedTime = identity.ModifiedTimeUtc;
             existing.IsMissing = false;
 
-            MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(filePath);
-            if (metadata is not null)
-            {
-                existing.Rating = metadata.Rating;
-                existing.Title = metadata.Title;
-                existing.Description = metadata.Description;
-            }
+            // Fields only: a rescan refreshes rating/title/description but never re-maps embedded
+            // tags, so tags the user deleted do not come back. One write covers identity + fields.
+            _ = await _metadataImporter.ApplyFieldsAsync(filePath, existing);
 
             _fileRepo.Update(existing);
             context.HasChanges = true;
             _ = context.VerifiedPaths.Add(filePath);
         }
+
         ProgressCurrent++;
     }
 
@@ -288,95 +258,26 @@ public class LibraryScanService
             .Where(e => !context.VerifiedPaths.Contains(e.Path))
             .ToList();
 
-        HashSet<string> processedUntracked = [];
+        HashSet<string> relocatedPaths = [];
 
-        await DetectRenamesAndMovesAsync(missingDbFiles, context, processedUntracked, uiTimer, cancellationToken);
-        await ImportRemainingUntrackedAsync(context, processedUntracked, uiTimer, cancellationToken);
+        _ = await _fileRelocator.RelocateAsync(
+            missingDbFiles,
+            context.UntrackedFiles,
+            relocatedPaths,
+            onRelocated: entry =>
+            {
+                _fileRepo.Update(entry);
+                context.HasChanges = true;
+                ProgressCurrent++;
+            },
+            cancellationToken);
+
+        await ImportRemainingUntrackedAsync(context, relocatedPaths, uiTimer, cancellationToken);
     }
 
-    private async Task DetectRenamesAndMovesAsync(List<FileEntry> missingDbFiles, ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
+    private async Task ImportRemainingUntrackedAsync(ScanContext context, HashSet<string> relocatedPaths, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
-        using LogTiming timer = LogTiming.Start(_logger, "Rename and move detection of {Count} missing items", missingDbFiles.Count);
-
-        Dictionary<long, List<string>> untrackedBySize = GroupUntrackedBySize(context.UntrackedFiles);
-
-        foreach (FileEntry missing in missingDbFiles)
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-
-            if (string.IsNullOrEmpty(missing.Hash) || !untrackedBySize.TryGetValue(missing.Size, out List<string>? candidates))
-            {
-                continue;
-            }
-
-            foreach (string candidatePath in candidates)
-            {
-                if (processedUntracked.Contains(candidatePath))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    FileInfo info = new(candidatePath);
-                    long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
-
-                    if (missing.ModifiedTime == modifiedTime)
-                    {
-                        string? candidateHash = await _fileHasher.ComputeSha256Async(candidatePath);
-                        if (candidateHash == missing.Hash)
-                        {
-                            _logger.LogInformation("Detected file rename/relocation. Original: {Old}, New: {New}", missing.Path, candidatePath);
-                            missing.Path = candidatePath;
-                            missing.Name = Path.GetFileName(candidatePath);
-                            missing.IsMissing = false;
-
-                            _fileRepo.Update(missing);
-                            context.HasChanges = true;
-
-                            _ = processedUntracked.Add(candidatePath);
-                            _ = context.VerifiedPaths.Add(candidatePath);
-                            ProgressCurrent++;
-                            break;
-                        }
-                    }
-                }
-                catch { }
-            }
-
-            await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
-        }
-    }
-
-    private Dictionary<long, List<string>> GroupUntrackedBySize(List<string> untrackedFiles)
-    {
-        Dictionary<long, List<string>> map = [];
-        foreach (string path in untrackedFiles)
-        {
-            try
-            {
-                long size = new FileInfo(path).Length;
-                if (!map.TryGetValue(size, out List<string>? list))
-                {
-                    list = [];
-                    map[size] = list;
-                }
-                list.Add(path);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Failed to inspect file size for grouping: {Path}", path);
-            }
-        }
-        return map;
-    }
-
-    private async Task ImportRemainingUntrackedAsync(ScanContext context, HashSet<string> processedUntracked, Stopwatch uiTimer, CancellationToken cancellationToken)
-    {
-        using LogTiming timer = LogTiming.Start(_logger, "Importing {Count} remaining untracked items", context.UntrackedFiles.Count - processedUntracked.Count);
+        using LogTiming timer = LogTiming.Start(_logger, "Importing {Count} remaining untracked items", context.UntrackedFiles.Count - relocatedPaths.Count);
 
         foreach (string path in context.UntrackedFiles)
         {
@@ -385,98 +286,60 @@ public class LibraryScanService
                 break;
             }
 
-            if (processedUntracked.Contains(path))
+            if (relocatedPaths.Contains(path))
             {
                 continue;
             }
 
-            try
-            {
-                FileInfo info = new(path);
-                long size = info.Length;
-                long modifiedTime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
-
-                string? hash = await _fileHasher.ComputeSha256Async(path);
-                if (hash is not null)
-                {
-                    FileEntry? existingWithSameHash = _fileRepo.GetByHash(hash);
-                    if (existingWithSameHash is not null &&
-                        !string.Equals(existingWithSameHash.Path, path, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _logger.LogInformation("Imported file {Path} duplicates existing entry {ExistingPath}", path, existingWithSameHash.Path);
-                        context.Duplicates.Add(existingWithSameHash);
-                    }
-
-                    _logger.LogInformation("Importing untracked file: {Path}", path);
-                    _ = _fileRepo.Add(path, hash, size, modifiedTime);
-                    context.HasChanges = true;
-
-                    FileEntry? newEntry = _fileRepo.GetByHash(hash);
-                    if (newEntry is not null)
-                    {
-                        await ImportFileMetadataAsync(path, newEntry);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error importing untracked file {Path}", path);
-            }
-
+            await ImportUntrackedFileAsync(path, context);
             ProgressCurrent++;
             await YieldAndNotifyAsync(context, uiTimer, cancellationToken);
         }
     }
 
-    private async Task ImportFileMetadataAsync(string path, FileEntry newEntry)
+    private async Task ImportUntrackedFileAsync(string path, ScanContext context)
     {
-        using LogTiming timer = LogTiming.StartDebug(_logger, "Metadata and tag mapping extraction for {Path}", path);
-
-        MediaMetadata? metadata = await _exifTool.ReadMetadataAsync(path);
-        if (metadata is null)
+        try
         {
-            return;
+            FileIdentity identity = FileIdentity.Read(path);
+
+            string? hash = await _fileHasher.ComputeSha256Async(path);
+            if (hash is null)
+            {
+                return;
+            }
+
+            FileEntry? existingWithSameHash = _fileRepo.GetByHash(hash);
+            if (existingWithSameHash is not null &&
+                !string.Equals(existingWithSameHash.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("Imported file {Path} duplicates existing entry {ExistingPath}", path, existingWithSameHash.Path);
+                context.Duplicates.Add(existingWithSameHash);
+            }
+
+            _logger.LogInformation("Importing untracked file: {Path}", path);
+            FileEntry? added = _fileRepo.Add(path, hash, identity.Size, identity.ModifiedTimeUtc);
+            context.HasChanges = true;
+
+            // A rejected insert stored nothing, so there is no row to attach metadata to.
+            if (added is null)
+            {
+                _logger.LogWarning("File could not be added to the catalog, skipping metadata: {Path}", path);
+                return;
+            }
+
+            await _metadataImporter.ImportAsync(path, added);
         }
-
-        _logger.LogInformation("Extracting and writing embedded ExifTool metadata for imported file: {Path}", path);
-        newEntry.Rating = metadata.Rating;
-        newEntry.Title = metadata.Title;
-        newEntry.Description = metadata.Description;
-        _fileRepo.Update(newEntry);
-
-        if (metadata.Tags.Count == 0)
+        catch (Exception ex)
         {
-            return;
-        }
-
-        foreach (string rawTag in metadata.Tags)
-        {
-            string norm = TagFormatter.Normalize(rawTag);
-            if (string.IsNullOrWhiteSpace(norm))
-            {
-                continue;
-            }
-
-            Guid? resolvedId = _tagRepo.ResolveTagId(norm);
-            if (resolvedId.HasValue)
-            {
-                _fileTagRepo.AddTagToFile(newEntry.Id, resolvedId.Value);
-            }
-            else
-            {
-                _tagRepo.Add(norm, "#757575", null);
-                Guid? refreshedId = _tagRepo.ResolveTagId(norm);
-                if (refreshedId.HasValue)
-                {
-                    _fileTagRepo.AddTagToFile(newEntry.Id, refreshedId.Value);
-                }
-            }
+            _logger.LogError(ex, "Error importing untracked file {Path}", path);
         }
     }
 
     private void UpdateRootsLastScanTime(List<LibraryRoot> roots)
     {
         _logger.LogInformation("Updating scan timing markers on active roots");
+
         foreach (LibraryRoot root in roots)
         {
             root.LastScanTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -486,18 +349,20 @@ public class LibraryScanService
 
     private async Task YieldAndNotifyAsync(ScanContext context, Stopwatch uiTimer, CancellationToken cancellationToken)
     {
-        if (uiTimer.ElapsedMilliseconds > 250)
+        if (uiTimer.ElapsedMilliseconds <= 250)
         {
-            if (context.HasChanges)
-            {
-                FilesImported?.Invoke();
-                context.HasChanges = false;
-            }
-
-            ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
-            uiTimer.Restart();
-
-            await Task.Delay(50, cancellationToken);
+            return;
         }
+
+        if (context.HasChanges)
+        {
+            FilesImported?.Invoke();
+            context.HasChanges = false;
+        }
+
+        ScanProgress?.Invoke(ProgressCurrent, ProgressTotal);
+        uiTimer.Restart();
+
+        await Task.Delay(50, cancellationToken);
     }
 }

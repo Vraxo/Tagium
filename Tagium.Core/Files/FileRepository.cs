@@ -251,29 +251,45 @@ public class FileRepository
         return conn.Query<FileEntry>(sql, new { Path = rootPath }).ToList();
     }
 
-    public bool Add(string path, string hash, long size, long modifiedTime)
+    /// <summary>
+    /// Inserts a file and returns the stored entry, including the generated <see cref="FileEntry.Id"/>.
+    /// Returns <c>null</c> when the insert was rejected — most often because another row already
+    /// holds this <paramref name="path"/> (<c>Path</c> is UNIQUE). Callers must check: a rejected
+    /// insert stored nothing, so any follow-up work keyed on the returned id must be skipped.
+    /// </summary>
+    public FileEntry? Add(string path, string hash, long size, long modifiedTime)
     {
         using SqliteConnection conn = _db.GetConnection();
         string sql = @"
             INSERT INTO cache.Files (Id, Path, Name, Hash, DateAdded, Size, ModifiedTime, Rating, Title, Description) 
             VALUES (@Id, @Path, @Name, @Hash, strftime('%s','now'), @Size, @ModifiedTime, NULL, NULL, NULL)";
 
+        FileEntry entry = new()
+        {
+            Id = Guid.NewGuid(),
+            Path = path,
+            Name = Path.GetFileName(path),
+            Hash = hash,
+            Size = size,
+            ModifiedTime = modifiedTime
+        };
+
         try
         {
             conn.Execute(sql, new
             {
-                Id = Guid.NewGuid(),
-                Path = path,
-                Name = Path.GetFileName(path),
-                Hash = hash,
-                Size = size,
-                ModifiedTime = modifiedTime
+                entry.Id,
+                entry.Path,
+                entry.Name,
+                entry.Hash,
+                entry.Size,
+                entry.ModifiedTime
             });
-            return true;
+            return entry;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
