@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Tagium.Core.Files;
+using Tagium.Photino.Blazor;
 
 namespace Tagium.Photino.Blazor.AppShell;
 
@@ -13,7 +14,7 @@ public partial class LibraryAnnouncer : IDisposable
     // Long enough to swallow arrow-key repeats, short enough to feel immediate.
     private const int AnnounceDelayMs = 400;
 
-    [Inject] public AppState AppState { get; set; } = default!;
+    [Inject] public FileBrowser FileBrowser { get; set; } = default!;
 
     private string _message = "";
     private string? _pendingMessage;
@@ -24,16 +25,16 @@ public partial class LibraryAnnouncer : IDisposable
 
     protected override void OnInitialized()
     {
-        _lastSelectedCount = AppState.SelectedFileIds.Count;
-        _lastTotalCount = AppState.TotalFilesCount;
+        _lastSelectedCount = FileBrowser.SelectedFileIds.Count;
+        _lastTotalCount = FileBrowser.TotalFilesCount;
 
-        AppState.OnChange += HandleLibraryChanged;
-        AppState.OnSelectionChange += HandleSelectionChanged;
+        FileBrowser.OnChange += HandleLibraryChanged;
+        FileBrowser.OnSelectionChange += HandleSelectionChanged;
     }
 
     private void HandleLibraryChanged()
     {
-        int total = AppState.TotalFilesCount;
+        int total = FileBrowser.TotalFilesCount;
 
         if (total == _lastTotalCount)
         {
@@ -45,14 +46,14 @@ public partial class LibraryAnnouncer : IDisposable
 
         // Search and filters clear the selection without raising OnSelectionChange; absorbing
         // the new count here keeps one filter change to one announcement instead of two.
-        _lastSelectedCount = AppState.SelectedFileIds.Count;
+        _lastSelectedCount = FileBrowser.SelectedFileIds.Count;
 
         Queue(LibraryAnnouncement.Library(total));
     }
 
     private void HandleSelectionChanged()
     {
-        int selected = AppState.SelectedFileIds.Count;
+        int selected = FileBrowser.SelectedFileIds.Count;
 
         if (selected == _lastSelectedCount)
         {
@@ -60,7 +61,7 @@ public partial class LibraryAnnouncer : IDisposable
         }
 
         _lastSelectedCount = selected;
-        Queue(LibraryAnnouncement.Selection(selected, AppState.TotalFilesCount));
+        Queue(LibraryAnnouncement.Selection(selected, FileBrowser.TotalFilesCount));
     }
 
     /// <summary>
@@ -100,8 +101,8 @@ public partial class LibraryAnnouncer : IDisposable
     public void Dispose()
     {
         _disposed = true;
-        AppState.OnChange -= HandleLibraryChanged;
-        AppState.OnSelectionChange -= HandleSelectionChanged;
+        FileBrowser.OnChange -= HandleLibraryChanged;
+        FileBrowser.OnSelectionChange -= HandleSelectionChanged;
         _ = Interlocked.Increment(ref _announceVersion);
     }
 }

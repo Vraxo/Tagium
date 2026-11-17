@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Components;
-using Tagium.Photino.Blazor;
+using Tagium.Core.Files;
 
 namespace Tagium.Photino.Blazor.Files;
 
 public partial class MultiFileInspector
 {
-    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private FileBrowser FileBrowser { get; set; } = default!;
 }

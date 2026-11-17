@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Tagium.Core.Library;
 using Tagium.Core.Tags;
+using Tagium.Photino.Blazor;
 
 namespace Tagium.Photino.Blazor.Tags;
 
@@ -130,7 +131,7 @@ public partial class TagGraphView
         {
             string query = $"tag:{tag.Name}";
             await JS.InvokeVoidAsync("tagiumNavigation.openGraphBrowse", query);
-            AppState.SetSearch(query);
+            NavigationState.SetSearch(query);
         }
     }
 

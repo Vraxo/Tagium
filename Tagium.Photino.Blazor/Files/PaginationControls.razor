@@ -2,23 +2,23 @@
 
 <nav class="pagination-bar" aria-label="File pagination">
     <div class="pagination-info">
-        @if (AppState.TotalFilesCount == 0)
+        @if (FileBrowser.TotalFilesCount == 0)
         {
             <span>No files</span>
         }
-        else if (AppState.IsInfiniteScroll)
+        else if (FileBrowser.IsInfiniteScroll)
         {
-            <span>Showing @AppState.VisibleFileCount of @AppState.TotalFilesCount @(AppState.TotalFilesCount == 1 ? "file" : "files")@(AppState.HasMoreFiles ? ", scroll for more" : "")</span>
+            <span>Showing @FileBrowser.VisibleFileCount of @FileBrowser.TotalFilesCount @(FileBrowser.TotalFilesCount == 1 ? "file" : "files")@(FileBrowser.HasMoreFiles ? ", scroll for more" : "")</span>
         }
         else
         {
-            <span>Showing @GetStartItemIndex() - @GetEndItemIndex() of @AppState.TotalFilesCount @(AppState.TotalFilesCount == 1 ? "file" : "files")</span>
+            <span>Showing @GetStartItemIndex() - @GetEndItemIndex() of @FileBrowser.TotalFilesCount @(FileBrowser.TotalFilesCount == 1 ? "file" : "files")</span>
         }
     </div>
 
     <label class="page-size-control">
-        <span>@(AppState.IsInfiniteScroll ? "Files per batch" : "Files per page")</span>
-        <select class="page-size-select" value="@AppState.PageSize" @onchange="OnPageSizeChange">
+        <span>@(FileBrowser.IsInfiniteScroll ? "Files per batch" : "Files per page")</span>
+        <select class="page-size-select" value="@FileBrowser.PageSize" @onchange="OnPageSizeChange">
             @foreach (int size in FilePagination.PageSizes)
             {
                 <option value="@size">@size</option>
@@ -26,12 +26,12 @@
         </select>
     </label>
 
-    @if (!AppState.IsInfiniteScroll && AppState.TotalPages > 1)
+    @if (!FileBrowser.IsInfiniteScroll && FileBrowser.TotalPages > 1)
     {
         <div class="pagination-buttons">
             <button class="page-btn ctrl-btn"
-                    disabled="@(AppState.CurrentPage == 1)"
-                    @onclick="() => GoToPage(AppState.CurrentPage - 1)"
+                    disabled="@(FileBrowser.CurrentPage == 1)"
+                    @onclick="() => GoToPage(FileBrowser.CurrentPage - 1)"
                     title="Previous Page"
                     aria-label="Previous Page">
                 <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
@@ -55,8 +55,8 @@
             }
 
             <button class="page-btn ctrl-btn"
-                    disabled="@(AppState.CurrentPage == AppState.TotalPages)"
-                    @onclick="() => GoToPage(AppState.CurrentPage + 1)"
+                    disabled="@(FileBrowser.CurrentPage == FileBrowser.TotalPages)"
+                    @onclick="() => GoToPage(FileBrowser.CurrentPage + 1)"
                     title="Next Page"
                     aria-label="Next Page">
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>

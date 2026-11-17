@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Photino.Blazor;
 
@@ -6,18 +7,18 @@ namespace Tagium.Photino.Blazor.Files;
 
 public partial class FolderBreadcrumbs : IDisposable
 {
-    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private NavigationState NavigationState { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
 
     private readonly List<BreadcrumbSegment> _segments = [];
 
     protected override void OnInitialized()
     {
-        AppState.OnChange += OnAppStateChanged;
+        NavigationState.OnChange += OnNavigationChanged;
         UpdateSegments();
     }
 
-    private void OnAppStateChanged()
+    private void OnNavigationChanged()
     {
         UpdateSegments();
         StateHasChanged();
@@ -26,7 +27,7 @@ public partial class FolderBreadcrumbs : IDisposable
     private void UpdateSegments()
     {
         _segments.Clear();
-        string? currentPath = AppState.CurrentFolderPath;
+        string? currentPath = NavigationState.CurrentFolderPath;
         if (string.IsNullOrEmpty(currentPath))
         {
             return;
@@ -69,12 +70,12 @@ public partial class FolderBreadcrumbs : IDisposable
 
     private void NavigateToSegment(string path)
     {
-        AppState.SetFolder(path);
+        NavigationState.SetFolder(path);
     }
 
     public void Dispose()
     {
-        AppState.OnChange -= OnAppStateChanged;
+        NavigationState.OnChange -= OnNavigationChanged;
     }
 
     private class BreadcrumbSegment

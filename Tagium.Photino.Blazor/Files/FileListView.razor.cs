@@ -19,14 +19,14 @@ public partial class FileListView : IDisposable
 
     protected override void OnInitialized()
     {
-        AppState.OnChange += ReloadData;
-        AppState.OnSelectionChange += RefreshSelection;
+        FileBrowser.OnChange += ReloadData;
+        FileBrowser.OnSelectionChange += RefreshSelection;
         ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        int index = AppState.ConsumePendingFocusIndex();
+        int index = FileBrowser.ConsumePendingFocusIndex();
         if (index >= 0)
         {
             try
@@ -39,7 +39,7 @@ public partial class FileListView : IDisposable
             }
         }
 
-        if (AppState.IsInfiniteScroll)
+        if (FileBrowser.IsInfiniteScroll)
         {
             try
             {
@@ -94,7 +94,7 @@ public partial class FileListView : IDisposable
 
     private void OnRowClick(MouseEventArgs e, Guid id)
     {
-        AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
+        FileBrowser.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
 
     private void OnRowDoubleClick(MouseEventArgs e, FileEntry file)
@@ -120,7 +120,7 @@ public partial class FileListView : IDisposable
 
         foreach (FileEntry file in files)
         {
-            if (AppState.SelectedFileIds.Contains(file.Id))
+            if (FileBrowser.SelectedFileIds.Contains(file.Id))
             {
                 return file.Id;
             }
@@ -147,11 +147,11 @@ public partial class FileListView : IDisposable
                 break;
 
             case " ":
-                AppState.SelectFile(file.Id, true, false);
+                FileBrowser.SelectFile(file.Id, true, false);
                 break;
 
             case "Escape":
-                AppState.ClearSelection();
+                FileBrowser.ClearSelection();
                 break;
 
             case "ArrowUp":
@@ -172,12 +172,12 @@ public partial class FileListView : IDisposable
 
     private void ShowContextMenu(FileEntry file, double clientX, double clientY, bool isKeyboardInvocation)
     {
-        if (!AppState.SelectedFileIds.Contains(file.Id))
+        if (!FileBrowser.SelectedFileIds.Contains(file.Id))
         {
-            AppState.SelectFile(file.Id, multiSelect: false, rangeSelect: false);
+            FileBrowser.SelectFile(file.Id, multiSelect: false, rangeSelect: false);
         }
 
-        IReadOnlyList<Guid> selectedFileIds = AppState.SelectedFileIds.ToList();
+        IReadOnlyList<Guid> selectedFileIds = FileBrowser.SelectedFileIds.ToList();
         ContextMenu.ShowFile(
             file.Id,
             file.Name,
@@ -209,14 +209,14 @@ public partial class FileListView : IDisposable
             // infinite scroll still has to append); the move records where focus should
             // land and OnAfterRenderAsync places it once the items exist.
             int direction = targetId == "__NEXT_PAGE__" ? 1 : -1;
-            _ = AppState.MovePage(direction, extendSelection);
+            _ = FileBrowser.MovePage(direction, extendSelection);
             return;
         }
 
         if (Guid.TryParse(targetId, out Guid id))
         {
             // Shift+arrow extends the same range a shift-click would, from the same anchor.
-            AppState.SelectFile(id, false, extendSelection);
+            FileBrowser.SelectFile(id, false, extendSelection);
         }
     }
 
@@ -228,8 +228,8 @@ public partial class FileListView : IDisposable
 
     public void Dispose()
     {
-        AppState.OnChange -= ReloadData;
-        AppState.OnSelectionChange -= RefreshSelection;
+        FileBrowser.OnChange -= ReloadData;
+        FileBrowser.OnSelectionChange -= RefreshSelection;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
     }
 }

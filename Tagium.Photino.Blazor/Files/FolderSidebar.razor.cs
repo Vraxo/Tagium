@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Photino.Blazor;
 using Tagium.Photino.Blazor.AppShell;
@@ -9,7 +10,7 @@ namespace Tagium.Photino.Blazor.Files;
 
 public partial class FolderSidebar : IDisposable
 {
-    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private NavigationState NavigationState { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
     [Inject] private ContextMenuService ContextMenu { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
@@ -23,11 +24,11 @@ public partial class FolderSidebar : IDisposable
     protected override void OnInitialized()
     {
         LoadRoots();
-        AppState.OnChange += OnAppStateChanged;
+        NavigationState.OnChange += OnNavigationChanged;
         Library.LibraryChanged += LoadRoots;
     }
 
-    private void OnAppStateChanged()
+    private void OnNavigationChanged()
     {
         _ = InvokeAsync(StateHasChanged);
     }
@@ -54,7 +55,7 @@ public partial class FolderSidebar : IDisposable
                 return _focusedPath;
             }
 
-            if (AppState.CurrentFolderPath is { } current && Contains(rows, current))
+            if (NavigationState.CurrentFolderPath is { } current && Contains(rows, current))
             {
                 return current;
             }
@@ -109,7 +110,7 @@ public partial class FolderSidebar : IDisposable
     private void SelectFolder(FolderNode node)
     {
         _focusedPath = node.Path;
-        AppState.SetFolder(node.Path);
+        NavigationState.SetFolder(node.Path);
     }
 
     /// <summary>
@@ -321,7 +322,7 @@ public partial class FolderSidebar : IDisposable
 
     public void Dispose()
     {
-        AppState.OnChange -= OnAppStateChanged;
+        NavigationState.OnChange -= OnNavigationChanged;
         Library.LibraryChanged -= LoadRoots;
     }
 }

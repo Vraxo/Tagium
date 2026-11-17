@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Tagium.Core.Files;
 using Tagium.Photino.Blazor;
 
 namespace Tagium.Photino.Blazor.Files;
@@ -7,11 +8,11 @@ public record PageItem(int? PageNumber, string DisplayText, bool IsActive);
 
 public partial class PaginationControls : IDisposable
 {
-    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private FileBrowser FileBrowser { get; set; } = default!;
 
     protected override void OnInitialized()
     {
-        AppState.OnChange += OnStateChanged;
+        FileBrowser.OnChange += OnStateChanged;
     }
 
     private void OnStateChanged()
@@ -21,38 +22,38 @@ public partial class PaginationControls : IDisposable
 
     private void GoToPage(int page)
     {
-        AppState.SetPage(page);
+        FileBrowser.SetPage(page);
     }
 
     private void OnPageSizeChange(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out int pageSize))
         {
-            AppState.SetPageSize(pageSize);
+            FileBrowser.SetPageSize(pageSize);
         }
     }
 
     private int GetStartItemIndex()
     {
-        if (AppState.TotalFilesCount == 0)
+        if (FileBrowser.TotalFilesCount == 0)
         {
             return 0;
         }
 
-        return ((AppState.CurrentPage - 1) * AppState.PageSize) + 1;
+        return ((FileBrowser.CurrentPage - 1) * FileBrowser.PageSize) + 1;
     }
 
     private int GetEndItemIndex()
     {
-        long end = (long)AppState.CurrentPage * AppState.PageSize;
-        return (int)Math.Min(end, AppState.TotalFilesCount);
+        long end = (long)FileBrowser.CurrentPage * FileBrowser.PageSize;
+        return (int)Math.Min(end, FileBrowser.TotalFilesCount);
     }
 
     private List<PageItem> GetPageItems()
     {
         List<PageItem> items = [];
-        int total = AppState.TotalPages;
-        int current = AppState.CurrentPage;
+        int total = FileBrowser.TotalPages;
+        int current = FileBrowser.CurrentPage;
 
         if (total <= 7)
         {
@@ -106,6 +107,6 @@ public partial class PaginationControls : IDisposable
 
     public void Dispose()
     {
-        AppState.OnChange -= OnStateChanged;
+        FileBrowser.OnChange -= OnStateChanged;
     }
 }

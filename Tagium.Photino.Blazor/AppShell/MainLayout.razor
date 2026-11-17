@@ -146,16 +146,16 @@
         {
             <nav class="finder-navigation" aria-label="Library views">
                 <div class="finder-navigation-heading">Library</div>
-                <button type="button" class="finder-navigation-item @(AppState.CurrentView == AppView.Files ? "active" : "")"
-                        aria-current="@(AppState.CurrentView == AppView.Files ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Files)">
+                <button type="button" class="finder-navigation-item @(NavigationState.CurrentView == AppView.Files ? "active" : "")"
+                        aria-current="@(NavigationState.CurrentView == AppView.Files ? "page" : null)" @onclick="() => NavigationState.SwitchView(AppView.Files)">
                     <i class="fa-regular fa-images" aria-hidden="true"></i><span>Files</span>
                 </button>
-                <button type="button" class="finder-navigation-item @(AppState.CurrentView == AppView.Folders ? "active" : "")"
-                        aria-current="@(AppState.CurrentView == AppView.Folders ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Folders)">
+                <button type="button" class="finder-navigation-item @(NavigationState.CurrentView == AppView.Folders ? "active" : "")"
+                        aria-current="@(NavigationState.CurrentView == AppView.Folders ? "page" : null)" @onclick="() => NavigationState.SwitchView(AppView.Folders)">
                     <i class="fa-regular fa-folder" aria-hidden="true"></i><span>Folders</span>
                 </button>
-                <button type="button" class="finder-navigation-item @(AppState.CurrentView == AppView.Tags ? "active" : "")"
-                        aria-current="@(AppState.CurrentView == AppView.Tags ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Tags)">
+                <button type="button" class="finder-navigation-item @(NavigationState.CurrentView == AppView.Tags ? "active" : "")"
+                        aria-current="@(NavigationState.CurrentView == AppView.Tags ? "page" : null)" @onclick="() => NavigationState.SwitchView(AppView.Tags)">
                     <i class="fa-solid fa-tags" aria-hidden="true"></i><span>Tags</span>
                 </button>
             </nav>
@@ -164,21 +164,21 @@
         {
             <nav class="fluent-navigation" aria-label="Library views">
                 <div class="fluent-navigation-heading">Library</div>
-                <button type="button" class="fluent-navigation-item @(AppState.CurrentView == AppView.Files ? "active" : "")"
-                        aria-current="@(AppState.CurrentView == AppView.Files ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Files)">
+                <button type="button" class="fluent-navigation-item @(NavigationState.CurrentView == AppView.Files ? "active" : "")"
+                        aria-current="@(NavigationState.CurrentView == AppView.Files ? "page" : null)" @onclick="() => NavigationState.SwitchView(AppView.Files)">
                     <i class="fa-regular fa-images" aria-hidden="true"></i><span>Files</span>
                 </button>
-                <button type="button" class="fluent-navigation-item @(AppState.CurrentView == AppView.Folders ? "active" : "")"
-                        aria-current="@(AppState.CurrentView == AppView.Folders ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Folders)">
+                <button type="button" class="fluent-navigation-item @(NavigationState.CurrentView == AppView.Folders ? "active" : "")"
+                        aria-current="@(NavigationState.CurrentView == AppView.Folders ? "page" : null)" @onclick="() => NavigationState.SwitchView(AppView.Folders)">
                     <i class="fa-regular fa-folder" aria-hidden="true"></i><span>Folders</span>
                 </button>
-                <button type="button" class="fluent-navigation-item @(AppState.CurrentView == AppView.Tags ? "active" : "")"
-                        aria-current="@(AppState.CurrentView == AppView.Tags ? "page" : null)" @onclick="() => AppState.SwitchView(AppView.Tags)">
+                <button type="button" class="fluent-navigation-item @(NavigationState.CurrentView == AppView.Tags ? "active" : "")"
+                        aria-current="@(NavigationState.CurrentView == AppView.Tags ? "page" : null)" @onclick="() => NavigationState.SwitchView(AppView.Tags)">
                     <i class="fa-solid fa-tags" aria-hidden="true"></i><span>Tags</span>
                 </button>
             </nav>
         }
-        @if (AppState.CurrentView == AppView.Folders)
+        @if (NavigationState.CurrentView == AppView.Folders)
         {
             <FolderSidebar />
         }
@@ -194,10 +194,10 @@
         <AppToolbar @ref="AppToolbarRef" />
 
         <div class="view-container">
-            @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
+            @if (NavigationState.CurrentView == AppView.Files || NavigationState.CurrentView == AppView.Folders)
             {
                 <div style="display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;">
-                    @if (AppState.CurrentView == AppView.Folders)
+                    @if (NavigationState.CurrentView == AppView.Folders)
                     {
                         <FolderBreadcrumbs />
                     }
@@ -213,7 +213,7 @@
                 </div>
             }
 
-            <div class="tag-manager-host" style="display: @(AppState.CurrentView == AppView.Tags ? "flex" : "none"); flex: 1; min-width: 0; min-height: 0; overflow: hidden;">
+            <div class="tag-manager-host" style="display: @(NavigationState.CurrentView == AppView.Tags ? "flex" : "none"); flex: 1; min-width: 0; min-height: 0; overflow: hidden;">
                 <TagManagerView />
             </div>
         </div>

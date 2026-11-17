@@ -7,6 +7,9 @@ namespace Tagium.Photino.Blazor.Files;
 
 public partial class DuplicatesModal
 {
+    [Inject] private NavigationState Navigation { get; set; } = default!;
+    [Inject] private FileBrowser Browser { get; set; } = default!;
+
     [Inject] private LibraryService Library { get; set; } = default!;
 
     private List<List<FileEntry>> _groups = [];
@@ -28,9 +31,9 @@ public partial class DuplicatesModal
 
     private void ShowFile(FileEntry file)
     {
-        AppState.SetSearch("");
-        AppState.SetMissingOnly(false);
-        AppState.SelectFile(file.Id, false, false);
+        Navigation.SetSearch("");
+        Navigation.SetMissingOnly(false);
+        Browser.SelectFile(file.Id, false, false);
 
         ModalService.Close();
     }
