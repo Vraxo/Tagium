@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using System.Globalization;
 using System.Text;
 using Tagium.Core.Settings;
 
@@ -11,16 +10,8 @@ public class SearchQueryCompiler
 {
     private readonly ILogger<SearchQueryCompiler> _logger;
 
-    private static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "artist", "character", "series", "location", "person", "franchise", "species", "year", "meta"
-    };
-
-    /// <summary>
-    /// The category keys this compiler understands. Exposed so the in-app syntax help can be
-    /// tested against it instead of drifting out of date.
-    /// </summary>
-    public static IReadOnlySet<string> CategoryKeys => ValidCategories;
+    /// <summary>The category keys accepted by the search language.</summary>
+    public static IReadOnlySet<string> CategoryKeys => SearchQueryParser.CategoryKeys;
 
     public SearchQueryCompiler(ILogger<SearchQueryCompiler> logger)
     {
@@ -29,7 +20,7 @@ public class SearchQueryCompiler
 
     public CompiledQuery Compile(string searchText, SortBy sortBy, SortDirection sortDirection)
     {
-        string[] tokens = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        IReadOnlyList<SearchFilter> filters = SearchQueryParser.Parse(searchText, _logger);
 
         StringBuilder query = new();
         query.AppendLine("SELECT DISTINCT F.Id, F.Path, F.Name, F.Hash, F.DateAdded, F.IsMissing, F.Size, F.ModifiedTime, F.Rating, F.Title, F.Description");
@@ -39,78 +30,42 @@ public class SearchQueryCompiler
         List<(string Name, object Value)> parameters = [];
         int paramCounter = 0;
 
-        foreach (string token in tokens)
+        foreach (SearchFilter filter in filters)
         {
-            bool isNegated = false;
-            string rawToken = token;
-
-            if (rawToken.StartsWith('-') && rawToken.Length > 1)
+            switch (filter)
             {
-                isNegated = true;
-                rawToken = rawToken[1..];
-            }
-
-            int colonIdx = rawToken.IndexOf(':');
-            if (colonIdx > 0 && colonIdx < rawToken.Length - 1)
-            {
-                string key = rawToken[..colonIdx];
-                string val = rawToken[(colonIdx + 1)..];
-
-                if (string.Equals(key, "rating", StringComparison.OrdinalIgnoreCase))
-                {
-                    BuildRatingClause(val, isNegated, query, parameters, ref paramCounter);
-                }
-                else if (string.Equals(key, "size", StringComparison.OrdinalIgnoreCase))
-                {
-                    BuildSizeClause(val, isNegated, query, parameters, ref paramCounter);
-                }
-                else if (string.Equals(key, "ext", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "extension", StringComparison.OrdinalIgnoreCase))
-                {
-                    string extPattern = "%." + val.TrimStart('.').ToLowerInvariant();
-                    string paramName = $"@p{paramCounter++}";
-                    parameters.Add((paramName, extPattern));
-
-                    if (isNegated)
-                    {
-                        query.AppendLine($"AND F.Path NOT LIKE {paramName}");
-                    }
-                    else
-                    {
-                        query.AppendLine($"AND F.Path LIKE {paramName}");
-                    }
-                }
-                else if (ValidCategories.Contains(key))
-                {
-                    BuildCategoryClause(key, val, isNegated, query, parameters, ref paramCounter);
-                }
-                else if (string.Equals(key, "tag", StringComparison.OrdinalIgnoreCase))
-                {
-                    BuildTagClause(val, isNegated, query, parameters, ref paramCounter);
-                }
-                else if (string.Equals(key, "missing", StringComparison.OrdinalIgnoreCase))
-                {
-                    BuildMissingClause(val, isNegated, query);
-                }
-                else if (string.Equals(key, "has", StringComparison.OrdinalIgnoreCase))
-                {
-                    BuildHasClause(val, rawToken, isNegated, query, parameters, ref paramCounter);
-                }
-                else if (string.Equals(key, "added", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "modified", StringComparison.OrdinalIgnoreCase))
-                {
-                    BuildDateClause(key, val, isNegated, query, parameters, ref paramCounter);
-                }
-                else
-                {
-                    BuildTagSearchClause(rawToken, isNegated, query, parameters, ref paramCounter);
-                }
-            }
-            else if (string.Equals(rawToken, "untagged", StringComparison.OrdinalIgnoreCase))
-            {
-                BuildUntaggedClause(isNegated, query);
-            }
-            else
-            {
-                BuildTagSearchClause(rawToken, isNegated, query, parameters, ref paramCounter);
+                case RatingFilter rating:
+                    BuildRatingClause(rating, query, parameters, ref paramCounter);
+                    break;
+                case SizeFilter size:
+                    BuildSizeClause(size, query, parameters, ref paramCounter);
+                    break;
+                case ExtensionFilter extension:
+                    BuildExtensionClause(extension, query, parameters, ref paramCounter);
+                    break;
+                case CategoryFilter category:
+                    BuildCategoryClause(category.Category, category.Text, category.IsNegated, query, parameters, ref paramCounter);
+                    break;
+                case TagFilter tag:
+                    BuildTagClause(tag.Text, tag.IsNegated, query, parameters, ref paramCounter);
+                    break;
+                case MissingFilter missing:
+                    BuildMissingClause(missing, query);
+                    break;
+                case HasFilter has:
+                    BuildHasClause(has, query);
+                    break;
+                case DateFilter date:
+                    BuildDateClause(date, query, parameters, ref paramCounter);
+                    break;
+                case UntaggedFilter untagged:
+                    BuildUntaggedClause(untagged.IsNegated, query);
+                    break;
+                case TextFilter text:
+                    BuildTagSearchClause(text.Text, text.IsNegated, query, parameters, ref paramCounter);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported search filter: {filter.GetType().Name}");
             }
         }
 
@@ -119,54 +74,51 @@ public class SearchQueryCompiler
         return new CompiledQuery(query.ToString(), parameters);
     }
 
-    private void BuildRatingClause(string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    private static void BuildRatingClause(RatingFilter filter, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
     {
-        (string op, string rStr) = SplitOperator(val);
-        if (int.TryParse(rStr, out int rVal))
+        string paramName = $"@p{paramCounter++}";
+        parameters.Add((paramName, filter.Rating));
+        string op = GetOperator(filter.Operator);
+        if (filter.IsNegated)
         {
-            string paramName = $"@p{paramCounter++}";
-            parameters.Add((paramName, rVal));
-
-            if (isNegated)
-            {
-                query.AppendLine($"AND (F.Rating IS NULL OR NOT (F.Rating {op} {paramName}))");
-            }
-            else
-            {
-                query.AppendLine($"AND (F.Rating IS NOT NULL AND F.Rating {op} {paramName})");
-            }
+            query.AppendLine($"AND (F.Rating IS NULL OR NOT (F.Rating {op} {paramName}))");
         }
         else
         {
-            _logger.LogWarning("Skipped invalid rating search filter value: {Value}", val);
+            query.AppendLine($"AND (F.Rating IS NOT NULL AND F.Rating {op} {paramName})");
         }
     }
 
-    private void BuildSizeClause(string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    private static void BuildSizeClause(SizeFilter filter, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
     {
-        (string op, string sStr) = SplitOperator(val);
-        long? bytes = ParseSizeToBytes(sStr);
-        if (bytes.HasValue)
+        string paramName = $"@p{paramCounter++}";
+        parameters.Add((paramName, filter.Bytes));
+        string op = GetOperator(filter.Operator);
+        if (filter.IsNegated)
         {
-            string paramName = $"@p{paramCounter++}";
-            parameters.Add((paramName, bytes.Value));
-
-            if (isNegated)
-            {
-                query.AppendLine($"AND NOT (F.Size {op} {paramName})");
-            }
-            else
-            {
-                query.AppendLine($"AND F.Size {op} {paramName}");
-            }
+            query.AppendLine($"AND NOT (F.Size {op} {paramName})");
         }
         else
         {
-            _logger.LogWarning("Skipped invalid size search filter value: {Value}", val);
+            query.AppendLine($"AND F.Size {op} {paramName}");
         }
     }
 
-    private void BuildCategoryClause(string key, string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    private static void BuildExtensionClause(ExtensionFilter filter, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    {
+        string paramName = $"@p{paramCounter++}";
+        parameters.Add((paramName, "%." + filter.Extension));
+        if (filter.IsNegated)
+        {
+            query.AppendLine($"AND F.Path NOT LIKE {paramName}");
+        }
+        else
+        {
+            query.AppendLine($"AND F.Path LIKE {paramName}");
+        }
+    }
+
+    private static void BuildCategoryClause(string key, string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
     {
         string searchPattern = "%" + val + "%";
         string catParam = $"@p{paramCounter++}";
@@ -193,7 +145,7 @@ public class SearchQueryCompiler
         }
     }
 
-    private void BuildTagClause(string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    private static void BuildTagClause(string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
     {
         string paramName = $"@p{paramCounter++}";
         parameters.Add((paramName, $"%{val}%"));
@@ -216,7 +168,7 @@ public class SearchQueryCompiler
         }
     }
 
-    private void BuildUntaggedClause(bool isNegated, StringBuilder query)
+    private static void BuildUntaggedClause(bool isNegated, StringBuilder query)
     {
         const string hasTags = "EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)";
 
@@ -230,83 +182,49 @@ public class SearchQueryCompiler
         }
     }
 
-    private void BuildMissingClause(string val, bool isNegated, StringBuilder query)
+    private static void BuildMissingClause(MissingFilter filter, StringBuilder query)
     {
-        bool? missing = val.Trim().ToLowerInvariant() switch
-        {
-            "true" or "yes" or "1" => true,
-            "false" or "no" or "0" => false,
-            _ => null
-        };
-
-        if (missing is null)
-        {
-            _logger.LogWarning("Skipped invalid missing search filter value: {Value}", val);
-            return;
-        }
-
-        if (isNegated)
-        {
-            missing = !missing.Value;
-        }
-
-        query.AppendLine(missing.Value ? "AND F.IsMissing = 1" : "AND F.IsMissing = 0");
+        bool missing = filter.IsNegated ? !filter.Missing : filter.Missing;
+        query.AppendLine(missing ? "AND F.IsMissing = 1" : "AND F.IsMissing = 0");
     }
 
-    private void BuildHasClause(string field, string rawToken, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    private static void BuildHasClause(HasFilter filter, StringBuilder query)
     {
-        string f = field.Trim().ToLowerInvariant();
-
-        string? positive = f switch
+        string positive = filter.Field switch
         {
-            "rating" => "F.Rating IS NOT NULL",
-            "title" => "F.Title IS NOT NULL AND F.Title <> ''",
-            "description" => "F.Description IS NOT NULL AND F.Description <> ''",
-            "tags" => "EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)",
-            _ => null
+            SearchPresenceField.Rating => "F.Rating IS NOT NULL",
+            SearchPresenceField.Title => "F.Title IS NOT NULL AND F.Title <> ''",
+            SearchPresenceField.Description => "F.Description IS NOT NULL AND F.Description <> ''",
+            SearchPresenceField.Tags => "EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)",
+            _ => throw new InvalidOperationException("Unsupported presence field")
         };
 
-        if (positive is null)
+        string negative = filter.Field switch
         {
-            // Unknown field: fall back to a plain text search on the raw token
-            BuildTagSearchClause(rawToken, isNegated, query, parameters, ref paramCounter);
-            return;
-        }
-
-        string negative = f switch
-        {
-            "rating" => "F.Rating IS NULL",
-            "title" => "F.Title IS NULL OR F.Title = ''",
-            "description" => "F.Description IS NULL OR F.Description = ''",
-            _ => "NOT EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)"
+            SearchPresenceField.Rating => "F.Rating IS NULL",
+            SearchPresenceField.Title => "F.Title IS NULL OR F.Title = ''",
+            SearchPresenceField.Description => "F.Description IS NULL OR F.Description = ''",
+            SearchPresenceField.Tags => "NOT EXISTS (SELECT 1 FROM cache.FileTags FT WHERE FT.FileId = F.Id)",
+            _ => throw new InvalidOperationException("Unsupported presence field")
         };
 
-        query.AppendLine(isNegated ? $"AND ({negative})" : $"AND ({positive})");
+        query.AppendLine(filter.IsNegated ? $"AND ({negative})" : $"AND ({positive})");
     }
 
-    private void BuildDateClause(string key, string val, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    private static void BuildDateClause(DateFilter filter, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
     {
-        (string op, string rest) = SplitOperator(val);
-
-        if (!DateTime.TryParse(rest, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime date))
+        string column = filter.Field switch
         {
-            _logger.LogWarning("Skipped invalid {Key} search filter value: {Value}", key, val);
-            return;
-        }
-
-        // A bare date means "on or after" that day
-        if (op == "=")
-        {
-            op = ">=";
-        }
-
-        string column = string.Equals(key, "added", StringComparison.OrdinalIgnoreCase) ? "F.DateAdded" : "F.ModifiedTime";
-        long timestamp = new DateTimeOffset(date).ToUnixTimeSeconds();
-
+            SearchDateField.Added => "F.DateAdded",
+            SearchDateField.Modified => "F.ModifiedTime",
+            _ => throw new InvalidOperationException("Unsupported date field")
+        };
+        string op = GetOperator(filter.Operator);
+        long timestamp = new DateTimeOffset(filter.Date).ToUnixTimeSeconds();
         string paramName = $"@p{paramCounter++}";
         parameters.Add((paramName, timestamp));
 
-        if (isNegated)
+        if (filter.IsNegated)
         {
             query.AppendLine($"AND NOT ({column} {op} {paramName})");
         }
@@ -316,7 +234,7 @@ public class SearchQueryCompiler
         }
     }
 
-    private void BuildTagSearchClause(string token, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
+    private static void BuildTagSearchClause(string token, bool isNegated, StringBuilder query, List<(string Name, object Value)> parameters, ref int paramCounter)
     {
         string paramName = $"@p{paramCounter++}";
         string termPattern = $"%{token}%";
@@ -340,68 +258,15 @@ public class SearchQueryCompiler
         }
     }
 
-    private static (string op, string rest) SplitOperator(string val)
+    private static string GetOperator(SearchComparison comparison) => comparison switch
     {
-        if (val.StartsWith(">="))
-        {
-            return (">=", val[2..]);
-        }
-
-        if (val.StartsWith("<="))
-        {
-            return ("<=", val[2..]);
-        }
-
-        if (val.StartsWith(">"))
-        {
-            return (">", val[1..]);
-        }
-
-        if (val.StartsWith("<"))
-        {
-            return ("<", val[1..]);
-        }
-
-        if (val.StartsWith("="))
-        {
-            return ("=", val[1..]);
-        }
-
-        return ("=", val);
-    }
-
-    private static long? ParseSizeToBytes(string val)
-    {
-        val = val.Trim().ToLowerInvariant();
-        int idx = 0;
-        while (idx < val.Length && (char.IsDigit(val[idx]) || val[idx] == '.'))
-        {
-            idx++;
-        }
-
-        if (idx == 0)
-        {
-            return null;
-        }
-
-        string numPart = val[..idx];
-        string unitPart = val[idx..].Trim();
-
-        if (!double.TryParse(numPart, out double num))
-        {
-            return null;
-        }
-
-        double multiplier = unitPart switch
-        {
-            "kb" or "k" => 1024.0,
-            "mb" or "m" => 1024.0 * 1024.0,
-            "gb" or "g" => 1024.0 * 1024.0 * 1024.0,
-            _ => 1.0
-        };
-
-        return (long)(num * multiplier);
-    }
+        SearchComparison.Equal => "=",
+        SearchComparison.GreaterThan => ">",
+        SearchComparison.GreaterThanOrEqual => ">=",
+        SearchComparison.LessThan => "<",
+        SearchComparison.LessThanOrEqual => "<=",
+        _ => throw new InvalidOperationException("Unsupported comparison operator")
+    };
 
     private static string GetOrderByClause(SortBy sortBy, SortDirection direction)
     {

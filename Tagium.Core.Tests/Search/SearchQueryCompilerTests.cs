@@ -372,4 +372,25 @@ public class SearchQueryCompilerTests
         query.Parameters.Select(p => p.Name).Should().Equal("@p0", "@p1", "@p2");
         query.Parameters.Select(p => p.Value).Should().Equal("%art%", 1767225600L, "%foo%");
     }
+
+    [Fact]
+    public void Compile_InvalidFiltersDoNotAffectParameterNumbering()
+    {
+        CompiledQuery query = Compile("first rating:bad size:huge missing:maybe added:bad -has:unknown tag:art");
+
+        query.Parameters.Select(p => p.Name).Should().Equal("@p0", "@p1", "@p2");
+        query.Parameters.Select(p => p.Value).Should().Equal("%first%", "%has:unknown%", "%art%");
+        query.Sql.Should().Contain("AND NOT (F.Name LIKE @p1 OR F.Path LIKE @p1 OR");
+    }
+
+    [Fact]
+    public void Compile_UserInputRemainsAParameterRatherThanSqlSyntax()
+    {
+        const string input = "x')OR1=1--";
+        CompiledQuery query = Compile("tag:" + input);
+
+        query.Sql.Should().NotContain(input);
+        query.Parameters.Should().ContainSingle();
+        query.Parameters[0].Value.Should().Be("%" + input + "%");
+    }
 }
