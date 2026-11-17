@@ -123,7 +123,7 @@ public class FileRelocatorTests
             };
 
             IReadOnlyList<FileEntry> count = await Create().RelocateAsync(
-                [missing], [newPath], [], _ => { });
+                [missing], [newPath], new HashSet<string>(), _ => { });
 
             count.Should().BeEmpty();
         }
@@ -149,7 +149,7 @@ public class FileRelocatorTests
 
         int progress = 0;
         IReadOnlyList<FileEntry> count = await Create().RelocateAsync(
-            [missing], ["/lib/candidate.jpg"], [], _ => progress++);
+            [missing], ["/lib/candidate.jpg"], new HashSet<string>(), _ => progress++);
 
         count.Should().BeEmpty();
         progress.Should().Be(0);
@@ -180,7 +180,7 @@ public class FileRelocatorTests
             FileEntry a = Make();
             FileEntry b = Make();
 
-            IReadOnlyList<FileEntry> count = await Create().RelocateAsync([a, b], [newPath], [], _ => { });
+            IReadOnlyList<FileEntry> count = await Create().RelocateAsync([a, b], [newPath], new HashSet<string>(), _ => { });
 
             count.Should().HaveCount(1);
             // Two entries must not end up pointing at the same path: Path is UNIQUE in the cache.
@@ -195,7 +195,7 @@ public class FileRelocatorTests
     [Fact]
     public async Task Relocate_EmptyInputsDoNothing()
     {
-        IReadOnlyList<FileEntry> count = await Create().RelocateAsync([], [], [], _ => { });
+        IReadOnlyList<FileEntry> count = await Create().RelocateAsync([], [], new HashSet<string>(), _ => { });
 
         count.Should().BeEmpty();
     }
