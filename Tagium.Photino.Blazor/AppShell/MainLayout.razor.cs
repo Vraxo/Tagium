@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
-using Tagium.Core;
 using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Core.Settings;
@@ -39,10 +38,13 @@ public partial class MainLayout : IDisposable
 
     private AppToolbar? AppToolbarRef { get; set; }
 
-    private static readonly int[] ZoomSteps = [50, 67, 75, 90, 100, 110, 120, 133, 150, 175, 200];
+    private ZoomController _zoom = default!;
+    private ThumbnailWarmup _thumbnailWarmup = default!;
 
     protected override void OnInitialized()
     {
+        _zoom = new ZoomController(SettingsManager, zoom => Program.MainWindow?.SetZoom(zoom));
+        _thumbnailWarmup = new ThumbnailWarmup(AppState, Library, ThumbnailService, Logger);
         _lastActiveZoom = SettingsManager.Current.Zoom;
         SettingsManager.SettingsChanged += OnSettingsChanged;
         WindowEventHub.SettingsSaved += OnExternalSettingsSaved;
@@ -67,7 +69,7 @@ public partial class MainLayout : IDisposable
         }
 
         // Let the window paint first; the queue reuses AppState's already-backgrounded initial load.
-        QueueThumbnailPreGenerationInBackground();
+        _thumbnailWarmup.Queue();
 
         _objRef = DotNetObjectReference.Create(this);
 
@@ -151,13 +153,13 @@ public partial class MainLayout : IDisposable
                 break;
             case "+":
             case "=":
-                AdjustZoom(1);
+                _zoom.Adjust(1);
                 break;
             case "-":
-                AdjustZoom(-1);
+                _zoom.Adjust(-1);
                 break;
             case "0":
-                ResetZoom();
+                _zoom.Reset();
                 break;
         }
     }
@@ -165,7 +167,7 @@ public partial class MainLayout : IDisposable
     [JSInvokable]
     public void HandleWheelZoom(int direction)
     {
-        AdjustZoom(direction);
+        _zoom.Adjust(direction);
     }
 
     [JSInvokable]
@@ -258,61 +260,7 @@ public partial class MainLayout : IDisposable
     }
 
     [JSInvokable]
-    public void OnNativeZoomChanged(int rawZoom)
-    {
-        int closestZoom = 100;
-        int minDiff = int.MaxValue;
-        foreach (int step in ZoomSteps)
-        {
-            int diff = Math.Abs(step - rawZoom);
-            if (diff < minDiff)
-            {
-                minDiff = diff;
-                closestZoom = step;
-            }
-        }
-
-        if (SettingsManager.Current.Zoom != closestZoom)
-        {
-            SettingsManager.Update(s => s.Zoom = closestZoom);
-        }
-    }
-
-    private void AdjustZoom(int direction)
-    {
-        int currentZoom = SettingsManager.Current.Zoom;
-        int currentIndex = Array.IndexOf(ZoomSteps, currentZoom);
-
-        if (currentIndex == -1)
-        {
-            int closestIndex = 0;
-            int minDiff = int.MaxValue;
-            for (int i = 0; i < ZoomSteps.Length; i++)
-            {
-                int diff = Math.Abs(ZoomSteps[i] - currentZoom);
-                if (diff < minDiff)
-                {
-                    minDiff = diff;
-                    closestIndex = i;
-                }
-            }
-            currentIndex = closestIndex;
-        }
-
-        int newIndex = currentIndex + direction;
-        if (newIndex >= 0 && newIndex < ZoomSteps.Length)
-        {
-            int targetZoom = ZoomSteps[newIndex];
-            SettingsManager.Update(s => s.Zoom = targetZoom);
-            Program.MainWindow?.SetZoom(targetZoom);
-        }
-    }
-
-    private void ResetZoom()
-    {
-        SettingsManager.Update(s => s.Zoom = 100);
-        Program.MainWindow?.SetZoom(100);
-    }
+    public void OnNativeZoomChanged(int rawZoom) => _zoom.OnNativeZoomChanged(rawZoom);
 
     /// <summary>
     /// The Settings window saved: re-read the file so the browsing mode and page/batch size
@@ -376,39 +324,7 @@ public partial class MainLayout : IDisposable
         });
 
         // Automatically queue newly cataloged files without blocking the renderer.
-        QueueThumbnailPreGenerationInBackground(refreshLibrary: true);
-    }
-
-    private void QueueThumbnailPreGenerationInBackground(bool refreshLibrary = false)
-    {
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                string timingMessage = refreshLibrary
-                    ? "Loading library files for thumbnail pre-generation"
-                    : "Waiting for initial library load before thumbnail pre-generation";
-                using LogTiming timer = LogTiming.Start(Logger, timingMessage);
-
-                IReadOnlyList<FileEntry> allFiles;
-                if (refreshLibrary)
-                {
-                    allFiles = Library.GetFiles(null, false);
-                }
-                else
-                {
-                    await AppState.InitialLoadTask.ConfigureAwait(false);
-                    allFiles = AppState.InitialFiles;
-                }
-
-                Logger.LogInformation("Loaded {Count} files for background thumbnail pre-generation", allFiles.Count);
-                ThumbnailService.QueueBackgroundGeneration(allFiles);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Failed to queue background thumbnail pre-generation");
-            }
-        });
+        _thumbnailWarmup.Queue(refreshLibrary: true);
     }
 
     private void OnLibraryChanged()
@@ -475,8 +391,7 @@ public partial class MainLayout : IDisposable
         _zoomToastCts?.Cancel();
         _zoomToastCts?.Dispose();
 
-        // Cancel background task on dispose to prevent thread leaks during shutdown
-        ThumbnailService.CancelBackgroundGeneration();
+        _thumbnailWarmup?.Dispose();
 
         _objRef?.Dispose();
     }
