@@ -65,21 +65,30 @@ public class TagRepository
         return TagOrdering.ByName(conn.Query<Tag>(sql, new { Ids = idList }));
     }
 
-    public void Add(string name, string colorHex, string? emoji, string? category = null)
+    /// <summary>
+    /// Creates a tag and returns its id, or <c>null</c> if the name canonicalises to nothing or
+    /// the insert was rejected (a tag with that name already exists). Callers that need an id for
+    /// either outcome should resolve first and only fall back to this.
+    /// </summary>
+    public Guid? Add(string name, string colorHex, string? emoji, string? category = null)
     {
         string canonicalName = TagFormatter.CanonicalizeName(name);
         if (canonicalName.Length == 0)
         {
-            return;
+            return null;
         }
 
+        Guid id = Guid.NewGuid();
         using SqliteConnection conn = _db.GetConnection();
         try
         {
             conn.Execute("INSERT INTO Tags (Id, Name, ColorHex, Emoji, Category) VALUES (@Id, @Name, @ColorHex, @Emoji, @Category)",
-                new { Id = Guid.NewGuid(), Name = canonicalName, ColorHex = colorHex, Emoji = emoji, Category = category });
+                new { Id = id, Name = canonicalName, ColorHex = colorHex, Emoji = emoji, Category = category });
+            return id;
         }
         catch { /* Ignore duplicates */ }
+
+        return null;
     }
 
     public void Update(Tag tag)
