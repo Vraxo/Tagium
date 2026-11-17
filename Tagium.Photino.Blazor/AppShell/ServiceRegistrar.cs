@@ -58,6 +58,9 @@ public static class ServiceRegistrar
         _ = services.AddTransient<SearchInput>();
 
         // UI - Services
+        _ = services.AddSingleton<NavigationState>();
+        _ = services.AddSingleton(provider =>
+            new FileBrowser(provider.GetRequiredService<SettingsManager>().Current));
         _ = services.AddSingleton<AppState>();
         _ = services.AddSingleton<ModalService>();
         _ = services.AddSingleton<ContextMenuService>();

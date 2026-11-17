@@ -1,11 +1,11 @@
 @namespace Tagium.Photino.Blazor.AppShell
-@inject AppState AppState
+@inject NavigationState NavigationState
 @inject SettingsManager Settings
 
 <div class="app-toolbar">
     @if (Settings.Current.InterfaceStyle == InterfaceStyle.MacOS)
     {
-        <div class="finder-title" aria-hidden="true">@(AppState.CurrentView switch
+        <div class="finder-title" aria-hidden="true">@(NavigationState.CurrentView switch
             {
                 AppView.Folders => "Folders",
                 AppView.Tags => "Tags",
@@ -17,13 +17,13 @@
         @if (Settings.Current.InterfaceStyle == InterfaceStyle.Windows11)
         {
             <div class="fluent-page-heading">
-                <span class="fluent-page-title">@(AppState.CurrentView switch
+                <span class="fluent-page-title">@(NavigationState.CurrentView switch
                     {
                         AppView.Folders => "Folders",
                         AppView.Tags => "Tags",
                         _ => "Files"
                     })</span>
-                <span class="fluent-page-subtitle">@(AppState.CurrentView switch
+                <span class="fluent-page-subtitle">@(NavigationState.CurrentView switch
                     {
                         AppView.Folders => "Browse your media by folder",
                         AppView.Tags => "Organize and explore with tags",
@@ -34,19 +34,19 @@
         else
         {
             <div class="segmented-control">
-                <button type="button" class="segment-btn @(AppState.CurrentView == AppView.Files ? "active" : "")"
-                        aria-pressed="@(AppState.CurrentView == AppView.Files ? "true" : "false")"
-                        @onclick="() => AppState.SwitchView(AppView.Files)">
+                <button type="button" class="segment-btn @(NavigationState.CurrentView == AppView.Files ? "active" : "")"
+                        aria-pressed="@(NavigationState.CurrentView == AppView.Files ? "true" : "false")"
+                        @onclick="() => NavigationState.SwitchView(AppView.Files)">
                     <i class="fa-solid fa-images" aria-hidden="true"></i> Files
                 </button>
-                <button type="button" class="segment-btn @(AppState.CurrentView == AppView.Folders ? "active" : "")"
-                        aria-pressed="@(AppState.CurrentView == AppView.Folders ? "true" : "false")"
-                        @onclick="() => AppState.SwitchView(AppView.Folders)">
+                <button type="button" class="segment-btn @(NavigationState.CurrentView == AppView.Folders ? "active" : "")"
+                        aria-pressed="@(NavigationState.CurrentView == AppView.Folders ? "true" : "false")"
+                        @onclick="() => NavigationState.SwitchView(AppView.Folders)">
                     <i class="fa-solid fa-folder-tree" aria-hidden="true"></i> Folders
                 </button>
-                <button type="button" class="segment-btn @(AppState.CurrentView == AppView.Tags ? "active" : "")"
-                        aria-pressed="@(AppState.CurrentView == AppView.Tags ? "true" : "false")"
-                        @onclick="() => AppState.SwitchView(AppView.Tags)">
+                <button type="button" class="segment-btn @(NavigationState.CurrentView == AppView.Tags ? "active" : "")"
+                        aria-pressed="@(NavigationState.CurrentView == AppView.Tags ? "true" : "false")"
+                        @onclick="() => NavigationState.SwitchView(AppView.Tags)">
                     <i class="fa-solid fa-tags" aria-hidden="true"></i> Tags
                 </button>
             </div>
@@ -54,7 +54,7 @@
     </div>
 
     <div class="toolbar-center">
-        @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
+        @if (NavigationState.CurrentView == AppView.Files || NavigationState.CurrentView == AppView.Folders)
         {
             <div class="search-wrapper">
                 <SearchInput @ref="SearchInput" />
@@ -63,7 +63,7 @@
     </div>
 
     <div class="toolbar-right">
-        @if (AppState.CurrentView == AppView.Files || AppState.CurrentView == AppView.Folders)
+        @if (NavigationState.CurrentView == AppView.Files || NavigationState.CurrentView == AppView.Folders)
         {
             @if (Settings.Current.InterfaceStyle == InterfaceStyle.MacOS)
             {

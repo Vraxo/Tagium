@@ -6,14 +6,17 @@ namespace Tagium.Photino.Blazor.Files;
 
 public partial class DuplicateFileModal
 {
+    [Inject] private NavigationState Navigation { get; set; } = default!;
+    [Inject] private FileBrowser Browser { get; set; } = default!;
+
     [Parameter, EditorRequired]
     public required FileEntry ExistingFile { get; set; }
 
     private void ShowExisting()
     {
-        AppState.SetSearch("");
-        AppState.SetMissingOnly(false);
-        AppState.SelectFile(ExistingFile.Id, false, false);
+        Navigation.SetSearch("");
+        Navigation.SetMissingOnly(false);
+        Browser.SelectFile(ExistingFile.Id, false, false);
 
         ModalService.Close();
     }

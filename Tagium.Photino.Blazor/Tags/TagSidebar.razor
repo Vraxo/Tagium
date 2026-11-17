@@ -1,6 +1,6 @@
 @namespace Tagium.Photino.Blazor.Tags
 @inject LibraryService Library
-@inject AppState AppState
+@inject NavigationState NavigationState
 @inject SettingsManager Settings
 @inject ContextMenuService ContextMenu
 
@@ -69,8 +69,8 @@
              role="button"
              tabindex="0"
              aria-current="@(IsMissingActive ? "true" : "false")"
-             @onclick="() => AppState.SetMissingOnly(true)"
-             @onkeydown="e => ActivateOnKey(e, () => AppState.SetMissingOnly(true))">
+             @onclick="() => NavigationState.SetMissingOnly(true)"
+             @onkeydown="e => ActivateOnKey(e, () => NavigationState.SetMissingOnly(true))">
             <i class="fa-solid fa-triangle-exclamation icon warning-accent fa-fw" aria-hidden="true"></i> Missing Files
         </div>
 
@@ -85,9 +85,9 @@
 
         @foreach (var tag in FilteredTags)
         {
-            bool isActive = AppState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase)
-            && !AppState.IsMissingOnly
-            && AppState.CurrentView == AppView.Files;
+            bool isActive = NavigationState.SearchText.Equals(tag.Name, StringComparison.OrdinalIgnoreCase)
+            && !NavigationState.IsMissingOnly
+            && NavigationState.CurrentView == AppView.Files;
 
             if (Settings.Current.TagSidebarStyle == TagSidebarDisplayMode.MinimalCircle)
             {

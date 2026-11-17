@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components.Web;
+using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Photino.Blazor;
 using Tagium.Photino.Blazor.Search;
@@ -7,13 +8,13 @@ namespace Tagium.Photino.Blazor.AppShell;
 
 public class KeyboardShortcutService
 {
-    private readonly AppState _appState;
+    private readonly NavigationState _navigation;
     private readonly LibraryService _library;
     private readonly SearchInput _searchInput;
 
-    public KeyboardShortcutService(AppState appState, LibraryService library, SearchInput searchInput)
+    public KeyboardShortcutService(NavigationState navigation, LibraryService library, SearchInput searchInput)
     {
-        _appState = appState;
+        _navigation = navigation;
         _library = library;
         _searchInput = searchInput;
     }
@@ -41,8 +42,8 @@ public class KeyboardShortcutService
 
     private void ToggleTagView()
     {
-        _appState.SwitchView(
-            _appState.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
+        _navigation.SwitchView(
+            _navigation.CurrentView == AppView.Tags ? AppView.Files : AppView.Tags
         );
     }
 }

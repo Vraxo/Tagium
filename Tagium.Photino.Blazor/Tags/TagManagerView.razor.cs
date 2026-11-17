@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Tagium.Core.Settings;
 using Tagium.Core.Tags;
+using Tagium.Photino.Blazor;
 
 namespace Tagium.Photino.Blazor.Tags;
 
@@ -11,7 +12,7 @@ public partial class TagManagerView
     private string NewTagName = "";
     private string TagSearch = "";
     private bool UnusedOnly;
-    private bool IsGraphView => AppState.IsTagGraphView;
+    private bool IsGraphView => NavigationState.IsTagGraphView;
     private bool _isLoading = true;
     private bool _isDisposed;
     private Guid? ActiveColorPickerId;
@@ -199,12 +200,12 @@ public partial class TagManagerView
 
     private void BrowseTag(Tag tag)
     {
-        AppState.SetSearch(tag.Name);
+        NavigationState.SetSearch(tag.Name);
     }
 
     private void SetGraphView(bool graphView)
     {
-        AppState.SetTagGraphView(graphView);
+        NavigationState.SetTagGraphView(graphView);
     }
 
     private void ClearSearch()

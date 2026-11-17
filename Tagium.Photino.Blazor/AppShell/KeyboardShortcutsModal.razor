@@ -1,12 +1,12 @@
 @namespace Tagium.Photino.Blazor.AppShell
-@inject AppState AppState
+@inject NavigationState NavigationState
 @inject ModalService ModalService
 @inject SettingsManager SettingsManager
 
 <div class="keyboard-shortcuts">
     <p class="keyboard-shortcuts-intro">
         Available shortcuts for the current workspace. Text fields keep their normal typing behavior.
-        @if (AppState.CurrentView is AppView.Files or AppView.Folders)
+        @if (NavigationState.CurrentView is AppView.Files or AppView.Folders)
         {
             <text>File results currently use @(SettingsManager.Current.FileScrollMode == FileScrollMode.Infinite ? "infinite scroll" : "pagination") — change this in Settings &gt; Appearance &gt; File Browsing.</text>
         }
@@ -26,7 +26,7 @@
             <div class="keyboard-shortcut-row"><span>Zoom in / out / reset</span><kbd>Ctrl + + / − / 0</kbd></div>
         </section>
 
-        @if (AppState.CurrentView == AppView.Files)
+        @if (NavigationState.CurrentView == AppView.Files)
         {
             <section class="keyboard-shortcut-group">
                 <h4>File browsing</h4>
@@ -69,7 +69,7 @@
                 <div class="keyboard-shortcut-row"><span>Clear rating</span><kbd>0</kbd></div>
             </section>
         }
-        else if (AppState.CurrentView == AppView.Folders)
+        else if (NavigationState.CurrentView == AppView.Folders)
         {
             <section class="keyboard-shortcut-group">
                 <h4>Folder tree</h4>
@@ -82,7 +82,7 @@
                 <div class="keyboard-shortcut-row"><span>Open focused file actions</span><kbd>Shift + F10</kbd></div>
             </section>
         }
-        else if (AppState.CurrentView == AppView.Tags)
+        else if (NavigationState.CurrentView == AppView.Tags)
         {
             <section class="keyboard-shortcut-group">
                 <h4>Tag manager</h4>

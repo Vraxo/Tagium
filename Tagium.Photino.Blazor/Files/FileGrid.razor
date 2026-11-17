@@ -1,13 +1,13 @@
-﻿@namespace Tagium.Photino.Blazor.Files
+@namespace Tagium.Photino.Blazor.Files
 @implements IDisposable
 @inject LibraryService Library
-@inject AppState AppState
+@inject FileBrowser FileBrowser
 @inject SettingsManager Settings
 @inject IJSRuntime JS
 
 @{
     // Paginated: the current page. Infinite scroll: every loaded batch.
-    List<FileEntry> visibleFiles = AppState.GetVisibleFiles().ToList();
+    List<FileEntry> visibleFiles = FileBrowser.GetVisibleFiles().ToList();
     Guid? tabStopId = GetTabStopId(visibleFiles);
 }
 
@@ -20,7 +20,7 @@
 
     @foreach (var file in visibleFiles)
     {
-        bool isSelected = AppState.SelectedFileIds.Contains(file.Id);
+        bool isSelected = FileBrowser.SelectedFileIds.Contains(file.Id);
         bool hasThumb = ThumbnailService.HasThumbnail(file.Id, file.Hash);
         TriggerThumbnailIfMissing(file, hasThumb);
 

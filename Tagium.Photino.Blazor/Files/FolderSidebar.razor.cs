@@ -9,7 +9,7 @@ namespace Tagium.Photino.Blazor.Files;
 
 public partial class FolderSidebar : IDisposable
 {
-    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private NavigationState AppState { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
     [Inject] private ContextMenuService ContextMenu { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
@@ -23,7 +23,7 @@ public partial class FolderSidebar : IDisposable
     protected override void OnInitialized()
     {
         LoadRoots();
-        AppState.OnChange += OnAppStateChanged;
+        NavigationState.OnChange += OnAppStateChanged;
         Library.LibraryChanged += LoadRoots;
     }
 
@@ -54,7 +54,7 @@ public partial class FolderSidebar : IDisposable
                 return _focusedPath;
             }
 
-            if (AppState.CurrentFolderPath is { } current && Contains(rows, current))
+            if (NavigationState.CurrentFolderPath is { } current && Contains(rows, current))
             {
                 return current;
             }
@@ -109,7 +109,7 @@ public partial class FolderSidebar : IDisposable
     private void SelectFolder(FolderNode node)
     {
         _focusedPath = node.Path;
-        AppState.SetFolder(node.Path);
+        NavigationState.SetFolder(node.Path);
     }
 
     /// <summary>
@@ -321,7 +321,7 @@ public partial class FolderSidebar : IDisposable
 
     public void Dispose()
     {
-        AppState.OnChange -= OnAppStateChanged;
+        NavigationState.OnChange -= OnAppStateChanged;
         Library.LibraryChanged -= LoadRoots;
     }
 }

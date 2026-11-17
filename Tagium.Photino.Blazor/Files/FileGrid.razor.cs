@@ -21,8 +21,8 @@ public partial class FileGrid : IDisposable
 
     protected override void OnInitialized()
     {
-        AppState.OnChange += ReloadData;
-        AppState.OnSelectionChange += RefreshSelection;
+        FileBrowser.OnChange += ReloadData;
+        FileBrowser.OnSelectionChange += RefreshSelection;
         Settings.SettingsChanged += ReloadData;
         ThumbnailService.ThumbnailGenerated += OnThumbnailGenerated;
     }
@@ -45,7 +45,7 @@ public partial class FileGrid : IDisposable
     /// </summary>
     private async Task FocusPendingItemAsync()
     {
-        int index = AppState.ConsumePendingFocusIndex();
+        int index = FileBrowser.ConsumePendingFocusIndex();
         if (index < 0)
         {
             await ObserveInfiniteScrollAsync();
@@ -66,7 +66,7 @@ public partial class FileGrid : IDisposable
 
     private async Task ObserveInfiniteScrollAsync()
     {
-        if (!AppState.IsInfiniteScroll)
+        if (!FileBrowser.IsInfiniteScroll)
         {
             return;
         }
@@ -123,7 +123,7 @@ public partial class FileGrid : IDisposable
 
     private void OnCardClick(MouseEventArgs e, Guid id)
     {
-        AppState.SelectFile(id, e.CtrlKey, e.ShiftKey);
+        FileBrowser.SelectFile(id, e.CtrlKey, e.ShiftKey);
     }
 
     private void OnCardDoubleClick(MouseEventArgs e, FileEntry file)
@@ -144,7 +144,7 @@ public partial class FileGrid : IDisposable
             return;
         }
 
-        AppState.SelectFile(id, false, false);
+        FileBrowser.SelectFile(id, false, false);
     }
 
     [JSInvokable]
@@ -154,19 +154,19 @@ public partial class FileGrid : IDisposable
             .Where(g => g.HasValue)
             .Select(g => g!.Value);
 
-        AppState.SetSelection(ids);
+        FileBrowser.SetSelection(ids);
     }
 
     [JSInvokable]
     public void SelectAll()
     {
-        AppState.SetSelection(AppState.GetVisibleFiles().Select(f => f.Id));
+        FileBrowser.SetSelection(FileBrowser.GetVisibleFiles().Select(f => f.Id));
     }
 
     [JSInvokable]
     public void ClearSelection()
     {
-        AppState.ClearSelection();
+        FileBrowser.ClearSelection();
     }
 
     /// <summary>
@@ -182,7 +182,7 @@ public partial class FileGrid : IDisposable
 
         foreach (FileEntry file in files)
         {
-            if (AppState.SelectedFileIds.Contains(file.Id))
+            if (FileBrowser.SelectedFileIds.Contains(file.Id))
             {
                 return file.Id;
             }
@@ -214,11 +214,11 @@ public partial class FileGrid : IDisposable
                 break;
 
             case " ":
-                AppState.SelectFile(file.Id, true, false);
+                FileBrowser.SelectFile(file.Id, true, false);
                 break;
 
             case "Escape":
-                AppState.ClearSelection();
+                FileBrowser.ClearSelection();
                 break;
 
             case "ArrowUp":
@@ -239,12 +239,12 @@ public partial class FileGrid : IDisposable
 
     private void ShowContextMenu(FileEntry file, double clientX, double clientY, bool isKeyboardInvocation)
     {
-        if (!AppState.SelectedFileIds.Contains(file.Id))
+        if (!FileBrowser.SelectedFileIds.Contains(file.Id))
         {
-            AppState.SelectFile(file.Id, multiSelect: false, rangeSelect: false);
+            FileBrowser.SelectFile(file.Id, multiSelect: false, rangeSelect: false);
         }
 
-        IReadOnlyList<Guid> selectedFileIds = AppState.SelectedFileIds.ToList();
+        IReadOnlyList<Guid> selectedFileIds = FileBrowser.SelectedFileIds.ToList();
         ContextMenu.ShowFile(
             file.Id,
             file.Name,
@@ -276,21 +276,21 @@ public partial class FileGrid : IDisposable
             // infinite scroll still has to append); the move records where focus should
             // land and OnAfterRenderAsync places it once the items exist.
             int direction = targetId == "__NEXT_PAGE__" ? 1 : -1;
-            _ = AppState.MovePage(direction, extendSelection);
+            _ = FileBrowser.MovePage(direction, extendSelection);
             return;
         }
 
         if (Guid.TryParse(targetId, out Guid id))
         {
             // Shift+arrow extends the same range a shift-click would, from the same anchor.
-            AppState.SelectFile(id, false, extendSelection);
+            FileBrowser.SelectFile(id, false, extendSelection);
         }
     }
 
     public void Dispose()
     {
-        AppState.OnChange -= ReloadData;
-        AppState.OnSelectionChange -= RefreshSelection;
+        FileBrowser.OnChange -= ReloadData;
+        FileBrowser.OnSelectionChange -= RefreshSelection;
         Settings.SettingsChanged -= ReloadData;
         ThumbnailService.ThumbnailGenerated -= OnThumbnailGenerated;
 

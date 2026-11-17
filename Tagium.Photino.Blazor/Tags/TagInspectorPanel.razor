@@ -1,5 +1,5 @@
 @namespace Tagium.Photino.Blazor.Tags
-@inject AppState AppState
+@inject NavigationState NavigationState
 
 <div class="tag-inspector-panel">
     <div class="inspector-tags">
@@ -16,7 +16,7 @@
                             type="button"
                             title="Show files tagged @tag.Name"
                             aria-label="Show files tagged @tag.Name"
-                            @onclick="() => AppState.SetSearch(tag.Name)">@tag.Name</button>
+                            @onclick="() => NavigationState.SetSearch(tag.Name)">@tag.Name</button>
                     <button class="btn-remove-tag"
                             type="button"
                             title="Remove @tag.Name from selected files"
@@ -50,7 +50,7 @@
                                     type="button"
                                     title="Show files tagged @assignment.Tag.Name"
                                     aria-label="Show files tagged @assignment.Tag.Name"
-                                    @onclick="() => AppState.SetSearch(assignment.Tag.Name)">@assignment.Tag.Name</button>
+                                    @onclick="() => NavigationState.SetSearch(assignment.Tag.Name)">@assignment.Tag.Name</button>
                             <span class="partial-tag-count">@assignment.AssignedCount/@assignment.SelectedCount</span>
                             <button class="btn-apply-partial-tag"
                                     type="button"

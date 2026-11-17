@@ -15,6 +15,8 @@ namespace Tagium.Photino.Blazor.AppShell;
 public partial class MainLayout : IDisposable
 {
     [Inject] public AppState AppState { get; set; } = default!;
+    [Inject] public NavigationState NavigationState { get; set; } = default!;
+    [Inject] public FileBrowser FileBrowser { get; set; } = default!;
     [Inject] public LibraryService Library { get; set; } = default!;
     [Inject] public SettingsManager SettingsManager { get; set; } = default!;
     [Inject] public ToastService Toast { get; set; } = default!;
@@ -46,7 +48,8 @@ public partial class MainLayout : IDisposable
         WindowEventHub.SettingsSaved += OnExternalSettingsSaved;
         Appearance.AppearanceChanged += OnAppearanceChanged;
         ScanService.ScanCompleted += ShowScanStatus;
-        AppState.OnChange += StateHasChanged;
+        NavigationState.OnChange += StateHasChanged;
+        FileBrowser.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
     }
 
@@ -55,7 +58,7 @@ public partial class MainLayout : IDisposable
         if (!firstRender)
         {
             // Batches appended by infinite scroll start a fresh observation window.
-            if (AppState.IsInfiniteScroll)
+            if (FileBrowser.IsInfiniteScroll)
             {
                 await ObserveInfiniteScrollAsync();
             }
@@ -118,7 +121,7 @@ public partial class MainLayout : IDisposable
         switch (key.ToLower())
         {
             case "z":
-                AppState.Undo();
+                Library.Undo();
                 break;
             case "f":
                 if (AppToolbarRef != null)
@@ -127,20 +130,20 @@ public partial class MainLayout : IDisposable
                 }
                 break;
             case "t":
-                AppState.SwitchView(AppState.CurrentView == AppView.Tags
+                NavigationState.SwitchView(NavigationState.CurrentView == AppView.Tags
                     ? AppView.Files
                     : AppView.Tags);
                 break;
             case "1":
-                AppState.SwitchView(AppView.Files);
+                NavigationState.SwitchView(AppView.Files);
                 await JS.InvokeVoidAsync("libraryNav.focusView", "files");
                 break;
             case "2":
-                AppState.SwitchView(AppView.Folders);
+                NavigationState.SwitchView(AppView.Folders);
                 await JS.InvokeVoidAsync("libraryNav.focusView", "folders");
                 break;
             case "3":
-                AppState.SwitchView(AppView.Tags);
+                NavigationState.SwitchView(AppView.Tags);
                 await JS.InvokeVoidAsync("libraryNav.focusView", "tags");
                 break;
             case "r":
@@ -184,16 +187,16 @@ public partial class MainLayout : IDisposable
     public void PrepareTagPicker(string? focusedFileId)
     {
         if (Guid.TryParse(focusedFileId, out Guid fileId)
-            && !AppState.SelectedFileIds.Contains(fileId))
+            && !FileBrowser.SelectedFileIds.Contains(fileId))
         {
-            AppState.SelectFile(fileId, multiSelect: false, rangeSelect: false);
+            FileBrowser.SelectFile(fileId, multiSelect: false, rangeSelect: false);
         }
     }
 
     [JSInvokable]
     public bool NavigateFilePage(int direction, bool extendSelection)
     {
-        return AppState.MoveBatch(direction, extendSelection);
+        return FileBrowser.MoveBatch(direction, extendSelection);
     }
 
     /// <summary>
@@ -203,7 +206,7 @@ public partial class MainLayout : IDisposable
     [JSInvokable]
     public bool LoadMoreFiles()
     {
-        return AppState.LoadMoreFiles();
+        return FileBrowser.LoadMoreFiles();
     }
 
     [JSInvokable]
@@ -215,31 +218,31 @@ public partial class MainLayout : IDisposable
         }
 
         if (Guid.TryParse(focusedFileId, out Guid fileId)
-            && !AppState.SelectedFileIds.Contains(fileId))
+            && !FileBrowser.SelectedFileIds.Contains(fileId))
         {
-            AppState.SelectFile(fileId, multiSelect: false, rangeSelect: false);
+            FileBrowser.SelectFile(fileId, multiSelect: false, rangeSelect: false);
         }
 
-        if (AppState.SelectedFileIds.Count == 0)
+        if (FileBrowser.SelectedFileIds.Count == 0)
         {
             return;
         }
 
         Library.SetRatings(
-            AppState.SelectedFileIds.ToList(),
+            FileBrowser.SelectedFileIds.ToList(),
             rating == 0 ? null : rating);
     }
 
     [JSInvokable]
     public void ReturnToTagGraph()
     {
-        AppState.ReturnToTagGraph();
+        NavigationState.ReturnToTagGraph();
     }
 
     [JSInvokable]
     public void RestoreTagBrowse(string query)
     {
-        AppState.SetSearch(query);
+        NavigationState.SetSearch(query);
     }
 
     [JSInvokable]
@@ -415,8 +418,8 @@ public partial class MainLayout : IDisposable
 
     private void ReloadCurrentView()
     {
-        AppState.SetSearch("");
-        AppState.ClearSelection();
+        NavigationState.SetSearch("");
+        FileBrowser.ClearSelection();
         Library.Refresh();
     }
 
@@ -465,7 +468,8 @@ public partial class MainLayout : IDisposable
         WindowEventHub.SettingsSaved -= OnExternalSettingsSaved;
         Appearance.AppearanceChanged -= OnAppearanceChanged;
         ScanService.ScanCompleted -= ShowScanStatus;
-        AppState.OnChange -= StateHasChanged;
+        NavigationState.OnChange -= StateHasChanged;
+        FileBrowser.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
 
         _zoomToastCts?.Cancel();

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+using Tagium.Core.Files;
 using Tagium.Core.Settings;
 using Tagium.Core.Tags;
 using Tagium.Photino.Blazor;
@@ -24,12 +25,12 @@ public partial class TagSidebar : IDisposable
     private bool HasNoTagSearchResults => !string.IsNullOrWhiteSpace(TagFilter)
         && !FilteredTags.Any();
 
-    private bool IsAllFilesActive => string.IsNullOrEmpty(AppState.SearchText)
-        && !AppState.IsMissingOnly
-        && AppState.CurrentView == AppView.Files;
+    private bool IsAllFilesActive => string.IsNullOrEmpty(NavigationState.SearchText)
+        && !NavigationState.IsMissingOnly
+        && NavigationState.CurrentView == AppView.Files;
 
-    private bool IsMissingActive => AppState.IsMissingOnly
-        && AppState.CurrentView == AppView.Files;
+    private bool IsMissingActive => NavigationState.IsMissingOnly
+        && NavigationState.CurrentView == AppView.Files;
 
     private string GetDisplayModeClass()
     {
@@ -72,7 +73,7 @@ public partial class TagSidebar : IDisposable
     protected override void OnInitialized()
     {
         RefreshData();
-        AppState.OnChange += StateHasChanged;
+        NavigationState.OnChange += StateHasChanged;
         Library.LibraryChanged += RefreshData;
         Settings.SettingsChanged += StateHasChanged;
     }
@@ -139,12 +140,12 @@ public partial class TagSidebar : IDisposable
 
     private void SetSearch(string text)
     {
-        AppState.SetSearch(text);
+        NavigationState.SetSearch(text);
     }
 
     public void Dispose()
     {
-        AppState.OnChange -= StateHasChanged;
+        NavigationState.OnChange -= StateHasChanged;
         Library.LibraryChanged -= RefreshData;
         Settings.SettingsChanged -= StateHasChanged;
     }

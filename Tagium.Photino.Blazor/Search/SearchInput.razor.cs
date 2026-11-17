@@ -14,7 +14,7 @@ public partial class SearchInput
     // blur that follows it would otherwise tear the list out from under the pointer.
     private const int BlurCloseDelayMilliseconds = 200;
 
-    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private NavigationState AppState { get; set; } = default!;
     [Inject] private SettingsManager Settings { get; set; } = default!;
 
     private CancellationTokenSource? _debounceCts;
@@ -31,7 +31,7 @@ public partial class SearchInput
 
     protected override void OnInitialized()
     {
-        _value = AppState.SearchText;
+        _value = NavigationState.SearchText;
     }
 
     private void OnInput(ChangeEventArgs e)
@@ -150,9 +150,9 @@ public partial class SearchInput
 
     private void ApplySearch(string query, bool record)
     {
-        if (!string.Equals(query, AppState.SearchText, StringComparison.Ordinal))
+        if (!string.Equals(query, NavigationState.SearchText, StringComparison.Ordinal))
         {
-            AppState.SetSearch(query);
+            NavigationState.SetSearch(query);
         }
 
         if (record)

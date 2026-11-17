@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Photino.Blazor;
 using Tagium.Photino.Blazor.Files;
@@ -11,7 +12,7 @@ namespace Tagium.Photino.Blazor.AppShell;
 public partial class ContextMenuHost : IDisposable
 {
     [Inject] private ContextMenuService ContextMenu { get; set; } = default!;
-    [Inject] private AppState AppState { get; set; } = default!;
+    [Inject] private NavigationState AppState { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
     [Inject] private SystemLauncherService Launcher { get; set; } = default!;
     [Inject] private ToastService Toast { get; set; } = default!;
@@ -165,19 +166,19 @@ public partial class ContextMenuHost : IDisposable
 
     private void BrowseFolder()
     {
-        AppState.SetFolder(ContextMenu.Path);
+        NavigationState.SetFolder(ContextMenu.Path);
         Close();
     }
 
     private void FilterFilesByTag()
     {
-        AppState.SetSearch(ContextMenu.Name);
+        NavigationState.SetSearch(ContextMenu.Name);
         Close();
     }
 
     private void ManageTags()
     {
-        AppState.SwitchView(AppView.Tags);
+        NavigationState.SwitchView(AppView.Tags);
         Close();
     }
 

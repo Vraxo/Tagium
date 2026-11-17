@@ -27,7 +27,7 @@
 @code {
     private RenderFragment RenderNode(FolderNode node, int level, string? tabStopPath) => __builder =>
     {
-        bool isSelected = AppState.CurrentFolderPath == node.Path;
+        bool isSelected = NavigationState.CurrentFolderPath == node.Path;
         bool isTabStop = tabStopPath is not null && string.Equals(tabStopPath, node.Path, StringComparison.OrdinalIgnoreCase);
 
         // Children are only discovered on first expand, so "expandable" means "expanded, has

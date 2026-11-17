@@ -13,7 +13,7 @@ public partial class FileInspector
 
     protected override void OnInitialized()
     {
-        AppState.OnSelectionChange += OnSelectionChanged;
+        FileBrowser.OnSelectionChange += OnSelectionChanged;
         _ = LoadInspectorDataAsync();
     }
 
@@ -34,7 +34,7 @@ public partial class FileInspector
         try
         {
             // Capture selected IDs on UI thread
-            List<Guid> selectedIds = AppState.SelectedFileIds.ToList();
+            List<Guid> selectedIds = FileBrowser.SelectedFileIds.ToList();
             int count = selectedIds.Count;
 
             if (count == 0)
@@ -114,6 +114,6 @@ public partial class FileInspector
     public void Dispose()
     {
         _cts?.Cancel();
-        AppState.OnSelectionChange -= OnSelectionChanged;
+        FileBrowser.OnSelectionChange -= OnSelectionChanged;
     }
 }
