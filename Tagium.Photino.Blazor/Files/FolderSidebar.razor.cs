@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Photino.Blazor;
 using Tagium.Photino.Blazor.AppShell;

@@ -8,9 +8,9 @@ namespace Tagium.Core.Files;
 /// loaded batches when infinitely scrolling, the selection, and where focus lands next.
 ///
 /// This type owns no filtering. It is handed a result set through <see cref="ApplyLoadedFiles"/>
-/// and reports back through <see cref="NeedsReload"/> when a change to the browsing mode or
-/// page size needs fresh data. Everything it decides is expressed in terms of the list it
-/// already holds, which is what makes it testable without the library or the settings manager.
+/// and reports back through <see cref="NeedsPageSizeChange"/> when the persisted page size has
+/// to change. Everything it decides is expressed in terms of the list it already holds, which
+/// is what makes it testable without the library or the settings manager.
 /// </summary>
 public sealed class FileBrowser : IDisposable
 {
@@ -78,12 +78,8 @@ public sealed class FileBrowser : IDisposable
 
     public event Action? OnSelectionChange;
 
-    /// <summary>
-    /// Raised when the list needs to be re-queried because the browsing mode, page size or
-    /// filter changed underneath it. <c>AppState</c> answers by reloading from the
-    /// library; without that wiring this type still behaves correctly for the list it holds.
-    /// </summary>
-    public event Func<Task>? NeedsReload;
+    /// <summary>Raised by <see cref="SetPageSize"/>; the subscriber persists and re-applies it.</summary>
+    public event Action<int>? NeedsPageSizeChange;
 
     // --- Result set -----------------------------------------------------------------------
 
@@ -207,9 +203,6 @@ public sealed class FileBrowser : IDisposable
 
         NeedsPageSizeChange?.Invoke(pageSize);
     }
-
-    /// <summary>Raised by <see cref="SetPageSize"/>; the subscriber persists and re-applies it.</summary>
-    public event Action<int>? NeedsPageSizeChange;
 
     /// <summary>Appends the next batch in infinite scroll mode. Returns <c>false</c> when there is nothing more to load.</summary>
     public bool LoadMoreFiles()
@@ -472,9 +465,5 @@ public sealed class FileBrowser : IDisposable
 
     private void NotifySelectionChanged() => OnSelectionChange?.Invoke();
 
-    public void Dispose()
-    {
-        NeedsReload = null;
-        NeedsPageSizeChange = null;
-    }
+    public void Dispose() => NeedsPageSizeChange = null;
 }

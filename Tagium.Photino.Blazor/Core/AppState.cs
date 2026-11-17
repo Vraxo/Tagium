@@ -46,7 +46,6 @@ public sealed class AppState : IDisposable
         // before the reload lands.
         navigation.OnFilterChanged += OnFilterChanged;
         navigation.OnFolderChanged += OnFolderChanged;
-        browser.NeedsReload += RefreshFilesAsync;
         browser.NeedsPageSizeChange += OnPageSizeRequested;
 
         _settings.SettingsChanged += OnSettingsChanged;
@@ -149,7 +148,6 @@ public sealed class AppState : IDisposable
     {
         Navigation.OnFilterChanged -= OnFilterChanged;
         Navigation.OnFolderChanged -= OnFolderChanged;
-        Browser.NeedsReload -= RefreshFilesAsync;
         Browser.NeedsPageSizeChange -= OnPageSizeRequested;
 
         _settings.SettingsChanged -= OnSettingsChanged;

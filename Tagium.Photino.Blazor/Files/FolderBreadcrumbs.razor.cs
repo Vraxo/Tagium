@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Tagium.Core.Files;
 using Tagium.Core.Library;
 using Tagium.Photino.Blazor;
 
