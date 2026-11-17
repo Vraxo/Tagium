@@ -15,7 +15,7 @@ namespace Tagium.Core.Tests.Library;
 public class FileRelocatorTests
 {
     private static string Sha256Hex(string content) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
     private static FileRelocator Create() => new(
         new FileHasher(NullLogger<FileHasher>.Instance),
