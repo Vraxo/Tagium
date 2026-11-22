@@ -336,11 +336,13 @@ public partial class MainLayout : IDisposable
 
     /// <summary>
     /// The catalog is authoritative either way, but the files themselves kept their old embedded
-    /// metadata, so the user is told rather than left believing the write landed.
+    /// metadata, so the user is told rather than left believing the write landed. The batch kind is
+    /// already in the status bar's wording, so the toast only needs the count.
     /// </summary>
-    private void OnTagSyncFailed(int failedCount, FileSyncBatch _)
+    private void OnTagSyncFailed(int failedCount, FileSyncBatch batch)
     {
-        // The batch kind is already in the status bar's wording; the toast only needs the count.
+        _ = batch;
+
         _ = InvokeAsync(() => Toast.Show(
             failedCount == 1
                 ? "Embedded metadata could not be written to 1 file. The catalog was updated; the file itself was not."

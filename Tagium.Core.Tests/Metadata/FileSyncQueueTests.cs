@@ -177,7 +177,9 @@ public class FileSyncQueueTests
         });
 
         reports[^1].Should().Be(new Report(2, 2, FileSyncBatch.EditedFiles, 1));
-        writer.Copy().Should().Equal(First, Second, "the file after the failure must still be written");
+
+        // The file after the failure must still be written.
+        writer.Copy().Should().Equal(First, Second);
 
         queue.Dispose();
         await worker.WaitAsync(Timeout);
