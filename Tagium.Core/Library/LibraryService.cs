@@ -29,8 +29,15 @@ public class LibraryService
     public int TagSyncProcessed => _tagSyncService.TagSyncProcessed;
     public int TagSyncTotal => _tagSyncService.TagSyncTotal;
 
-    public event Action<int, int>? TagSyncProgress;
+    /// <summary>Which kind of change the write-back queue is currently working through.</summary>
+    public FileSyncBatch TagSyncBatch => _tagSyncService.CurrentBatch;
+
+    /// <summary>Files written so far and queued in total; the batch is named once it finishes.</summary>
+    public event Action<int, int, FileSyncBatch?>? TagSyncProgress;
     public event Action? TagSyncCompleted;
+
+    /// <summary>A write-back batch finished with files whose embedded metadata could not be updated.</summary>
+    public event Action<int, FileSyncBatch>? TagSyncFailed;
     public event Action? LibraryChanged;
     public event Action<IReadOnlyList<FileEntry>>? DuplicatesDetected;
 
@@ -63,8 +70,9 @@ public class LibraryService
         _scanService.FilesImported += () => LibraryChanged?.Invoke();
         _scanService.DuplicatesDetected += dups => DuplicatesDetected?.Invoke(dups);
 
-        _tagSyncService.TagSyncProgress += (p, t) => TagSyncProgress?.Invoke(p, t);
+        _tagSyncService.TagSyncProgress += (processed, total, batch) => TagSyncProgress?.Invoke(processed, total, batch);
         _tagSyncService.TagSyncCompleted += () => TagSyncCompleted?.Invoke();
+        _tagSyncService.TagSyncFailed += (failed, batch) => TagSyncFailed?.Invoke(failed, batch);
     }
 
     public void Refresh()
@@ -224,7 +232,7 @@ public class LibraryService
         if (nameChanged)
         {
             List<Guid> fileIds = _fileTagRepo.GetFileIdsForTag(tag.Id);
-            _tagSyncService.QueueTagMetadataSync(fileIds);
+            _tagSyncService.EnqueueTagUpdate(fileIds);
         }
 
         LibraryChanged?.Invoke();
@@ -232,7 +240,13 @@ public class LibraryService
 
     public void DeleteTag(Guid id)
     {
+        // Read before the delete: the associations go with the tag, and the files still carry the
+        // deleted name in their embedded keywords until they are rewritten.
+        List<Guid> fileIds = _fileTagRepo.GetFileIdsForTag(id);
+
         _tagRepo.Delete(id);
+        _tagSyncService.EnqueueTagUpdate(fileIds);
+
         LibraryChanged?.Invoke();
     }
 

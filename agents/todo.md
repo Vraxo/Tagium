@@ -110,8 +110,45 @@ Still open:
 
 ---
 
+## 8. Embedded write-back goes through one queue — shipped
+
+Evidence: every tag or rating edit did `_ = _tagSyncService.SyncMetadataToFileAsync(fileId)` in a
+loop (`LibraryFileMetadataEditor`, `TagAssignmentUndoCommand`, `RatingUndoCommand`), so batch-tagging
+N files started N tasks that each blocked a thread-pool thread on the single lock inside the
+`-stay_open` ExifTool daemon. `WriteMetadataAsync` returns `false` when a write does not land and
+`SyncMetadataToFileAsync` discarded it, so a whole selection could fail to reach the files with
+nothing in the UI. The queue with progress and cancellation (`QueueTagMetadataSync`) existed, but
+only tag rename used it — and the status bar label said "for renamed tag" whatever happened.
+
+- [x] `Tagium.Core/Metadata/FileSyncQueue` owns ordering, de-duplication, cancellation and counting;
+  performing a write is injected, so the queue is testable without ExifTool, SQLite or files
+  (`Tagium.Core.Tests/Metadata/FileSyncQueueTests`): strictly one write in flight, queue order kept,
+  a false or throwing write counted as a failure without stranding the rest of the batch, a file
+  re-edited while its write is in flight written again, `CancelPending` dropping only what has not
+  been handed to ExifTool yet.
+- [x] `TagMetadataSyncService` runs that queue on one worker and exposes `EnqueueFileUpdates` (edits,
+  undos) and `EnqueueTagUpdate` (renames, deletes). `SyncMetadataToFileAsync` is gone, so no caller
+  can fire an unawaited write any more. Without ExifTool nothing is queued and nothing is reported.
+- [x] Failures are logged through Serilog per file and per batch, and raised as `TagSyncFailed`,
+  which `MainLayout` turns into an error toast — the catalog is authoritative either way, but the
+  user is no longer left believing the file was rewritten.
+- [x] Batch edits show progress: the status bar now covers every write-back, labelled by what caused
+  it (`FileSyncBatch`) instead of always claiming a rename.
+- [x] `DeleteTag` writes back too, symmetric with rename: the files carrying a deleted tag kept the
+  old name embedded in `Subject`/`Keywords` forever before this.
+
+Still open:
+
+- [ ] A failed batch is reported as a count, not as the list of files; there is no "retry these".
+- [ ] `CancelPending` has no caller in the app yet — no UI to abandon a running write-back.
+- [ ] The write is still all-or-nothing per file: `-Subject= -Keywords= -Title= -Description=
+      -Rating=` clears fields the catalog does not know about, so any write rewrites the whole set.
+
+---
+
 ## Constraints worth remembering
 
 - This sandbox has **no .NET SDK**, so nothing can be compiled locally — CI (`build-and-test` on PRs to `main`) is the only compile gate. Always open a PR rather than pushing straight to `main`.
+- Run logs live on `results-receiver.actions.githubusercontent.com`, which is **not reachable from this sandbox** (`gh run view --log` dies with EOF). CI therefore publishes what a blind agent needs: a `::notice::` annotation with the pass/fail totals, `::error::` annotations with the failing lines, and a `test-results` artifact. Read them with `gh api repos/Vraxo/Tagium/check-runs/<job-id>/annotations` — the job id comes from `gh api repos/Vraxo/Tagium/actions/runs/<run-id>/jobs`.
 - `gh pr edit` fails in this repo (`Projects (classic)` GraphQL deprecation). Patch PR bodies with `gh api --method PATCH repos/Vraxo/Tagium/pulls/<n> -f body="$(cat body.md)"`.
 - Existing installs keep their theme files: shipped themes refresh only when their `"Version"` rises (`ThemeService.SyncDefaultThemesFromShippingDir`). Bump the version in a shipped theme JSON whenever its palette changes.

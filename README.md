@@ -12,9 +12,9 @@ Desktop media library and file tagger for Windows, built with [.NET 11](https://
 - Choose 50, 100 (default), or 250 files per page, or switch to infinite scroll that appends files as you scroll (Settings → Appearance → File Browsing); the preference is remembered across sessions
 - Sort the library by date added, name, path, size, modified time, or rating (ascending/descending)
 - Filter with a query language — `tag:`, `rating:`, `size:`, `ext:`, `added:`, `modified:`, `has:`, `missing:`, `untagged`, the `artist:`/`series:`/… category filters and `-` to negate — with an in-app syntax reference on the search box and the last ten queries recalled from a dropdown under it
-- Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes
+- Create color-coded tags with optional emoji labels, batch-tag selections, and undo tag changes; renaming or deleting a tag rewrites every file that carried it
 - Explore up to 120 of the most-used tags in an interactive graph, rendered locally with PixiJS and laid out with D3 force simulation; tag emojis appear inside larger nodes, nodes scale by file count, links show shared files or explicit hierarchy, neighbors respond to forces while dragging, and Obsidian-style display/force controls tune the graph
-- Read embedded metadata (`Subject`, `Keywords`, `Title`, `Description`, `Rating`) on scan and sync tag updates back to files via ExifTool
+- Read embedded metadata (`Subject`, `Keywords`, `Title`, `Description`, `Rating`) on scan and sync tag updates back to files via ExifTool — one write at a time, with the status bar showing progress and a warning when a file could not be written
 - Rate files with a 1–5 star rating from the inspector (single or multi-select), searchable with `rating:` and undoable; ratings sync back to files via ExifTool
 - Inspect read-only file details in the inspector: type, size, added/modified dates, content hash, and embedded metadata (title, description)
 - Find duplicate files by content hash (View Options → Find Duplicates); scans also flag newly imported files that duplicate existing entries

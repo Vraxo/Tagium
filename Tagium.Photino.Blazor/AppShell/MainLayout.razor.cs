@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using Tagium.Core.Files;
 using Tagium.Core.Library;
+using Tagium.Core.Metadata;
 using Tagium.Core.Settings;
 using Tagium.Core.Thumbnails;
 using Tagium.Photino.Blazor;
@@ -53,6 +54,7 @@ public partial class MainLayout : IDisposable
         NavigationState.OnChange += StateHasChanged;
         FileBrowser.OnChange += StateHasChanged;
         Library.LibraryChanged += OnLibraryChanged;
+        Library.TagSyncFailed += OnTagSyncFailed;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -332,6 +334,23 @@ public partial class MainLayout : IDisposable
         _ = InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>
+    /// The catalog is authoritative either way, but the files themselves kept their old embedded
+    /// metadata, so the user is told rather than left believing the write landed. The batch kind is
+    /// already in the status bar's wording, so the toast only needs the count.
+    /// </summary>
+    private void OnTagSyncFailed(int failedCount, FileSyncBatch batch)
+    {
+        _ = batch;
+
+        _ = InvokeAsync(() => Toast.Show(
+            failedCount == 1
+                ? "Embedded metadata could not be written to 1 file. The catalog was updated; the file itself was not."
+                : $"Embedded metadata could not be written to {failedCount} files. The catalog was updated; the files themselves were not.",
+            ToastType.Error,
+            durationMs: 8000));
+    }
+
     private void ReloadCurrentView()
     {
         NavigationState.SetSearch("");
@@ -387,6 +406,7 @@ public partial class MainLayout : IDisposable
         NavigationState.OnChange -= StateHasChanged;
         FileBrowser.OnChange -= StateHasChanged;
         Library.LibraryChanged -= OnLibraryChanged;
+        Library.TagSyncFailed -= OnTagSyncFailed;
 
         _zoomToastCts?.Cancel();
         _zoomToastCts?.Dispose();

@@ -1,12 +1,11 @@
 ﻿using Tagium.Core;
-using Tagium.Core.Metadata;
 
 namespace Tagium.Core.Tags;
 
 public class TagAssignmentUndoCommand : IUndoCommand
 {
     private readonly FileTagRepository _fileTagRepo;
-    private readonly TagMetadataSyncService _tagSyncService;
+    private readonly Action<Guid> _enqueueFileSync;
     private readonly Action _onChanged;
     private readonly Guid _tagId;
     private readonly List<Guid> _fileIds;
@@ -14,14 +13,14 @@ public class TagAssignmentUndoCommand : IUndoCommand
 
     public TagAssignmentUndoCommand(
         FileTagRepository fileTagRepo,
-        TagMetadataSyncService tagSyncService,
+        Action<Guid> enqueueFileSync,
         Action onChanged,
         Guid tagId,
         IEnumerable<Guid> fileIds,
         bool wasAdding)
     {
         _fileTagRepo = fileTagRepo;
-        _tagSyncService = tagSyncService;
+        _enqueueFileSync = enqueueFileSync;
         _onChanged = onChanged;
         _tagId = tagId;
         _fileIds = fileIds.ToList();
@@ -41,7 +40,7 @@ public class TagAssignmentUndoCommand : IUndoCommand
                 _fileTagRepo.AddTagToFile(fileId, _tagId);
             }
 
-            _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
+            _enqueueFileSync(fileId);
         }
 
         _onChanged();

@@ -26,4 +26,39 @@ jobs:
 
       - run: dotnet build
 
-      - run: dotnet test --no-build
+      - name: Test
+        run: |
+          set -o pipefail
+          dotnet test --no-build --logger "trx;LogFileName=results.trx" --results-directory TestResults 2>&1 | tee test-output.txt
+
+      # The run log lives on a host that is not reachable from every environment, so the totals
+      # are also emitted as a notice annotation and a job summary entry.
+      - name: Summarise test totals
+        if: always()
+        run: |
+          totals="$(grep -E "^(Passed!|Failed!|Passed:|Failed:|Skipped:|Total:|Total tests:)" test-output.txt | tr '\n' ' ')"
+          echo "::notice::Test totals: ${totals:-none found}"
+          {
+            echo '### Test totals'
+            echo '```'
+            echo "${totals:-none found}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The run log is not reachable from every environment, so a failure also publishes the
+      # failing assertions as check annotations and keeps the full output as an artifact.
+      - name: Publish failures
+        if: failure()
+        run: |
+          grep -E "error|Failed |Assert|Expected|Actual|at Tagium" test-output.txt \
+            | sed 's/^/::error::/' || true
+
+      - name: Upload test output
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-results
+          path: |
+            test-output.txt
+            TestResults/
+          retention-days: 7
