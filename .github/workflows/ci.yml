@@ -31,15 +31,17 @@ jobs:
           set -o pipefail
           dotnet test --no-build --logger "trx;LogFileName=results.trx" --results-directory TestResults 2>&1 | tee test-output.txt
 
-      # The run log lives on a host that is not reachable from every environment; the job summary
-      # is, so the totals stay checkable from the API.
+      # The run log lives on a host that is not reachable from every environment, so the totals
+      # are also emitted as a notice annotation and a job summary entry.
       - name: Summarise test totals
         if: always()
         run: |
+          totals="$(grep -E "^(Passed!|Failed!|Passed:|Failed:|Skipped:|Total:|Total tests:)" test-output.txt | tr '\n' ' ')"
+          echo "::notice::Test totals: ${totals:-none found}"
           {
             echo '### Test totals'
             echo '```'
-            grep -E "^(Passed!|Failed!|Passed:|Failed:|Skipped:|Total:|Total tests:)" test-output.txt || echo "no totals found"
+            echo "${totals:-none found}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
