@@ -204,37 +204,37 @@ public class FileSyncQueueTests
     public async Task AFileEditedWhileItsWriteIsInFlight_IsWrittenAgain()
     {
         FileSyncQueue queue = new();
-        TaskCompletionSource gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource firstWriteStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource firstWriteMayFinish = new(TaskCreationOptions.RunContinuationsAsynchronously);
         RecordingWriter writer = null!;
 
         writer = new RecordingWriter(async fileId =>
         {
-            if (fileId != First)
+            if (fileId != First || writer.WriteCount > 1)
             {
                 return true;
             }
 
-            if (writer.WriteCount == 1)
-            {
-                // The user tags the same file again while ExifTool is still working on it.
-                _ = queue.Enqueue([First], FileSyncBatch.EditedFiles);
-                await gate.Task.WaitAsync(Timeout);
-            }
+            // The user tags the same file again while ExifTool is still working on it. The write
+            // stays open until the test says so, which is what makes the overlap certain rather
+            // than a race the test happens to win.
+            _ = queue.Enqueue([First], FileSyncBatch.EditedFiles);
+            firstWriteStarted.TrySetResult();
+            await firstWriteMayFinish.Task.WaitAsync(Timeout);
 
             return true;
         });
 
         Task worker = queue.RunAsync(writer.WriteAsync);
 
-        List<Report> reports = await DrainAsync(queue, q =>
+        List<Report> reports = await DrainAsync(queue, async q =>
         {
             _ = q.Enqueue([First], FileSyncBatch.EditedFiles);
-            return Task.CompletedTask;
+
+            await firstWriteStarted.Task.WaitAsync(Timeout);
+            firstWriteMayFinish.TrySetResult();
         });
 
-        gate.TrySetResult();
-
-        await WaitForWrites(writer, 2);
         writer.Copy().Should().Equal(First, First);
         reports[^1].Should().Be(new Report(2, 2, FileSyncBatch.EditedFiles, 0));
 
