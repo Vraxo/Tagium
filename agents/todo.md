@@ -149,5 +149,6 @@ Still open:
 ## Constraints worth remembering
 
 - This sandbox has **no .NET SDK**, so nothing can be compiled locally — CI (`build-and-test` on PRs to `main`) is the only compile gate. Always open a PR rather than pushing straight to `main`.
+- Run logs live on `results-receiver.actions.githubusercontent.com`, which is **not reachable from this sandbox** (`gh run view --log` dies with EOF). CI therefore publishes what a blind agent needs: a `::notice::` annotation with the pass/fail totals, `::error::` annotations with the failing lines, and a `test-results` artifact. Read them with `gh api repos/Vraxo/Tagium/check-runs/<job-id>/annotations` — the job id comes from `gh api repos/Vraxo/Tagium/actions/runs/<run-id>/jobs`.
 - `gh pr edit` fails in this repo (`Projects (classic)` GraphQL deprecation). Patch PR bodies with `gh api --method PATCH repos/Vraxo/Tagium/pulls/<n> -f body="$(cat body.md)"`.
 - Existing installs keep their theme files: shipped themes refresh only when their `"Version"` rises (`ThemeService.SyncDefaultThemesFromShippingDir`). Bump the version in a shipped theme JSON whenever its palette changes.
