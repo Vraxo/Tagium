@@ -21,7 +21,7 @@
     {
         <div class="scan-progress-bar tag-sync-progress" style="bottom: @(GetTagSyncBottomOffset())px !important;">
             <div class="progress-fill" style="width: @(_tagSyncProgress)%"></div>
-            <div class="progress-label">Syncing physical files for renamed tag... @(_tagSyncProcessed) / @(_tagSyncTotal)</div>
+            <div class="progress-label">@(_tagSyncReason)... @(_tagSyncProcessed) / @(_tagSyncTotal)</div>
         </div>
     }
 </div>

@@ -1,11 +1,15 @@
 using Microsoft.AspNetCore.Components;
 using Tagium.Core.Library;
+using Tagium.Core.Metadata;
 using Tagium.Core.Thumbnails;
 
 namespace Tagium.Photino.Blazor.AppShell;
 
 public partial class StatusBar : IDisposable
 {
+    private const string TagSyncEditedLabel = "Writing changes back to files";
+    private const string TagSyncTagLabel = "Syncing physical files for the changed tag";
+
     [Inject] private LibraryScanService ScanService { get; set; } = default!;
     [Inject] private ThumbnailService ThumbnailService { get; set; } = default!;
     [Inject] private LibraryService Library { get; set; } = default!;
@@ -24,6 +28,7 @@ public partial class StatusBar : IDisposable
     private int _tagSyncProcessed;
     private int _tagSyncTotal;
     private double _tagSyncProgress;
+    private string _tagSyncReason = TagSyncEditedLabel;
 
     protected override void OnInitialized()
     {
@@ -83,14 +88,25 @@ public partial class StatusBar : IDisposable
         });
     }
 
-    private void UpdateTagSyncProgress(int current, int total)
+    private void UpdateTagSyncProgress(int current, int total, FileSyncBatch? finishedBatch)
     {
+        // A named batch is the one that just finished; the label belongs to whatever is draining now.
+        if (finishedBatch.HasValue)
+        {
+            return;
+        }
+
         _ = InvokeAsync(() =>
         {
             _tagSyncInProgress = true;
             _tagSyncProcessed = current;
             _tagSyncTotal = total;
             _tagSyncProgress = total > 0 ? (double)current / total * 100 : 0;
+            _tagSyncReason = Library.TagSyncBatch switch
+            {
+                FileSyncBatch.TagUpdated => TagSyncTagLabel,
+                _ => TagSyncEditedLabel
+            };
             StateHasChanged();
         });
     }

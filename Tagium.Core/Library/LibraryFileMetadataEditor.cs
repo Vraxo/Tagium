@@ -54,16 +54,13 @@ internal sealed class LibraryFileMetadataEditor
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
-                _tagSyncService,
+                EnqueueSync,
                 _notifyChanged,
                 tagId,
                 modifiedFiles,
                 wasAdding: true));
 
-            foreach (Guid fileId in modifiedFiles)
-            {
-                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
-            }
+            _tagSyncService.EnqueueFileUpdates(modifiedFiles);
         }
 
         _notifyChanged();
@@ -99,16 +96,13 @@ internal sealed class LibraryFileMetadataEditor
         {
             _undoService.Push(new TagAssignmentUndoCommand(
                 _fileTagRepo,
-                _tagSyncService,
+                EnqueueSync,
                 _notifyChanged,
                 tagId,
                 modifiedFiles,
                 wasAdding: false));
 
-            foreach (Guid fileId in modifiedFiles)
-            {
-                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
-            }
+            _tagSyncService.EnqueueFileUpdates(modifiedFiles);
         }
 
         _notifyChanged();
@@ -150,16 +144,16 @@ internal sealed class LibraryFileMetadataEditor
         {
             _undoService.Push(new RatingUndoCommand(
                 _fileRepo,
-                _tagSyncService,
+                EnqueueSync,
                 _notifyChanged,
                 previousRatings));
 
-            foreach (Guid fileId in previousRatings.Keys)
-            {
-                _ = _tagSyncService.SyncMetadataToFileAsync(fileId);
-            }
+            _tagSyncService.EnqueueFileUpdates(previousRatings.Keys);
         }
 
         _notifyChanged();
     }
+
+    /// <summary>Undo commands hand back the files they just reverted, one at a time.</summary>
+    private void EnqueueSync(Guid fileId) => _tagSyncService.EnqueueFileUpdates([fileId]);
 }
