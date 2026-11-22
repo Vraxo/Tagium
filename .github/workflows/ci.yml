@@ -26,4 +26,14 @@ jobs:
 
       - run: dotnet build
 
-      - run: dotnet test --no-build
+      # The workflow-command logger turns each test outcome into a check annotation, so a failure
+      # is readable from the API without downloading the run log.
+      - run: dotnet test --no-build --logger "console;format=workflow-command" --results-directory TestResults --logger "trx;LogFileName=results.trx"
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/
+          retention-days: 7
