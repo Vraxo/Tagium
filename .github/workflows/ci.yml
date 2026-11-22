@@ -26,14 +26,25 @@ jobs:
 
       - run: dotnet build
 
-      # The workflow-command logger turns each test outcome into a check annotation, so a failure
-      # is readable from the API without downloading the run log.
-      - run: dotnet test --no-build --logger "console;format=workflow-command" --results-directory TestResults --logger "trx;LogFileName=results.trx"
+      - name: Test
+        run: |
+          set -o pipefail
+          dotnet test --no-build --logger "trx;LogFileName=results.trx" --results-directory TestResults 2>&1 | tee test-output.txt
 
-      - name: Upload test results
+      # The run log is not reachable from every environment, so a failure also publishes the
+      # failing assertions as check annotations and keeps the full output as an artifact.
+      - name: Publish failures
+        if: failure()
+        run: |
+          grep -E "error|Failed |Assert|Expected|Actual|at Tagium" test-output.txt \
+            | sed 's/^/::error::/' || true
+
+      - name: Upload test output
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: TestResults/
+          path: |
+            test-output.txt
+            TestResults/
           retention-days: 7
