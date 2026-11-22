@@ -266,8 +266,15 @@ public class FileSyncQueueTests
             gate.TrySetResult();
         });
 
-        reports[^1].Batch.Should().Be(FileSyncBatch.TagUpdated);
-        reports[^1].Total.Should().Be(1, "the two dropped files are no longer owed a write");
+        // Not reports[^1]: the write that was already in flight when the batch was abandoned
+        // finishes afterwards and raises one more progress report, which the test may or may not
+        // have collected by the time it looks. The cancel itself always reports, so find it.
+        Report cancelReport = reports.Should()
+            .ContainSingle(report => report.Batch == FileSyncBatch.TagUpdated)
+            .Which;
+
+        cancelReport.Total.Should().Be(1, "the two dropped files are no longer owed a write");
+        cancelReport.Completed.Should().Be(0, "nothing had been written when the batch was dropped");
 
         await Task.Delay(100);
         writer.Copy().Should().Equal(First);
