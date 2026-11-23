@@ -135,7 +135,7 @@ public class FileSyncQueueTests
         reports[^1].Should().Be(new Report(3, 3, FileSyncBatch.EditedFiles, 0));
 
         queue.Dispose();
-        await worker.WaitAsync(Timeout);
+        await worker.WaitAsync(Timeout, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public class FileSyncQueueTests
         queue.FailedWrites.Should().Be(1);
 
         queue.Dispose();
-        await worker.WaitAsync(Timeout);
+        await worker.WaitAsync(Timeout, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class FileSyncQueueTests
         writer.Copy().Should().Equal(First, Second);
 
         queue.Dispose();
-        await worker.WaitAsync(Timeout);
+        await worker.WaitAsync(Timeout, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -239,7 +239,7 @@ public class FileSyncQueueTests
         reports[^1].Should().Be(new Report(2, 2, FileSyncBatch.EditedFiles, 0));
 
         queue.Dispose();
-        await worker.WaitAsync(Timeout);
+        await worker.WaitAsync(Timeout, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -276,12 +276,12 @@ public class FileSyncQueueTests
         cancelReport.Total.Should().Be(1, "the two dropped files are no longer owed a write");
         cancelReport.Completed.Should().Be(0, "nothing had been written when the batch was dropped");
 
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         writer.Copy().Should().Equal(First);
         queue.IsRunning.Should().BeFalse();
 
         queue.Dispose();
-        await worker.WaitAsync(Timeout);
+        await worker.WaitAsync(Timeout, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -306,7 +306,7 @@ public class FileSyncQueueTests
         queue.IsRunning.Should().BeFalse();
 
         queue.Dispose();
-        await worker.WaitAsync(Timeout);
+        await worker.WaitAsync(Timeout, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -318,7 +318,7 @@ public class FileSyncQueueTests
 
         queue.Dispose();
 
-        await worker.WaitAsync(Timeout);
+        await worker.WaitAsync(Timeout, TestContext.Current.CancellationToken);
         queue.Enqueue([First], FileSyncBatch.EditedFiles).Should().BeFalse();
         writer.WriteCount.Should().Be(0);
 

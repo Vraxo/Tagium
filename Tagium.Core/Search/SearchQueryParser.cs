@@ -33,9 +33,15 @@ internal static class SearchQueryParser
 
     private static readonly Dictionary<string, string> KnownKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["rating"] = "rating", ["size"] = "size", ["ext"] = "ext", ["extension"] = "ext",
-        ["tag"] = "tag", ["missing"] = "missing", ["has"] = "has",
-        ["added"] = "added", ["modified"] = "modified"
+        ["rating"] = "rating",
+        ["size"] = "size",
+        ["ext"] = "ext",
+        ["extension"] = "ext",
+        ["tag"] = "tag",
+        ["missing"] = "missing",
+        ["has"] = "has",
+        ["added"] = "added",
+        ["modified"] = "modified"
     };
 
     public static IReadOnlyList<SearchFilter> Parse(string searchText, ILogger logger)
@@ -62,32 +68,32 @@ internal static class SearchQueryParser
             switch (kind)
             {
                 case "rating":
-                {
-                    (SearchComparison op, string rest) = SplitOperator(value);
-                    if (int.TryParse(rest, out int rating))
                     {
-                        filters.Add(new RatingFilter(op, rating, negated));
+                        (SearchComparison op, string rest) = SplitOperator(value);
+                        if (int.TryParse(rest, out int rating))
+                        {
+                            filters.Add(new RatingFilter(op, rating, negated));
+                        }
+                        else
+                        {
+                            logger.LogWarning("Skipped invalid rating search filter value: {Value}", value);
+                        }
+                        break;
                     }
-                    else
-                    {
-                        logger.LogWarning("Skipped invalid rating search filter value: {Value}", value);
-                    }
-                    break;
-                }
                 case "size":
-                {
-                    (SearchComparison op, string rest) = SplitOperator(value);
-                    long? bytes = ParseSizeToBytes(rest);
-                    if (bytes.HasValue)
                     {
-                        filters.Add(new SizeFilter(op, bytes.Value, negated));
+                        (SearchComparison op, string rest) = SplitOperator(value);
+                        long? bytes = ParseSizeToBytes(rest);
+                        if (bytes.HasValue)
+                        {
+                            filters.Add(new SizeFilter(op, bytes.Value, negated));
+                        }
+                        else
+                        {
+                            logger.LogWarning("Skipped invalid size search filter value: {Value}", value);
+                        }
+                        break;
                     }
-                    else
-                    {
-                        logger.LogWarning("Skipped invalid size search filter value: {Value}", value);
-                    }
-                    break;
-                }
                 case "ext":
                     filters.Add(new ExtensionFilter(value.TrimStart('.').ToLowerInvariant(), negated));
                     break;
@@ -95,55 +101,55 @@ internal static class SearchQueryParser
                     filters.Add(new TagFilter(value, negated));
                     break;
                 case "missing":
-                {
-                    bool? missing = value.Trim().ToLowerInvariant() switch
                     {
-                        "true" or "yes" or "1" => true,
-                        "false" or "no" or "0" => false,
-                        _ => null
-                    };
-                    if (missing.HasValue)
-                    {
-                        filters.Add(new MissingFilter(missing.Value, negated));
-                    }
-                    else
-                    {
-                        logger.LogWarning("Skipped invalid missing search filter value: {Value}", value);
-                    }
-                    break;
-                }
-                case "has":
-                {
-                    SearchPresenceField? field = value.Trim().ToLowerInvariant() switch
-                    {
-                        "rating" => SearchPresenceField.Rating,
-                        "title" => SearchPresenceField.Title,
-                        "description" => SearchPresenceField.Description,
-                        "tags" => SearchPresenceField.Tags,
-                        _ => null
-                    };
-                    filters.Add(field.HasValue ? new HasFilter(field.Value, negated) : new TextFilter(rawToken, negated));
-                    break;
-                }
-                case "added":
-                case "modified":
-                {
-                    (SearchComparison op, string rest) = SplitOperator(value);
-                    if (!DateTime.TryParse(rest, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime date))
-                    {
-                        logger.LogWarning("Skipped invalid {Key} search filter value: {Value}", key, value);
+                        bool? missing = value.Trim().ToLowerInvariant() switch
+                        {
+                            "true" or "yes" or "1" => true,
+                            "false" or "no" or "0" => false,
+                            _ => null
+                        };
+                        if (missing.HasValue)
+                        {
+                            filters.Add(new MissingFilter(missing.Value, negated));
+                        }
+                        else
+                        {
+                            logger.LogWarning("Skipped invalid missing search filter value: {Value}", value);
+                        }
                         break;
                     }
-                    // Both a bare date and an explicit equals mean "on or after".
-                    if (op == SearchComparison.Equal)
+                case "has":
                     {
-                        op = SearchComparison.GreaterThanOrEqual;
+                        SearchPresenceField? field = value.Trim().ToLowerInvariant() switch
+                        {
+                            "rating" => SearchPresenceField.Rating,
+                            "title" => SearchPresenceField.Title,
+                            "description" => SearchPresenceField.Description,
+                            "tags" => SearchPresenceField.Tags,
+                            _ => null
+                        };
+                        filters.Add(field.HasValue ? new HasFilter(field.Value, negated) : new TextFilter(rawToken, negated));
+                        break;
                     }
-                    SearchDateField field = string.Equals(key, "added", StringComparison.OrdinalIgnoreCase)
-                        ? SearchDateField.Added : SearchDateField.Modified;
-                    filters.Add(new DateFilter(field, op, date, negated));
-                    break;
-                }
+                case "added":
+                case "modified":
+                    {
+                        (SearchComparison op, string rest) = SplitOperator(value);
+                        if (!DateTime.TryParse(rest, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime date))
+                        {
+                            logger.LogWarning("Skipped invalid {Key} search filter value: {Value}", key, value);
+                            break;
+                        }
+                        // Both a bare date and an explicit equals mean "on or after".
+                        if (op == SearchComparison.Equal)
+                        {
+                            op = SearchComparison.GreaterThanOrEqual;
+                        }
+                        SearchDateField field = string.Equals(key, "added", StringComparison.OrdinalIgnoreCase)
+                            ? SearchDateField.Added : SearchDateField.Modified;
+                        filters.Add(new DateFilter(field, op, date, negated));
+                        break;
+                    }
                 default:
                     filters.Add(ValidCategories.Contains(key)
                         ? new CategoryFilter(key, value, negated)
